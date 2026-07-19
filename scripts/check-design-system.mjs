@@ -10,6 +10,7 @@ const projectRoot = path.resolve(
 const sourceRoot = path.join(projectRoot, 'src');
 const tokenFile = path.join(sourceRoot, 'styles', 'tokens.css');
 const typographyFile = path.join(sourceRoot, 'styles', 'typography.css');
+const shadcnRoot = path.join(sourceRoot, 'components', 'ui');
 const supportedExtensions = new Set([
   '.css',
   '.js',
@@ -68,6 +69,8 @@ function checkRawColors(file, content) {
 }
 
 function checkArbitraryClasses(file, content) {
+  if (file.startsWith(`${shadcnRoot}${path.sep}`)) return;
+
   const arbitraryDesignClass =
     /\b(?:font|leading|tracking|text|p[trblxy]?|m[trblxy]?|gap(?:-[xy])?|space-[xy]|rounded(?:-[trbl]{1,2})?)-\[[^\]]+\]/g;
   const nonSemanticTextSize = /\btext-(?:xs|sm|base|lg|xl|[2-9]xl)\b/g;
@@ -126,6 +129,28 @@ function checkArbitraryClasses(file, content) {
         content,
         match.index,
         `spacing class ${match[0]} is outside the approved scale`,
+      );
+    }
+  }
+}
+
+function checkPrimitiveImports(file, content) {
+  const relative = path.relative(sourceRoot, file);
+  const isRouteOrFeature =
+    relative.startsWith(`app${path.sep}`) ||
+    relative.startsWith(`features${path.sep}`);
+
+  if (!isRouteOrFeature) return;
+
+  const imports = /(?:from\s+|import\s*)['"]([^'"]+)['"]/g;
+
+  for (const match of content.matchAll(imports)) {
+    if (match[1].startsWith('@/components/ui')) {
+      report(
+        file,
+        content,
+        match.index,
+        `route and feature code must consume an Orion wrapper, not ${match[1]}`,
       );
     }
   }
@@ -199,7 +224,11 @@ function checkDuplicateComponentNames(filesWithContent) {
     /(?:export\s+)?(?:default\s+)?function\s+([A-Z][\w]*)\b|(?:export\s+)?const\s+([A-Z][\w]*)\s*=/g;
 
   for (const { file, content } of filesWithContent) {
-    if (path.extname(file) !== '.tsx' || /\.(?:test|spec)\.tsx$/.test(file)) {
+    if (
+      path.extname(file) !== '.tsx' ||
+      /\.(?:test|spec)\.tsx$/.test(file) ||
+      file.startsWith(`${shadcnRoot}${path.sep}`)
+    ) {
       continue;
     }
 
@@ -232,6 +261,7 @@ for (const { file, content } of filesWithContent) {
   checkArbitraryClasses(file, content);
   checkCssTypography(file, content);
   checkFeatureImports(file, content);
+  checkPrimitiveImports(file, content);
 }
 
 checkDuplicateComponentNames(filesWithContent);

@@ -19,6 +19,45 @@
   min-height: var(--touch-target);
 }
 
+@utility min-state-contained {
+  min-height: var(--state-contained-min-height);
+}
+
+@utility control-default {
+  height: var(--control-height-default) !important;
+  min-height: var(--touch-target) !important;
+}
+
+@utility control-compact {
+  position: relative;
+  height: var(--control-height-compact) !important;
+
+  &::after {
+    position: absolute;
+    inset: -4px 0;
+    content: '';
+  }
+}
+
+@utility icon-control-default {
+  width: var(--control-height-default) !important;
+  height: var(--control-height-default) !important;
+  min-width: var(--touch-target) !important;
+  min-height: var(--touch-target) !important;
+}
+
+@utility icon-control-compact {
+  position: relative;
+  width: var(--control-height-compact) !important;
+  height: var(--control-height-compact) !important;
+
+  &::after {
+    position: absolute;
+    inset: -4px;
+    content: '';
+  }
+}
+
 @utility sidebar-width {
   width: var(--sidebar-width);
   flex: 0 0 var(--sidebar-width);
@@ -42,4 +81,27 @@
 
 @utility radius-pill {
   border-radius: var(--radius-pill);
+}
+
+@utility theme-badge {
+  border-color: color-mix(in srgb, var(--badge-theme-color) 58%, var(--border));
+  background: color-mix(in srgb, var(--badge-theme-color) 14%, var(--card));
+  color: var(--foreground);
+}
+
+@utility theme-dot {
+  background: var(--badge-theme-color);
+}
+
+@utility shadow-overlay {
+  box-shadow: var(--shadow-overlay);
+}
+
+@utility textarea-height {
+  min-height: var(--textarea-min-height) !important;
+}
+
+@utility icon-md {
+  width: 20px;
+  height: 20px;
 }

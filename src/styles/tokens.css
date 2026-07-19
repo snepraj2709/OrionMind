@@ -61,6 +61,11 @@
   --text-measure-default: 68ch;
   --text-measure-wide: 80ch;
   --touch-target: 44px;
+  --control-height-default: 44px;
+  --control-height-compact: 36px;
+  --mobile-header-height: 64px;
+  --state-contained-min-height: 256px;
+  --textarea-min-height: 128px;
 
   --motion-fast: 140ms;
   --motion-standard: 180ms;
