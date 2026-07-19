@@ -1,7 +1,5 @@
 'use client';
 
-import { keepPreviousData, useMutation, useQuery } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
 import {
@@ -12,22 +10,32 @@ import {
 } from '@/components/data-display';
 import { AppButton, Typography } from '@/components/design-system';
 import {
+  DataViewStatus,
   EmptyState,
   InlineError,
   NoResultsState,
-  PageErrorState,
-  SkeletonList,
 } from '@/components/feedback';
 import { SearchInput } from '@/components/forms';
 import { PageHeader, PageShell } from '@/components/layout';
 import { AppLink } from '@/components/navigation';
-import { ApprovalActions, ReviewItemCard } from '@/components/shared';
+import {
+  ApprovalActions,
+  RefreshButton,
+  ReviewItemCard,
+} from '@/components/shared';
 import { entryDetailPath, routes } from '@/config/routes';
-import { useOnlineStatus } from '@/hooks';
+import { dataViewMessages } from '@/config/messages';
+import {
+  approvalStatusPresentation,
+  extractedItemKindPresentation,
+} from '@/config/status';
+import { collectionPageSizeOptions } from '@/constants/pagination';
+import { useCollectionControls, useOnlineStatus } from '@/hooks';
 import { formatLongDate } from '@/lib/date';
 
 import { approvalsRepository } from './mock-repository';
 import type { ApprovalKindFilter, ApprovalRecord } from './model';
+import { useApprovalDecisionMutation, useApprovalsQuery } from './queries';
 import type { ApprovalsRepository } from './repository';
 
 export interface ApprovalsScreenProps {
@@ -39,26 +47,25 @@ export function ApprovalsScreen({
 }: ApprovalsScreenProps) {
   const isOnline = useOnlineStatus();
   const [kind, setKind] = useState<ApprovalKindFilter>('all');
-  const [search, setSearch] = useState('');
-  const [pageIndex, setPageIndex] = useState(0);
-  const [pageSize, setPageSize] = useState(5);
+  const {
+    clearSearch,
+    pageIndex,
+    pageSize,
+    search,
+    setPageIndex,
+    setPageSize,
+    setSearch,
+  } = useCollectionControls();
   const [lastDecision, setLastDecision] = useState<string>();
 
-  const approvalsQuery = useQuery({
-    queryKey: ['approvals', { kind, pageIndex, pageSize, search }],
-    queryFn: () =>
-      repository.listPendingApprovals({ kind, pageIndex, pageSize, search }),
-    placeholderData: keepPreviousData,
-  });
-  const decision = useMutation({
-    mutationFn: (input: Parameters<ApprovalsRepository['decideApproval']>[0]) =>
-      repository.decideApproval(input),
-    onSuccess: async (item) => {
-      setLastDecision(
-        `${item.kind === 'idea' ? 'Idea' : 'Memory'} ${item.status === 'approved' ? 'approved' : 'rejected'}.`,
-      );
-      await approvalsQuery.refetch();
-    },
+  const { query: approvalsQuery, viewStatus } = useApprovalsQuery(
+    { kind, pageIndex, pageSize, search },
+    repository,
+  );
+  const decision = useApprovalDecisionMutation(repository, (item) => {
+    setLastDecision(
+      `${extractedItemKindPresentation[item.kind].label} ${item.status === 'approved' ? 'approved' : 'rejected'}.`,
+    );
   });
 
   const pageCount = approvalsQuery.data
@@ -68,8 +75,7 @@ export function ApprovalsScreen({
 
   function clearFilters() {
     setKind('all');
-    setSearch('');
-    setPageIndex(0);
+    clearSearch();
   }
 
   function actionsFor(item: ApprovalRecord) {
@@ -99,16 +105,13 @@ export function ApprovalsScreen({
 
       <FilterBar
         actions={
-          <AppButton
-            leftIcon={<RefreshCw aria-hidden="true" className="size-4" />}
+          <RefreshButton
             loading={approvalsQuery.isFetching && !approvalsQuery.isPending}
             loadingLabel="Refreshing review queue"
             onClick={() => void approvalsQuery.refetch()}
-            size="compact"
-            variant="ghost"
           >
             Refresh
-          </AppButton>
+          </RefreshButton>
         }
         ariaLabel="Review filters"
       >
@@ -116,7 +119,6 @@ export function ApprovalsScreen({
           label="Search review queue"
           onChange={(event) => {
             setSearch(event.target.value);
-            setPageIndex(0);
           }}
           placeholder="Search ideas and memories"
           value={search}
@@ -155,29 +157,13 @@ export function ApprovalsScreen({
         {lastDecision}
       </Typography>
 
-      {approvalsQuery.isPending ? <SkeletonList count={3} /> : null}
-
-      {approvalsQuery.isError && !approvalsQuery.data ? (
-        <PageErrorState
-          action={
-            <AppButton
-              onClick={() => void approvalsQuery.refetch()}
-              variant="secondary"
-            >
-              Retry
-            </AppButton>
-          }
-          description="The review queue could not be loaded. Try again when you are ready."
-          title="Review is unavailable"
-        />
-      ) : null}
-
-      {approvalsQuery.isError && approvalsQuery.data ? (
-        <InlineError>
-          The queue could not be refreshed. The last loaded items remain
-          visible.
-        </InlineError>
-      ) : null}
+      <DataViewStatus
+        initialError={dataViewMessages.approvals.initial}
+        onRetry={() => void approvalsQuery.refetch()}
+        refreshError={dataViewMessages.approvals.refresh}
+        refreshingLabel="Refreshing review queue…"
+        status={viewStatus}
+      />
 
       {approvalsQuery.data?.totalAll === 0 ? (
         <EmptyState
@@ -219,8 +205,13 @@ export function ApprovalsScreen({
                     From {formatLongDate(item.entryDate)}
                   </AppLink>
                 }
-                status={<StatusBadge label="Needs review" variant="warning" />}
-                title={item.kind === 'idea' ? 'Idea' : 'Memory'}
+                status={
+                  <StatusBadge
+                    label={approvalStatusPresentation.pending_approval.label}
+                    variant={approvalStatusPresentation.pending_approval.tone}
+                  />
+                }
+                title={extractedItemKindPresentation[item.kind].label}
               />
             ))}
           </div>
@@ -228,14 +219,11 @@ export function ApprovalsScreen({
             canNextPage={pageIndex + 1 < pageCount}
             canPreviousPage={pageIndex > 0}
             onPageChange={setPageIndex}
-            onPageSizeChange={(nextPageSize) => {
-              setPageSize(nextPageSize);
-              setPageIndex(0);
-            }}
+            onPageSizeChange={setPageSize}
             pageCount={pageCount}
             pageIndex={pageIndex}
             pageSize={pageSize}
-            pageSizeOptions={[5, 10, 20]}
+            pageSizeOptions={collectionPageSizeOptions}
           />
         </div>
       ) : null}

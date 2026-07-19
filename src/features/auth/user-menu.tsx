@@ -1,13 +1,18 @@
+'use client';
+
 import { Typography } from '@/components/design-system';
 
 import { SignOutButton } from './sign-out-button';
+import { useAuth } from './use-auth';
 
 export interface UserMenuProps {
   name: string;
 }
 
 export function UserMenu({ name }: UserMenuProps) {
-  const initials = name
+  const { user } = useAuth();
+  const displayName = user?.name ?? name;
+  const initials = displayName
     .split(' ')
     .map((part) => part[0])
     .join('')
@@ -23,7 +28,7 @@ export function UserMenu({ name }: UserMenuProps) {
       </div>
       <div className="min-w-0 flex-1">
         <Typography className="truncate" variant="bodySmall">
-          {name}
+          {displayName}
         </Typography>
       </div>
       <SignOutButton iconOnly />

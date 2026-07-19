@@ -16,6 +16,7 @@ import { AppButton, Typography } from '@/components/design-system';
 import { TextInput } from '@/components/forms';
 import { Tabs } from '@/components/navigation';
 import { formatLongDate } from '@/lib/date';
+import { journeyChapterStatusPresentation } from '@/config/status';
 import type { EvidenceItem } from '@/types/evidence';
 
 import type { JourneyChapter } from './model';
@@ -261,7 +262,7 @@ function TransformationArc({ chapter, onViewEvidence }: ChapterPanelProps) {
       </AppButton>
       <div className="border-border space-y-3 border-t pt-6">
         <Typography variant="eyebrow">What may remain unresolved</Typography>
-        <Typography as="blockquote" variant="reflectionCardStatement">
+        <Typography as="blockquote" variant="reflectiveStatement">
           {chapter.unresolvedQuestion}
         </Typography>
       </div>
@@ -351,7 +352,7 @@ function CarryForward({ chapter, onViewEvidence }: ChapterPanelProps) {
       </div>
       <div className="border-border space-y-3 border-t pt-6">
         <Typography variant="eyebrow">A question to carry forward</Typography>
-        <Typography as="blockquote" variant="reflectionCardStatement">
+        <Typography as="blockquote" variant="reflectiveStatement">
           {chapter.unresolvedQuestion}
         </Typography>
       </div>
@@ -410,8 +411,8 @@ export function ChapterDetail({
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
           <StatusBadge
-            label={chapter.status}
-            variant={chapter.status === 'current' ? 'success' : 'neutral'}
+            label={journeyChapterStatusPresentation[chapter.status].label}
+            variant={journeyChapterStatusPresentation[chapter.status].tone}
           />
           <Typography className="text-muted-foreground" variant="metadata">
             {formatLongDate(chapter.start)}–
@@ -452,7 +453,7 @@ export function ChapterDetail({
           <Typography
             as="h2"
             id="selected-chapter-heading"
-            variant="reflectionCardStatement"
+            variant="reflectiveStatement"
           >
             {chapter.title}
           </Typography>

@@ -40,14 +40,14 @@ test('matches Profile and preserves accessible form behavior', async ({
   await logIn(page);
   await page.goto(routes.profile.path);
   const displayName = page.getByLabel('Display name *');
-  await expect(displayName).toHaveValue('Maya Chen');
+  await expect(displayName).toHaveValue('reader');
   await expect(page).toHaveScreenshot('profile-desktop.png', {
     fullPage: true,
   });
 
   await page.setViewportSize({ width: 320, height: 900 });
   await page.reload();
-  await expect(displayName).toHaveValue('Maya Chen');
+  await expect(displayName).toHaveValue('reader');
   await expectNoPageOverflow(page);
   await expect(page).toHaveScreenshot('profile-mobile.png', { fullPage: true });
 });

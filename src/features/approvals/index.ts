@@ -10,3 +10,7 @@ export type {
   ApprovalsResult,
 } from './model';
 export type { ApprovalsRepository } from './repository';
+export {
+  ApprovalAwareNavigation,
+  ReviewQueueSummary,
+} from './review-navigation';

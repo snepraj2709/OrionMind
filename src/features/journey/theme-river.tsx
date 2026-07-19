@@ -7,6 +7,7 @@ import { Surface } from '@/components/cards';
 import { ThemeBadge } from '@/components/data-display';
 import { AppButton, Typography } from '@/components/design-system';
 import { themeRegistry, type ThemeKey } from '@/config/design-system';
+import { journeyChapterStatusPresentation } from '@/config/status';
 
 import type { JourneyBoundary, JourneyChapter, ThemeRiverPoint } from './model';
 
@@ -251,6 +252,7 @@ export function ThemeRiver({
 
             <rect
               aria-label="Explore the theme river. Use left and right arrow keys to inspect periods, or drag to inspect a smaller range."
+              className="focus-visible:stroke-primary cursor-crosshair focus-visible:stroke-2 focus-visible:outline-none"
               fill="transparent"
               height="220"
               onKeyDown={(event) => {
@@ -333,7 +335,7 @@ export function ThemeRiver({
                     x={x}
                     y="56"
                   >
-                    {chapter.status}
+                    {journeyChapterStatusPresentation[chapter.status].label}
                   </text>
                 </g>
               );
@@ -347,7 +349,7 @@ export function ThemeRiver({
                 <g
                   aria-label={`Chapter boundary on ${boundary.date}`}
                   aria-pressed={selectedBoundaryId === boundary.id}
-                  className="cursor-pointer focus:outline-none"
+                  className="focus-visible:outline-primary cursor-pointer focus-visible:outline-2"
                   key={boundary.id}
                   onClick={() => setSelectedBoundaryId(boundary.id)}
                   onFocus={() => setSelectedBoundaryId(boundary.id)}

@@ -1,3 +1,5 @@
+import { simulateLatency } from '@/services/mock-delay';
+
 import type {
   EntryTheme,
   JourneyEntriesResult,
@@ -51,10 +53,6 @@ export const journeyEntryFixtures: JourneyEntry[] = Array.from(
   },
 );
 
-function wait(milliseconds: number) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 function cloneEntries(entries: JourneyEntry[]) {
   return entries.map((entry) => ({
     entry_date: entry.entry_date,
@@ -78,7 +76,7 @@ function entriesForRange(entries: JourneyEntry[], range: JourneyRange) {
     '5y': 60,
   };
   const finalDate = new Date(`${entries.at(-1)!.entry_date}T00:00:00Z`);
-  finalDate.setUTCMonth(finalDate.getUTCMonth() - periodMonths[range]);
+  finalDate.setUTCMonth(finalDate.getUTCMonth() - (periodMonths[range] - 1));
   const firstDate = finalDate.toISOString().slice(0, 10);
   return entries.filter((entry) => entry.entry_date >= firstDate);
 }
@@ -90,7 +88,7 @@ export class MockJourneyJournalService implements JourneyJournalService {
   ) {}
 
   async getJournalEntries(): Promise<JourneyEntry[]> {
-    await wait(this.delay);
+    await simulateLatency(this.delay);
     return cloneEntries(this.entries);
   }
 }

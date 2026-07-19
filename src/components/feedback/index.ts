@@ -1,4 +1,5 @@
 export { ErrorFallback } from './error-fallback';
+export { DataViewStatus, type DataViewStatusProps } from './data-view-status';
 export {
   AppErrorBoundary,
   type AppErrorBoundaryProps,

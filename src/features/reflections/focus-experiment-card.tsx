@@ -30,7 +30,7 @@ export function FocusExperimentCard({
         <Typography as="h2" variant="sectionTitle">
           {focus.title}
         </Typography>
-        <Typography variant="reflectionCardStatement">{focus.body}</Typography>
+        <Typography variant="reflectiveStatement">{focus.body}</Typography>
         <div className="border-border space-y-2 border-t pt-6">
           <Typography variant="eyebrow">Suggested experiment</Typography>
           <Typography variant="body">{focus.experiment}</Typography>

@@ -8,10 +8,10 @@ import {
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
+import type { StatusTone } from '@/config/status';
 import { cn } from '@/lib/utils';
 
-export type StatusBadgeVariant =
-  'neutral' | 'processing' | 'success' | 'warning' | 'error';
+export type StatusBadgeVariant = StatusTone;
 
 export interface StatusBadgeProps {
   label: string;

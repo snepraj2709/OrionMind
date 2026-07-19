@@ -3,7 +3,7 @@ export const typographyVariants = {
   pageTitle: 'type-page-title',
   sectionTitle: 'type-section-title',
   componentTitle: 'type-component-title',
-  reflectionCardStatement: 'type-reflection-card-statement',
+  reflectiveStatement: 'type-reflection-card-statement',
   journalExcerpt: 'type-journal-excerpt',
   bodyLarge: 'type-body-large',
   body: 'type-body',

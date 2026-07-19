@@ -51,4 +51,14 @@ test('searches, clears, and decides review items', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Approve' }).first().click();
   await expect(page.getByText('Needs review')).toHaveCount(2);
+  await expect(page.getByLabel('2 items to review')).toHaveCount(2);
+
+  await page.getByRole('link', { name: routes.ideas.label }).click();
+  await expect(
+    page.getByText(
+      'I want to establish a morning ritual centered on slow, screen-free time before engaging with the day.',
+    ),
+  ).toBeVisible();
+  await page.getByRole('link', { name: 'From July 10, 2025' }).click();
+  await expect(page.getByText('Approved')).toBeVisible();
 });

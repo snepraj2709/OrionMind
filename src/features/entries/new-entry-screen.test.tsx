@@ -238,6 +238,23 @@ describe('NewEntryScreen', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith(routes.entries.path));
   });
 
+  it('keeps mode switching unavailable while a recording is active', async () => {
+    installMicrophone();
+    const user = userEvent.setup();
+    renderNewEntry();
+
+    await user.click(screen.getByRole('radio', { name: 'Record' }));
+    await user.click(screen.getByRole('button', { name: 'Start recording' }));
+
+    const writeMode = screen.getByRole('radio', { name: 'Write' });
+    expect(writeMode).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Stop recording' }));
+    expect(writeMode).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Record again' }));
+    expect(writeMode).toBeEnabled();
+  });
+
   it('keeps a recording available when voice entry creation fails', async () => {
     installMicrophone();
     const user = userEvent.setup();

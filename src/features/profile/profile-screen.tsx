@@ -1,13 +1,12 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery } from '@tanstack/react-query';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { Surface } from '@/components/cards';
-import { AppButton, Typography } from '@/components/design-system';
-import { PageErrorState, SkeletonList } from '@/components/feedback';
+import { Typography } from '@/components/design-system';
+import { DataViewStatus } from '@/components/feedback';
 import {
   FormError,
   FormField,
@@ -17,11 +16,13 @@ import {
 } from '@/components/forms';
 import { PageHeader, PageShell, Section } from '@/components/layout';
 import { routes } from '@/config/routes';
+import { dataViewMessages } from '@/config/messages';
 import { SignOutButton, useAuth } from '@/features/auth';
 import { useOnlineStatus } from '@/hooks';
 
 import { profileRepository } from './mock-repository';
-import { profileSchema, type Profile, type ProfileUpdate } from './model';
+import { profileSchema, type Profile } from './model';
+import { useProfileQuery, useUpdateProfileMutation } from './queries';
 import type { ProfileRepository } from './repository';
 
 const timezoneOptions = [
@@ -40,12 +41,9 @@ export interface ProfileScreenProps {
 export function ProfileScreen({
   repository = profileRepository,
 }: ProfileScreenProps) {
-  const { user } = useAuth();
+  const { updateUser, user } = useAuth();
   const isOnline = useOnlineStatus();
-  const profileQuery = useQuery({
-    queryKey: ['profile', user?.id],
-    queryFn: () => repository.getProfile(),
-  });
+  const { query: profileQuery, viewStatus } = useProfileQuery(user, repository);
   const form = useForm<Profile>({
     resolver: zodResolver(profileSchema),
     values: profileQuery.data,
@@ -56,13 +54,15 @@ export function ProfileScreen({
       weekStartsOn: 'monday',
     },
   });
-  const updateMutation = useMutation({
-    mutationFn: (update: ProfileUpdate) => repository.updateProfile(update),
-    onSuccess: (profile) => {
+  const updateMutation = useUpdateProfileMutation(
+    user,
+    repository,
+    (profile) => {
       form.reset(profile);
+      updateUser({ name: profile.displayName });
       toast.success('Profile saved');
     },
-  });
+  );
 
   function handleSubmit(values: Profile) {
     if (!isOnline) return;
@@ -80,21 +80,13 @@ export function ProfileScreen({
         title={routes.profile.label}
       />
 
-      {profileQuery.isPending ? <SkeletonList count={3} /> : null}
-      {profileQuery.isError ? (
-        <PageErrorState
-          action={
-            <AppButton
-              onClick={() => void profileQuery.refetch()}
-              variant="secondary"
-            >
-              Retry
-            </AppButton>
-          }
-          description="Orion could not load your profile settings."
-          title="Profile settings are unavailable"
-        />
-      ) : null}
+      <DataViewStatus
+        initialError={dataViewMessages.profile.initial}
+        onRetry={() => void profileQuery.refetch()}
+        refreshError={dataViewMessages.profile.refresh}
+        refreshingLabel="Refreshing profile settings…"
+        status={viewStatus}
+      />
 
       {profileQuery.data ? (
         <form

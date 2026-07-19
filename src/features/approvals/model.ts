@@ -1,15 +1,9 @@
-import type { ApprovalStatus, ExtractedItemKind } from '@/features/entries';
+import type { ExtractedItemKind } from '@/config/status';
+import type { ApprovalRecord } from '@/types/records';
+
+export type { ApprovalRecord } from '@/types/records';
 
 export type ApprovalKindFilter = 'all' | ExtractedItemKind;
-
-export interface ApprovalRecord {
-  id: string;
-  content: string;
-  kind: ExtractedItemKind;
-  status: ApprovalStatus;
-  entryId: string;
-  entryDate: string;
-}
 
 export interface ApprovalsQuery {
   kind: ApprovalKindFilter;

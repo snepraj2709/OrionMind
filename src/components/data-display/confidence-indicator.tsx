@@ -32,10 +32,10 @@ export function ConfidenceIndicator({
       </div>
       <div
         aria-hidden="true"
-        className="bg-muted h-2 overflow-hidden rounded-full"
+        className="bg-muted radius-control h-2 overflow-hidden"
       >
         <div
-          className="bg-accent h-full rounded-full transition-[width]"
+          className="bg-accent radius-control h-full transition-[width]"
           style={{ width: `${normalizedValue}%` }}
         />
       </div>

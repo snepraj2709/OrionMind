@@ -1,21 +1,19 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { AppButton, Typography } from '@/components/design-system';
 import {
+  DataViewStatus,
   EmptyState,
   InlineError,
   NoResultsState,
-  PageErrorState,
-  SkeletonList,
 } from '@/components/feedback';
 import { PageHeader, PageShell, Section } from '@/components/layout';
 import { AppLink, SegmentedControl } from '@/components/navigation';
-import { EvidenceDrawer } from '@/components/shared';
+import { EvidenceDrawer, RefreshButton } from '@/components/shared';
 import { routes } from '@/config/routes';
+import { dataViewMessages } from '@/config/messages';
 import { useOnlineStatus } from '@/hooks';
 import type { EvidenceItem } from '@/types/evidence';
 
@@ -25,6 +23,7 @@ import { HiddenDriverCard, type ResonanceValue } from './hidden-driver-card';
 import { InnerTensionCard } from './inner-tension-card';
 import { reflectionsRepository } from './mock-repository';
 import type { ReflectionRange } from './model';
+import { useReflectionEntriesQuery } from './queries';
 import { RecurringLoop } from './recurring-loop';
 import type { ReflectionsRepository } from './repository';
 
@@ -52,10 +51,10 @@ export function ReflectionsScreen({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isOnline = useOnlineStatus();
 
-  const entriesQuery = useQuery({
-    queryKey: ['reflections', range],
-    queryFn: () => repository.getReflectionEntries(range),
-  });
+  const { query: entriesQuery, viewStatus } = useReflectionEntriesQuery(
+    range,
+    repository,
+  );
   const viewModel = useMemo(
     () =>
       entriesQuery.data
@@ -100,16 +99,14 @@ export function ReflectionsScreen({
               }
               value={range}
             />
-            <AppButton
+            <RefreshButton
               aria-label="Refresh reflections"
               disabled={!isOnline}
               loading={entriesQuery.isFetching}
               loadingLabel="Refreshing reflections"
               onClick={() => void entriesQuery.refetch()}
               variant="icon"
-            >
-              <RefreshCw aria-hidden="true" className="size-4" />
-            </AppButton>
+            />
           </>
         }
         description={subtitle}
@@ -122,57 +119,21 @@ export function ReflectionsScreen({
         <AppLink href="#inner-tensions">Inner tensions</AppLink>
       </nav>
 
-      {entriesQuery.isPending ? <SkeletonList count={4} /> : null}
-
-      {entriesQuery.isError && !entriesQuery.data ? (
-        <PageErrorState
-          action={
-            <AppButton
-              onClick={() => void entriesQuery.refetch()}
-              variant="secondary"
-            >
-              Retry
-            </AppButton>
-          }
-          description="Orion could not gather your reflection history. Try again when you are ready."
-          title="Reflections are unavailable"
-        />
-      ) : null}
-
-      {entriesQuery.isFetching && !entriesQuery.isPending ? (
-        <Typography
-          aria-label="Refreshing reflections"
-          aria-live="polite"
-          className="text-muted-foreground"
-          role="status"
-          variant="metadata"
-        >
-          Refreshing reflections… Your current view will stay in place.
-        </Typography>
-      ) : null}
+      <DataViewStatus
+        initialError={dataViewMessages.reflections.initial}
+        onRetry={() => void entriesQuery.refetch()}
+        refreshError={dataViewMessages.reflections.refresh}
+        refreshingAriaLabel="Refreshing reflections"
+        refreshingLabel="Refreshing reflections… Your current view will stay in place."
+        retryDisabled={!isOnline}
+        skeletonCount={4}
+        status={viewStatus}
+      />
 
       {!isOnline && entriesQuery.data ? (
         <InlineError>
           You are offline. Orion is showing the last available reflections;
           refresh will resume when your connection returns.
-        </InlineError>
-      ) : null}
-
-      {entriesQuery.isError && entriesQuery.data ? (
-        <InlineError
-          action={
-            <AppButton
-              disabled={!isOnline}
-              onClick={() => void entriesQuery.refetch()}
-              size="compact"
-              variant="ghost"
-            >
-              Retry
-            </AppButton>
-          }
-        >
-          New reflection data could not be loaded. Showing the last available
-          view.
         </InlineError>
       ) : null}
 

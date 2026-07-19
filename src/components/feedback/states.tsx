@@ -36,7 +36,7 @@ function StateFrame({
         </span>
       ) : null}
       <div className="space-y-2">
-        <Typography as="h2" variant="reflectionCardStatement">
+        <Typography as="h2" variant="reflectiveStatement">
           {title}
         </Typography>
         <Typography className="text-muted-foreground" variant="body">

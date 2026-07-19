@@ -11,6 +11,7 @@ import type { ProfileRepository } from './repository';
 vi.mock('@/features/auth', () => ({
   SignOutButton: () => <button type="button">Log out</button>,
   useAuth: () => ({
+    updateUser: vi.fn(),
     user: { id: 'user-1', email: 'maya@example.com', name: 'Maya Chen' },
   }),
 }));
@@ -54,6 +55,7 @@ describe('ProfileScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() =>
       expect(updateProfile).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'maya@example.com' }),
         expect.objectContaining({ displayName: 'Maya Rivera' }),
       ),
     );

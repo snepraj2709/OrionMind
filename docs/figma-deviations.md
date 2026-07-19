@@ -47,10 +47,10 @@ This file records known differences between the Figma Make reference and the pro
 - **Refresh and filtered-empty states:** A compact refresh control, preserved-data refresh failure, offline notice, and distinct no-results state are included to satisfy the application data-state contract. They extend the brief without changing its connected Hidden Drivers, Recurring Loops, Inner Tensions, and focus-card story.
 - **API boundary:** The raw service keeps the brief's exact `getJournalEntries(): Promise<JournalEntry[]>` snake_case payload. A replaceable repository layer applies the selected range and returns `totalAvailable`, allowing the UI to distinguish an empty journal from a range with no entries.
 
-## Reflections
+### Evidence and typography
 
 - **Reference basis:** The Make bundle includes two identical `reflections-redesign` specifications even though the protected component body and screenshots are missing. Production follows that latest written specification, including the date-range control, hidden drivers, recurring loop, inner tensions, focus experiment, evidence separation, and feedback controls.
-- **Typography:** An older Figma description names Crimson for reflective prose. Production uses Lora through the approved `type-reflection-card-statement` semantic utility and the `reflectionCardStatement` component variant.
+- **Typography:** An older Figma description names Crimson for reflective prose. Production uses Lora through the approved `type-reflection-card-statement` semantic utility and the `reflectiveStatement` component variant.
 - **Evidence language:** Production consistently separates original journal wording from Orion interpretations in the shared evidence drawer. This is more explicit than the inspectable prototype source, but is required by the bundled trust guidance.
 
 ## Journey

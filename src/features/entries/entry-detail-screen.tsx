@@ -1,50 +1,42 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 import { Surface } from '@/components/cards';
 import { StatusBadge, ThemeBadge } from '@/components/data-display';
 import { AppButton, Typography } from '@/components/design-system';
 import {
+  DataViewStatus,
   EmptyState,
   InlineError,
   PageErrorState,
   ProcessingState,
-  SkeletonList,
 } from '@/components/feedback';
 import { PageHeader, PageShell, Section } from '@/components/layout';
-import { ApprovalActions, ReviewItemCard } from '@/components/shared';
+import {
+  ApprovalActions,
+  RefreshButton,
+  ReviewItemCard,
+} from '@/components/shared';
 import { AppLink, Breadcrumbs } from '@/components/navigation';
 import { routes } from '@/config/routes';
+import { dataViewMessages } from '@/config/messages';
+import {
+  approvalStatusPresentation,
+  entryStatusPresentation,
+  extractedItemKindPresentation,
+} from '@/config/status';
 import { useOnlineStatus } from '@/hooks';
 import { formatLongDate } from '@/lib/date';
 
 import { entriesRepository } from './mock-repository';
-import type {
-  ApprovalStatus,
-  EntryDetail,
-  ExtractedItem,
-  ExtractedItemKind,
-} from './model';
-import { entryKeys } from './query-keys';
+import type { EntryDetail, ExtractedItem } from './model';
+import {
+  useEntryDecisionMutation,
+  useEntryQuery,
+  useRetryEntryMutation,
+} from './queries';
 import type { EntriesRepository } from './repository';
-
-const approvalPresentation: Record<
-  ApprovalStatus,
-  { label: string; variant: 'warning' | 'success' | 'neutral' }
-> = {
-  pending_approval: { label: 'Needs review', variant: 'warning' },
-  approved: { label: 'Approved', variant: 'success' },
-  rejected: { label: 'Not saved', variant: 'neutral' },
-};
-
-interface DecisionInput {
-  entryId: string;
-  itemId: string;
-  kind: ExtractedItemKind;
-  status: Exclude<ApprovalStatus, 'pending_approval'>;
-}
 
 function ExtractedItemView({
   decision,
@@ -52,12 +44,12 @@ function ExtractedItemView({
   entryId,
   item,
 }: {
-  decision: ReturnType<typeof useDecisionMutation>;
+  decision: ReturnType<typeof useEntryDecisionMutation>;
   disabled: boolean;
   entryId: string;
   item: ExtractedItem;
 }) {
-  const presentation = approvalPresentation[item.status];
+  const presentation = approvalStatusPresentation[item.status];
   const isCurrentItem = decision.variables?.itemId === item.id;
   const loadingAction = isCurrentItem
     ? decision.variables?.status === 'approved'
@@ -93,27 +85,11 @@ function ExtractedItemView({
       }
       content={item.content}
       status={
-        <StatusBadge
-          label={presentation.label}
-          variant={presentation.variant}
-        />
+        <StatusBadge label={presentation.label} variant={presentation.tone} />
       }
-      title={item.kind === 'idea' ? 'Idea' : 'Memory'}
+      title={extractedItemKindPresentation[item.kind].label}
     />
   );
-}
-
-function useDecisionMutation(
-  repository: EntriesRepository,
-  queryClient: ReturnType<typeof useQueryClient>,
-) {
-  return useMutation({
-    mutationFn: (input: DecisionInput) => repository.decideExtractedItem(input),
-    onSuccess: (entry) => {
-      queryClient.setQueryData(entryKeys.detail(entry.id), entry);
-      void queryClient.invalidateQueries({ queryKey: entryKeys.lists });
-    },
-  });
 }
 
 function CompletedEntry({
@@ -121,7 +97,7 @@ function CompletedEntry({
   entry,
   isOnline,
 }: {
-  decision: ReturnType<typeof useDecisionMutation>;
+  decision: ReturnType<typeof useEntryDecisionMutation>;
   entry: EntryDetail;
   isOnline: boolean;
 }) {
@@ -131,7 +107,10 @@ function CompletedEntry({
     <div className="space-y-10">
       <Surface className="gap-6 p-6 sm:p-8">
         <div className="flex flex-wrap items-center gap-3">
-          <StatusBadge label="Complete" variant="success" />
+          <StatusBadge
+            label={entryStatusPresentation.completed.label}
+            variant={entryStatusPresentation.completed.tone}
+          />
           <Typography className="text-muted-foreground" variant="metadata">
             {entry.inputType === 'voice' ? 'Voice transcript' : 'Text entry'}
           </Typography>
@@ -208,19 +187,9 @@ export function EntryDetailScreen({
   repository = entriesRepository,
 }: EntryDetailScreenProps) {
   const isOnline = useOnlineStatus();
-  const queryClient = useQueryClient();
-  const entryQuery = useQuery({
-    queryKey: entryKeys.detail(entryId),
-    queryFn: () => repository.getEntry(entryId),
-  });
-  const decision = useDecisionMutation(repository, queryClient);
-  const retry = useMutation({
-    mutationFn: () => repository.retryEntry(entryId),
-    onSuccess: (entry) => {
-      queryClient.setQueryData(entryKeys.detail(entry.id), entry);
-      void queryClient.invalidateQueries({ queryKey: entryKeys.lists });
-    },
-  });
+  const { query: entryQuery, viewStatus } = useEntryQuery(entryId, repository);
+  const decision = useEntryDecisionMutation(repository);
+  const retry = useRetryEntryMutation(entryId, repository);
 
   const entry = entryQuery.data;
   const title = entry ? formatLongDate(entry.date) : routes.entryDetail.label;
@@ -234,16 +203,13 @@ export function EntryDetailScreen({
               <ArrowLeft aria-hidden="true" className="size-4" />
               Back to entries
             </AppLink>
-            <AppButton
-              leftIcon={<RefreshCw aria-hidden="true" />}
+            <RefreshButton
               loading={entryQuery.isFetching && !entryQuery.isPending}
               loadingLabel="Refreshing entry"
               onClick={() => void entryQuery.refetch()}
-              size="compact"
-              variant="ghost"
             >
               Refresh
-            </AppButton>
+            </RefreshButton>
           </>
         }
         breadcrumbs={
@@ -258,41 +224,13 @@ export function EntryDetailScreen({
         title={title}
       />
 
-      {entryQuery.isPending ? <SkeletonList count={3} /> : null}
-
-      {entryQuery.isError && !entry ? (
-        <PageErrorState
-          action={
-            <AppButton
-              leftIcon={<RefreshCw aria-hidden="true" />}
-              onClick={() => void entryQuery.refetch()}
-              variant="secondary"
-            >
-              Retry
-            </AppButton>
-          }
-          description="This entry could not be loaded. Try again when you are ready."
-          title="Entry unavailable"
-        />
-      ) : null}
-
-      {entryQuery.isError && entry ? (
-        <InlineError>
-          This entry could not be refreshed. The last loaded version remains
-          visible.
-        </InlineError>
-      ) : null}
-
-      {entryQuery.isFetching && entry ? (
-        <Typography
-          aria-live="polite"
-          className="text-muted-foreground"
-          role="status"
-          variant="bodySmall"
-        >
-          Refreshing entry…
-        </Typography>
-      ) : null}
+      <DataViewStatus
+        initialError={dataViewMessages.entryDetail.initial}
+        onRetry={() => void entryQuery.refetch()}
+        refreshError={dataViewMessages.entryDetail.refresh}
+        refreshingLabel="Refreshing entry…"
+        status={viewStatus}
+      />
 
       {entryQuery.isSuccess && !entry ? (
         <EmptyState
@@ -331,7 +269,6 @@ export function EntryDetailScreen({
             action={
               <AppButton
                 disabled={!isOnline}
-                leftIcon={<RefreshCw aria-hidden="true" />}
                 loading={retry.isPending}
                 loadingLabel="Retrying reflection"
                 onClick={() => retry.mutate()}

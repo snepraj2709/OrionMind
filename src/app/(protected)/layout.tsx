@@ -1,16 +1,18 @@
 import type { ReactNode } from 'react';
 
 import {
-  AppNavigation,
   AppShell,
   BrandMark,
   MobileNavigation,
   Sidebar,
 } from '@/components/layout';
-import { AppLink } from '@/components/navigation';
+import {
+  ApprovalAwareNavigation,
+  ReviewQueueSummary,
+} from '@/features/approvals';
 import { AuthProvider, UserMenu } from '@/features/auth';
-import { routes } from '@/config/routes';
 import { requireUser } from '@/services/auth';
+import { mockOrionStore } from '@/services/mock-orion-store';
 
 interface ProtectedLayoutProps {
   children: ReactNode;
@@ -20,7 +22,7 @@ export default async function ProtectedLayout({
   children,
 }: ProtectedLayoutProps) {
   const user = await requireUser();
-  const pendingReviewCount = 3;
+  const pendingReviewCount = mockOrionStore.listPendingApprovals().length;
 
   return (
     <AuthProvider initialUser={user}>
@@ -29,21 +31,9 @@ export default async function ProtectedLayout({
           <MobileNavigation
             brand={<BrandMark />}
             footer={<UserMenu name={user.name} />}
-            utility={
-              <AppLink
-                aria-label={`${pendingReviewCount} items to review`}
-                className="type-body-small text-muted-foreground gap-2"
-                href={routes.approvals.path}
-              >
-                <span
-                  aria-hidden="true"
-                  className="bg-status-warning radius-pill size-2"
-                />
-                {pendingReviewCount} to review
-              </AppLink>
-            }
+            utility={<ReviewQueueSummary initialCount={pendingReviewCount} />}
           >
-            <AppNavigation reviewCount={pendingReviewCount} />
+            <ApprovalAwareNavigation initialCount={pendingReviewCount} />
           </MobileNavigation>
         }
         sidebar={
@@ -51,7 +41,7 @@ export default async function ProtectedLayout({
             footer={<UserMenu name={user.name} />}
             header={<BrandMark />}
           >
-            <AppNavigation reviewCount={pendingReviewCount} />
+            <ApprovalAwareNavigation initialCount={pendingReviewCount} />
           </Sidebar>
         }
       >

@@ -28,7 +28,7 @@ export function ThemeBadge({ className, theme }: ThemeBadgeProps) {
       style={style}
       variant={null}
     >
-      <span aria-hidden="true" className="theme-dot size-2 rounded-full" />
+      <span aria-hidden="true" className="theme-dot radius-pill size-2" />
       {config.label}
     </Badge>
   );

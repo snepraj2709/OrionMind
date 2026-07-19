@@ -5,7 +5,10 @@ const usesExternalServer = Boolean(process.env.PLAYWRIGHT_BASE_URL);
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
+  // Mock repositories share one process-local store. Keep route tests isolated
+  // until backend persistence scopes records to the authenticated user.
+  fullyParallel: false,
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',

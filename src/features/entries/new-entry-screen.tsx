@@ -1,7 +1,6 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Mic, Pause, Play, RotateCcw, Square } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -27,7 +26,7 @@ import { Breadcrumbs, SegmentedControl } from '@/components/navigation';
 import { routes } from '@/config/routes';
 
 import { entriesRepository } from './mock-repository';
-import { entryKeys } from './query-keys';
+import { useCreateEntryMutation } from './queries';
 import type { EntriesRepository } from './repository';
 import { useUnsavedEntryWarning } from './use-unsaved-entry-warning';
 import { useVoiceRecorder } from './use-voice-recorder';
@@ -57,7 +56,6 @@ export function NewEntryScreen({
   repository = entriesRepository,
 }: NewEntryScreenProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const [mode, setMode] = useState<EntryMode>('text');
   const voice = useVoiceRecorder();
   const form = useForm<TextEntryValues>({
@@ -66,21 +64,10 @@ export function NewEntryScreen({
   });
   const content = useWatch({ control: form.control, name: 'content' });
 
-  const createEntry = useMutation({
-    mutationFn: async (input: {
-      mode: EntryMode;
-      content?: string;
-      voice?: Blob;
-    }) =>
-      input.mode === 'text'
-        ? repository.createTextEntry({ content: input.content ?? '' })
-        : repository.createVoiceEntry(input.voice ?? new Blob()),
-    onSuccess: async () => {
-      form.reset();
-      voice.reset();
-      await queryClient.invalidateQueries({ queryKey: entryKeys.lists });
-      router.push(routes.entries.path);
-    },
+  const createEntry = useCreateEntryMutation(repository, () => {
+    form.reset();
+    voice.reset();
+    router.push(routes.entries.path);
   });
 
   const hasUnsavedChanges =
@@ -100,6 +87,7 @@ export function NewEntryScreen({
 
   function changeMode(nextMode: string) {
     createEntry.reset();
+    if (voice.state !== 'idle') voice.reset();
     setMode(nextMode as EntryMode);
   }
 
@@ -126,7 +114,13 @@ export function NewEntryScreen({
       <SegmentedControl
         ariaLabel="Entry mode"
         items={[
-          { disabled: createEntry.isPending, label: 'Write', value: 'text' },
+          {
+            disabled:
+              createEntry.isPending ||
+              (mode === 'voice' && voice.state !== 'idle'),
+            label: 'Write',
+            value: 'text',
+          },
           { disabled: createEntry.isPending, label: 'Record', value: 'voice' },
         ]}
         onValueChange={changeMode}

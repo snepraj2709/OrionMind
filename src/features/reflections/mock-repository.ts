@@ -1,3 +1,5 @@
+import { simulateLatency } from '@/services/mock-delay';
+
 import type {
   JournalEntry,
   ReflectionEntriesResult,
@@ -99,10 +101,6 @@ export const reflectionEntryFixtures: JournalEntry[] = dates.map(
   }),
 );
 
-function wait(milliseconds: number) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
 function cloneEntries(entries: JournalEntry[]) {
   return entries.map((entry) => ({
     entry_date: entry.entry_date,
@@ -137,7 +135,7 @@ export class MockReflectionJournalService implements ReflectionJournalService {
   ) {}
 
   async getJournalEntries(): Promise<JournalEntry[]> {
-    await wait(this.delay);
+    await simulateLatency(this.delay);
     return cloneEntries(this.entries);
   }
 }

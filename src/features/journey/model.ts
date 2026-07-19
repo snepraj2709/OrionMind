@@ -1,9 +1,10 @@
 import type { ThemeKey } from '@/config/design-system';
+import type { ChapterStatus } from '@/config/status';
 import type { EvidenceItem } from '@/types/evidence';
 
+export type { ChapterStatus } from '@/config/status';
 export type JourneyRange = '6m' | '1y' | '2y' | '3y' | '5y' | 'all';
 export type ThemeRank = 'primary' | 'secondary' | 'tertiary';
-export type ChapterStatus = 'completed' | 'current' | 'emerging';
 export type ThemeValue =
   | 'career'
   | 'money'

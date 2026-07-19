@@ -1,22 +1,20 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { Surface } from '@/components/cards';
 import { AppButton, Typography } from '@/components/design-system';
 import {
+  DataViewStatus,
   EmptyState,
   InlineError,
   NoResultsState,
-  PageErrorState,
-  SkeletonList,
 } from '@/components/feedback';
 import { PageHeader, PageShell, Section } from '@/components/layout';
 import { AppLink, SegmentedControl } from '@/components/navigation';
-import { EvidenceDrawer } from '@/components/shared';
+import { EvidenceDrawer, RefreshButton } from '@/components/shared';
 import { routes } from '@/config/routes';
+import { dataViewMessages } from '@/config/messages';
 import { formatLongDate } from '@/lib/date';
 import { useOnlineStatus } from '@/hooks';
 import type { EvidenceItem } from '@/types/evidence';
@@ -26,6 +24,7 @@ import { ChapterDetail } from './chapter-detail';
 import { ChapterRail } from './chapter-rail';
 import { journeyRepository } from './mock-repository';
 import type { JourneyBoundary, JourneyRange } from './model';
+import { useJourneyEntriesQuery } from './queries';
 import type { JourneyRepository } from './repository';
 import { ThemeRiver } from './theme-river';
 
@@ -44,10 +43,10 @@ export function JourneyScreen({
   const [drawerItems, setDrawerItems] = useState<EvidenceItem[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isOnline = useOnlineStatus();
-  const entriesQuery = useQuery({
-    queryKey: ['journey', range],
-    queryFn: () => repository.getJourneyEntries(range),
-  });
+  const { query: entriesQuery, viewStatus } = useJourneyEntriesQuery(
+    range,
+    repository,
+  );
   const viewModel = useMemo(
     () =>
       entriesQuery.data
@@ -101,71 +100,34 @@ export function JourneyScreen({
               }}
               value={range}
             />
-            <AppButton
+            <RefreshButton
               aria-label="Refresh journey"
               disabled={!isOnline}
               loading={entriesQuery.isFetching}
               loadingLabel="Refreshing journey"
               onClick={() => void entriesQuery.refetch()}
               variant="icon"
-            >
-              <RefreshCw aria-hidden="true" className="size-4" />
-            </AppButton>
+            />
           </>
         }
         description="See how your attention, priorities and sense of self have changed over time."
         title="Your Journey"
       />
 
-      {entriesQuery.isPending ? <SkeletonList count={5} /> : null}
-
-      {entriesQuery.isError && !entriesQuery.data ? (
-        <PageErrorState
-          action={
-            <AppButton
-              onClick={() => void entriesQuery.refetch()}
-              variant="secondary"
-            >
-              Retry
-            </AppButton>
-          }
-          description="Orion could not assemble your journey history. Your original entries are unchanged."
-          title="Your journey is unavailable"
-        />
-      ) : null}
-
-      {entriesQuery.isFetching && !entriesQuery.isPending ? (
-        <Typography
-          aria-label="Refreshing journey"
-          aria-live="polite"
-          className="text-muted-foreground"
-          role="status"
-          variant="metadata"
-        >
-          Refreshing your journey… The current view will stay in place.
-        </Typography>
-      ) : null}
+      <DataViewStatus
+        initialError={dataViewMessages.journey.initial}
+        onRetry={() => void entriesQuery.refetch()}
+        refreshError={dataViewMessages.journey.refresh}
+        refreshingAriaLabel="Refreshing journey"
+        refreshingLabel="Refreshing your journey… The current view will stay in place."
+        retryDisabled={!isOnline}
+        skeletonCount={5}
+        status={viewStatus}
+      />
 
       {!isOnline && entriesQuery.data ? (
         <InlineError>
           You are offline. Orion is showing the last available journey view.
-        </InlineError>
-      ) : null}
-
-      {entriesQuery.isError && entriesQuery.data ? (
-        <InlineError
-          action={
-            <AppButton
-              disabled={!isOnline}
-              onClick={() => void entriesQuery.refetch()}
-              size="compact"
-              variant="ghost"
-            >
-              Retry
-            </AppButton>
-          }
-        >
-          New journey data could not be loaded. Showing the last available view.
         </InlineError>
       ) : null}
 
@@ -234,7 +196,7 @@ export function JourneyScreen({
             <Typography
               as="p"
               className="text-measure-wide"
-              variant="reflectionCardStatement"
+              variant="reflectiveStatement"
             >
               {viewModel.summary}
             </Typography>

@@ -1,4 +1,4 @@
-import type { ApprovalStatus } from '@/features/entries';
+import type { ApprovalStatus } from '@/config/status';
 
 import type { ApprovalRecord, ApprovalsQuery, ApprovalsResult } from './model';
 

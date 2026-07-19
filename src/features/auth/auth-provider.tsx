@@ -32,6 +32,7 @@ export interface AuthContextValue {
     redirectTo?: string,
   ) => Promise<AuthActionResult>;
   signOut: () => Promise<void>;
+  updateUser: (update: Pick<AuthUser, 'name'>) => void;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
@@ -108,6 +109,10 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
     }
   }, [router]);
 
+  const updateUser = useCallback((update: Pick<AuthUser, 'name'>) => {
+    setUser((current) => (current ? { ...current, ...update } : current));
+  }, []);
+
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
@@ -116,8 +121,9 @@ export function AuthProvider({ children, initialUser }: AuthProviderProps) {
       signIn,
       signUp,
       signOut,
+      updateUser,
     }),
-    [isPending, signIn, signOut, signUp, user],
+    [isPending, signIn, signOut, signUp, updateUser, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

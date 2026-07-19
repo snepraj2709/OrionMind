@@ -1,12 +1,8 @@
-export type SavedItemKind = 'idea' | 'memory';
+import type { ExtractedItemKind } from '@/config/status';
+import type { SavedItemRecord } from '@/types/records';
 
-export interface SavedItemRecord {
-  id: string;
-  content: string;
-  entryId: string;
-  entryDate: string;
-  kind: SavedItemKind;
-}
+export type SavedItemKind = ExtractedItemKind;
+export type { SavedItemRecord } from '@/types/records';
 
 export interface SavedItemsQuery {
   kind: SavedItemKind;
