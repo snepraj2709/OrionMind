@@ -1,0 +1,115 @@
+:root {
+  --background: #f7f5ef;
+  --card: #fcfbf7;
+  --card-foreground: #20212a;
+  --popover: #fcfbf7;
+  --popover-foreground: #20212a;
+  --sidebar: #f1eee5;
+  --secondary: #ebe6da;
+  --secondary-foreground: #20212a;
+  --muted: #ebe6da;
+  --input-background: #ede8df;
+  --input: #ddd8cc;
+  --foreground: #20212a;
+  --muted-foreground: #6f6b61;
+  --primary: #293f78;
+  --primary-foreground: #f7f5ef;
+  --accent: #71917e;
+  --accent-foreground: #20212a;
+  --border: #ddd8cc;
+  --ring: rgb(32 33 42 / 28%);
+  --destructive: #a9534d;
+  --destructive-foreground: #fcfbf7;
+
+  --status-neutral: #6f6b61;
+  --status-processing: #7086a7;
+  --status-success: #597663;
+  --status-warning: #8a6a3a;
+  --status-error: #a9534d;
+
+  --theme-career: #8b7085;
+  --theme-money: #b28d48;
+  --theme-health: #71917e;
+  --theme-love-life: #c78488;
+  --theme-family-friends: #7086a7;
+  --theme-personal-growth: #c47d67;
+  --theme-fun-recreation: #9a83a5;
+  --theme-home-lifestyle: #8d877b;
+
+  --orion-radius-sm: 8px;
+  --orion-radius-md: 10px;
+  --orion-radius-lg: 14px;
+  --orion-radius-xl: 16px;
+  --radius-pill: 999px;
+
+  --content-max: 1440px;
+  --sidebar-width: clamp(264px, 18vw, 296px);
+  --text-measure-default: 68ch;
+  --text-measure-wide: 80ch;
+  --touch-target: 44px;
+
+  --motion-fast: 140ms;
+  --motion-standard: 180ms;
+  --motion-overlay: 220ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --shadow-overlay: 0 16px 48px rgb(32 33 42 / 12%);
+}
+
+@theme inline {
+  --font-sans:
+    var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-serif: var(--font-lora), Georgia, serif;
+
+  --text-display: 2.5rem;
+  --text-display--line-height: 3rem;
+  --text-section-title: 1.5rem;
+  --text-section-title--line-height: 2rem;
+  --text-component-title: 1.25rem;
+  --text-component-title--line-height: 1.75rem;
+  --text-button: 0.9375rem;
+  --text-button--line-height: 1.25rem;
+  --text-metadata: 0.875rem;
+  --text-metadata--line-height: 1.25rem;
+
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-input-background: var(--input-background);
+  --color-input: var(--input);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+
+  --color-status-neutral: var(--status-neutral);
+  --color-status-processing: var(--status-processing);
+  --color-status-success: var(--status-success);
+  --color-status-warning: var(--status-warning);
+  --color-status-error: var(--status-error);
+
+  --color-theme-career: var(--theme-career);
+  --color-theme-money: var(--theme-money);
+  --color-theme-health: var(--theme-health);
+  --color-theme-love-life: var(--theme-love-life);
+  --color-theme-family-friends: var(--theme-family-friends);
+  --color-theme-personal-growth: var(--theme-personal-growth);
+  --color-theme-fun-recreation: var(--theme-fun-recreation);
+  --color-theme-home-lifestyle: var(--theme-home-lifestyle);
+
+  --radius-sm: var(--orion-radius-sm);
+  --radius-md: var(--orion-radius-md);
+  --radius-lg: var(--orion-radius-lg);
+  --radius-xl: var(--orion-radius-xl);
+}

@@ -1,0 +1,8 @@
+.next
+coverage
+docs/figma-audit.md
+docs/frontend-architecture.md
+node_modules
+package-lock.json
+playwright-report
+test-results
