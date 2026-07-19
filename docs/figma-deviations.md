@@ -12,6 +12,10 @@ This file records known differences between the Figma Make reference and the pro
 ## Entries
 
 - **Screen reference unavailable:** `App.tsx` supplies the five entry fixtures and route transition, but the `EntriesScreen` component body and protected screenshots are absent from the Make export. The production list follows the approved editorial list pattern and uses the source fixture content.
+- **Screenshot hierarchy:** The later Entries screenshot is used for its compact header, short dates, flat divided rows, two-line excerpts, and full-row navigation. The preview notice and question-mark control belong to the design tool and are intentionally omitted.
+- **Filters and pagination:** Production retains subdued text and status filters plus pagination because they are established application behavior. Page sizes use the shared 10, 20, and 50 configuration across collection screens; selected options use the semantic beige `secondary` surface instead of the green accent shown by the prototype control.
+- **Accessible theme labels:** The screenshot represents themes as color-only dots. Production keeps compact labeled `ThemeBadge` components so color is never the only identifier.
+- **Approved shell and typography:** The shared sidebar, authenticated identity, Inter interface roles, and Lora journal-excerpt role remain unchanged rather than copying the screenshot's page-specific shell and wordmark treatment.
 - **Theme vocabulary:** The prototype's Growth, Creativity, Connection, Health, and Work labels are mapped to the approved eight-theme registry rather than retaining a second page-specific palette.
 - **Route behavior:** The prototype uses local screen state. Production entry rows use stable `/entries/[entryId]` URLs and preserve the processing and failed states from the source data.
 

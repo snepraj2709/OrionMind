@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+
+import { collectionPageSizeOptions } from '@/constants/pagination';
 
 import type { EntriesRepository } from './repository';
 import { EntriesScreen } from './entries-screen';
 import type { EntriesResult, EntrySummary } from './model';
+import { entryKeys } from './query-keys';
 
 const completedEntry: EntrySummary = {
   id: 'entry-1',
@@ -33,14 +36,17 @@ function repositoryWithList(
   };
 }
 
-function renderEntries(repository: EntriesRepository) {
+function renderEntries(repository: EntriesRepository, pendingReviewCount = 0) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <EntriesScreen repository={repository} />
+      <EntriesScreen
+        pendingReviewCount={pendingReviewCount}
+        repository={repository}
+      />
     </QueryClientProvider>,
   );
 }
@@ -56,25 +62,79 @@ describe('EntriesScreen', () => {
 
   it('renders successful, processing, and failed entries', async () => {
     const repository = repositoryWithList(
-      vi
-        .fn()
-        .mockResolvedValue(
-          result([
-            completedEntry,
-            { ...completedEntry, id: 'entry-2', status: 'processing' },
-            { ...completedEntry, id: 'entry-3', status: 'failed' },
-          ]),
-        ),
+      vi.fn().mockResolvedValue(
+        result([
+          completedEntry,
+          {
+            ...completedEntry,
+            id: 'entry-2',
+            inputType: 'voice',
+            status: 'processing',
+          },
+          { ...completedEntry, id: 'entry-3', status: 'failed' },
+        ]),
+      ),
     );
 
     renderEntries(repository);
 
-    expect(await screen.findByText('Complete')).toBeVisible();
+    expect(await screen.findAllByText(completedEntry.content)).toHaveLength(3);
     expect(screen.getByText('Processing')).toBeVisible();
     expect(screen.getByText('Processing failed')).toBeVisible();
-    expect(screen.getAllByRole('link', { name: /July 10, 2025/ })).toHaveLength(
-      3,
+    expect(screen.getAllByRole('link', { name: /10 Jul/ })).toHaveLength(3);
+    expect(screen.getByText('Voice')).toBeVisible();
+    expect(screen.getAllByText('Personal Growth')).toHaveLength(3);
+    expect(screen.getAllByText(completedEntry.content)[0]).toHaveClass(
+      'line-clamp-2',
     );
+    expect(screen.queryByText('Complete')).not.toBeInTheDocument();
+  });
+
+  it('shows dynamic entry and review totals with the approved pagination sizes', async () => {
+    const listEntries = vi
+      .fn<EntriesRepository['listEntries']>()
+      .mockResolvedValue(result([completedEntry]));
+
+    renderEntries(repositoryWithList(listEntries), 3);
+
+    expect(
+      await screen.findByLabelText('1 entry, 3 awaiting review'),
+    ).toBeVisible();
+    expect(listEntries).toHaveBeenCalledWith(
+      expect.objectContaining({ pageSize: 10 }),
+    );
+    expect(
+      screen.getByRole('combobox', { name: 'Rows per page' }),
+    ).toHaveTextContent('10');
+    expect(collectionPageSizeOptions).toEqual([10, 20, 50]);
+  });
+
+  it('keeps status filtering and resets the query to the first page', async () => {
+    const processingEntry = {
+      ...completedEntry,
+      id: 'entry-processing',
+      status: 'processing' as const,
+    };
+    const listEntries = vi.fn<EntriesRepository['listEntries']>(
+      async (query) =>
+        query.status === 'processing'
+          ? result([processingEntry], 2)
+          : result([completedEntry, processingEntry], 2),
+    );
+    const user = userEvent.setup();
+
+    renderEntries(repositoryWithList(listEntries));
+    await screen.findByLabelText('2 entries, 0 awaiting review');
+    await user.click(screen.getByRole('combobox', { name: 'Status' }));
+    await user.click(screen.getByRole('option', { name: 'Processing' }));
+
+    await waitFor(() =>
+      expect(listEntries).toHaveBeenLastCalledWith(
+        expect.objectContaining({ pageIndex: 0, status: 'processing' }),
+      ),
+    );
+    expect(screen.getAllByText('Processing')).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: /10 Jul/ })).toHaveLength(1);
   });
 
   it('renders an empty journal with a direct action', async () => {
@@ -99,7 +159,7 @@ describe('EntriesScreen', () => {
     const user = userEvent.setup();
 
     renderEntries(repository);
-    await screen.findByText('Complete');
+    await screen.findByText(completedEntry.content);
     await user.type(
       screen.getByRole('searchbox', { name: 'Search entries' }),
       'missing',
@@ -121,7 +181,7 @@ describe('EntriesScreen', () => {
     expect(await screen.findByText('Entries are unavailable')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
 
-    expect(await screen.findByText('Complete')).toBeVisible();
+    expect(await screen.findByText(completedEntry.content)).toBeVisible();
     expect(listEntries).toHaveBeenCalledTimes(2);
   });
 
@@ -136,13 +196,18 @@ describe('EntriesScreen', () => {
             resolveRefresh = resolve;
           }),
       );
-    const user = userEvent.setup();
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <EntriesScreen repository={repositoryWithList(listEntries)} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText(completedEntry.content);
+    void queryClient.invalidateQueries({ queryKey: entryKeys.lists });
 
-    renderEntries(repositoryWithList(listEntries));
-    await screen.findByText('Complete');
-    await user.click(screen.getByRole('button', { name: 'Refresh' }));
-
-    expect(screen.getByText('Refreshing entries…')).toBeVisible();
+    expect(await screen.findByText('Refreshing entries…')).toBeVisible();
     expect(screen.getByText(completedEntry.content)).toBeVisible();
 
     resolveRefresh?.(result([completedEntry]));

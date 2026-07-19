@@ -14,3 +14,4 @@ export {
   ApprovalAwareNavigation,
   ReviewQueueSummary,
 } from './review-navigation';
+export { usePendingApprovalCount } from './queries';

@@ -70,7 +70,7 @@ export function SelectField({
           <SelectContent>
             {options.map((option) => (
               <SelectItem
-                className="type-body min-touch-target radius-control px-2 py-2"
+                className="type-body min-touch-target radius-control data-[state=checked]:bg-secondary! data-[state=checked]:text-foreground! data-[highlighted]:bg-secondary! data-[highlighted]:text-foreground! focus:bg-secondary! focus:text-foreground! px-2 py-2"
                 disabled={option.disabled}
                 key={option.value}
                 value={option.value}
