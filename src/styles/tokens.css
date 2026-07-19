@@ -1,4 +1,6 @@
 :root {
+  color-scheme: light;
+
   --background: #f7f5ef;
   --card: #fcfbf7;
   --card-foreground: #20212a;
@@ -17,15 +19,15 @@
   --accent: #71917e;
   --accent-foreground: #20212a;
   --border: #ddd8cc;
-  --ring: rgb(32 33 42 / 28%);
+  --ring: color-mix(in srgb, var(--foreground) 28%, transparent);
   --destructive: #a9534d;
   --destructive-foreground: #fcfbf7;
 
-  --status-neutral: #6f6b61;
-  --status-processing: #7086a7;
-  --status-success: #597663;
-  --status-warning: #8a6a3a;
-  --status-error: #a9534d;
+  --status-neutral: var(--muted-foreground);
+  --status-processing: var(--primary);
+  --status-success: var(--accent);
+  --status-warning: var(--theme-money);
+  --status-error: var(--destructive);
 
   --theme-career: #8b7085;
   --theme-money: #b28d48;
@@ -42,8 +44,20 @@
   --orion-radius-xl: 16px;
   --radius-pill: 999px;
 
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-20: 80px;
+
   --content-max: 1440px;
   --sidebar-width: clamp(264px, 18vw, 296px);
+  --sidebar-collapse-breakpoint: 64rem;
   --text-measure-default: 68ch;
   --text-measure-wide: 80ch;
   --touch-target: 44px;
@@ -52,24 +66,14 @@
   --motion-standard: 180ms;
   --motion-overlay: 220ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --shadow-overlay: 0 16px 48px rgb(32 33 42 / 12%);
+  --shadow-overlay: 0 16px 48px
+    color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 @theme inline {
   --font-sans:
     var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-serif: var(--font-lora), Georgia, serif;
-
-  --text-display: 2.5rem;
-  --text-display--line-height: 3rem;
-  --text-section-title: 1.5rem;
-  --text-section-title--line-height: 2rem;
-  --text-component-title: 1.25rem;
-  --text-component-title--line-height: 1.75rem;
-  --text-button: 0.9375rem;
-  --text-button--line-height: 1.25rem;
-  --text-metadata: 0.875rem;
-  --text-metadata--line-height: 1.25rem;
 
   --color-background: var(--background);
   --color-card: var(--card);
@@ -112,4 +116,19 @@
   --radius-md: var(--orion-radius-md);
   --radius-lg: var(--orion-radius-lg);
   --radius-xl: var(--orion-radius-xl);
+
+  --spacing-*: initial;
+  --spacing-1: var(--space-1);
+  --spacing-2: var(--space-2);
+  --spacing-3: var(--space-3);
+  --spacing-4: var(--space-4);
+  --spacing-6: var(--space-6);
+  --spacing-8: var(--space-8);
+  --spacing-10: var(--space-10);
+  --spacing-12: var(--space-12);
+  --spacing-16: var(--space-16);
+  --spacing-20: var(--space-20);
+
+  /* Media-query conditions cannot resolve custom properties at runtime. */
+  --breakpoint-sidebar: 64rem;
 }

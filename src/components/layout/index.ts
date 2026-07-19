@@ -1,1 +1,1 @@
-export {};
+export { PageShell } from './page-shell';

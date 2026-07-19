@@ -1,5 +1,8 @@
 'use client';
 
+import { Typography } from '@/components/design-system';
+import { PageShell } from '@/components/layout';
+
 interface ErrorFallbackProps {
   title: string;
   description: string;
@@ -12,15 +15,19 @@ export function ErrorFallback({
   onRetry,
 }: ErrorFallbackProps) {
   return (
-    <main className="page-shell" id="main-content">
-      <div className="max-w-text space-y-4" role="alert">
+    <PageShell as="main" id="main-content">
+      <div className="text-measure space-y-4" role="alert">
         <div className="space-y-2">
-          <h1 className="text-page-title">{title}</h1>
-          <p className="text-muted-foreground">{description}</p>
+          <Typography as="h1" variant="pageTitle">
+            {title}
+          </Typography>
+          <Typography className="text-muted-foreground" variant="body">
+            {description}
+          </Typography>
         </div>
         {onRetry ? (
           <button
-            className="text-button bg-primary text-primary-foreground focus-visible:ring-ring min-h-11 rounded-md px-4 py-2.5 font-semibold focus-visible:ring-2 focus-visible:outline-none"
+            className="type-button bg-primary text-primary-foreground focus-visible:ring-ring min-touch-target radius-interactive px-4 py-3 focus-visible:ring-2 focus-visible:outline-none"
             type="button"
             onClick={onRetry}
           >
@@ -28,6 +35,6 @@ export function ErrorFallback({
           </button>
         ) : null}
       </div>
-    </main>
+    </PageShell>
   );
 }

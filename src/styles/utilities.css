@@ -1,0 +1,45 @@
+@utility page-shell {
+  width: 100%;
+  max-width: var(--content-max);
+  margin-inline: auto;
+  padding-inline: clamp(20px, 3.5vw, 56px);
+  padding-block: clamp(28px, 4vw, 56px);
+}
+
+@utility text-measure {
+  max-width: var(--text-measure-default);
+}
+
+@utility text-measure-wide {
+  max-width: var(--text-measure-wide);
+}
+
+@utility min-touch-target {
+  min-width: var(--touch-target);
+  min-height: var(--touch-target);
+}
+
+@utility sidebar-width {
+  width: var(--sidebar-width);
+  flex: 0 0 var(--sidebar-width);
+}
+
+@utility radius-control {
+  border-radius: var(--orion-radius-sm);
+}
+
+@utility radius-interactive {
+  border-radius: var(--orion-radius-md);
+}
+
+@utility radius-card {
+  border-radius: var(--orion-radius-lg);
+}
+
+@utility radius-surface {
+  border-radius: var(--orion-radius-xl);
+}
+
+@utility radius-pill {
+  border-radius: var(--radius-pill);
+}

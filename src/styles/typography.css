@@ -1,0 +1,92 @@
+@utility type-display {
+  font-family: var(--font-sans);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 48px;
+}
+
+@utility type-page-title {
+  font-family: var(--font-sans);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 40px;
+}
+
+@utility type-section-title {
+  font-family: var(--font-sans);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 32px;
+}
+
+@utility type-component-title {
+  font-family: var(--font-sans);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 28px;
+}
+
+@utility type-reflective-statement {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 38px;
+}
+
+@utility type-journal-excerpt {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 30px;
+}
+
+@utility type-body-large {
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+@utility type-body {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+@utility type-navigation {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+@utility type-button {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+@utility type-body-small {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+@utility type-metadata {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+@utility type-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
