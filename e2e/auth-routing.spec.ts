@@ -8,12 +8,12 @@ test('allows public route access', async ({ page }) => {
   await expect(page).toHaveURL(routes.home.path);
   await expect(
     page.getByRole('heading', {
-      name: 'Make space for the thoughts that shape you.',
+      name: 'A place to see your subconscious and what it might be be telling about you.',
     }),
   ).toBeVisible();
 
   const createAccountLinks = page.getByRole('link', {
-    name: 'Create Account',
+    name: 'Create account',
   });
   await expect(createAccountLinks).toHaveCount(3);
   for (const link of await createAccountLinks.all()) {
@@ -35,10 +35,10 @@ test('keeps every landing action available without mobile overflow', async ({
 
   await expect(
     page.getByRole('heading', {
-      name: 'Make space for the thoughts that shape you.',
+      name: 'A place to see your subconscious and what it might be be telling about you.',
     }),
   ).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Create Account' })).toHaveCount(
+  await expect(page.getByRole('link', { name: 'Create account' })).toHaveCount(
     3,
   );
 
@@ -48,6 +48,31 @@ test('keeps every landing action available without mobile overflow', async ({
   }));
 
   expect(pageWidth.content).toBeLessThanOrEqual(pageWidth.viewport);
+
+  const viewportSections = await page
+    .locator('[data-viewport-section]')
+    .evaluateAll((sections) =>
+      sections.map((section) => ({
+        height: section.getBoundingClientRect().height,
+        contentHeight: section.scrollHeight,
+      })),
+    );
+
+  expect(viewportSections).toHaveLength(3);
+  for (const section of viewportSections) {
+    expect(section.height).toBeGreaterThanOrEqual(900);
+    expect(section.contentHeight).toBeLessThanOrEqual(section.height);
+  }
+
+  const footer = page.getByRole('contentinfo');
+  await expect(
+    footer.getByRole('heading', {
+      name: 'Begin reflecting to see the unseen.',
+    }),
+  ).toBeVisible();
+  await expect(footer.getByRole('link', { name: 'Twitter / X' })).toBeVisible();
+  await expect(footer.getByRole('link', { name: 'LinkedIn' })).toBeVisible();
+  await expect(footer.getByRole('link', { name: 'Instagram' })).toBeVisible();
 });
 
 test('redirects protected routes to login', async ({ page }) => {
