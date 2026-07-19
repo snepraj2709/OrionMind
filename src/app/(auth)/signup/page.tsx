@@ -2,11 +2,9 @@ import type { Metadata } from 'next';
 import type { Route } from 'next';
 import { redirect } from 'next/navigation';
 
-import { Typography } from '@/components/design-system';
 import { AuthShell, BrandMark } from '@/components/layout';
-import { AppLink } from '@/components/navigation';
 import { pathWithRedirect, routes, safeRedirectPath } from '@/config/routes';
-import { SignUpForm } from '@/features/auth';
+import { AuthRoutePrompt, SignUpForm } from '@/features/auth';
 import { getCurrentUser } from '@/services/auth';
 
 export const metadata: Metadata = { title: routes.signup.label };
@@ -30,19 +28,16 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   return (
     <AuthShell
       brand={<BrandMark />}
-      description="Create a private place for your entries and reflections."
+      description="A private space to know yourself better."
       footer={
-        <Typography className="text-muted-foreground" variant="bodySmall">
-          Already have an account?{' '}
-          <AppLink
-            className="type-metadata"
-            href={pathWithRedirect(routes.login.path, redirectTo) as Route}
-          >
-            Log in
-          </AppLink>
-        </Typography>
+        <AuthRoutePrompt
+          actionLabel="Sign in"
+          href={pathWithRedirect(routes.login.path, redirectTo) as Route}
+          prompt="Already have one?"
+        />
       }
-      title={routes.signup.label}
+      title="Begin your journal"
+      variant="prominent"
     >
       <SignUpForm redirectTo={redirectTo} />
     </AuthShell>

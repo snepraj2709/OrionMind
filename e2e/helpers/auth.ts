@@ -11,6 +11,6 @@ export async function logIn(page: Page) {
   await page.goto(routes.login.path);
   await page.getByLabel('Email').fill(testCredentials.email);
   await page.getByLabel('Password').fill(testCredentials.password);
-  await page.getByRole('button', { name: 'Log in' }).click();
+  await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(routes.entries.path);
 }

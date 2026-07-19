@@ -13,6 +13,7 @@ export interface AuthShellProps {
   footer?: ReactNode;
   className?: string;
   contained?: boolean;
+  variant?: 'default' | 'prominent';
 }
 
 export function AuthShell({
@@ -23,23 +24,42 @@ export function AuthShell({
   description,
   footer,
   title,
+  variant = 'default',
 }: AuthShellProps) {
+  const isProminent = variant === 'prominent';
+
   return (
     <PublicShell contained={contained}>
-      <div className={cn('w-full max-w-md space-y-8', className)}>
-        {brand ? <div>{brand}</div> : null}
-        <header className="space-y-2">
-          <Typography as="h1" variant="pageTitle">
-            {title}
-          </Typography>
-          {description ? (
-            <Typography className="text-muted-foreground" variant="body">
-              {description}
-            </Typography>
-          ) : null}
-        </header>
-        {children}
-        {footer ? <footer>{footer}</footer> : null}
+      <div
+        className={cn(
+          'w-full',
+          isProminent ? 'lg:w-1/2' : 'max-w-md',
+          className,
+        )}
+      >
+        <div className={cn('space-y-8', isProminent && 'lg:space-y-16')}>
+          {brand ? <div>{brand}</div> : null}
+          <div className={cn('space-y-6', isProminent && 'lg:space-y-8')}>
+            <header className="space-y-2">
+              <Typography as="h1" variant="pageTitle">
+                {title}
+              </Typography>
+              {description ? (
+                <Typography className="text-muted-foreground" variant="body">
+                  {description}
+                </Typography>
+              ) : null}
+            </header>
+            {children}
+            {footer ? (
+              <footer
+                className={cn(isProminent && 'flex justify-center text-center')}
+              >
+                {footer}
+              </footer>
+            ) : null}
+          </div>
+        </div>
       </div>
     </PublicShell>
   );

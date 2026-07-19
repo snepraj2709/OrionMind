@@ -12,6 +12,7 @@ export const typographyVariants = {
   bodySmall: 'type-body-small',
   metadata: 'type-metadata',
   eyebrow: 'type-eyebrow',
+  brandWordmarkProminent: 'type-brand-wordmark-prominent',
 } as const;
 
 export type TypographyVariant = keyof typeof typographyVariants;

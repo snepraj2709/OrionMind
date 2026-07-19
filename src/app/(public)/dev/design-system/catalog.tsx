@@ -57,6 +57,7 @@ import {
 import {
   AppShell,
   AuthShell,
+  BrandMark,
   ContentGrid,
   MobileNavigation,
   PageHeader,
@@ -158,16 +159,14 @@ export function DesignSystemCatalog() {
   const sidebar = (
     <Sidebar
       footer={<Typography variant="metadata">Development only</Typography>}
-      header={<Typography variant="componentTitle">Orion</Typography>}
+      header={<BrandMark />}
     >
       <CatalogNavigation />
     </Sidebar>
   );
 
   const mobileNavigation = (
-    <MobileNavigation
-      brand={<Typography variant="componentTitle">Orion</Typography>}
-    >
+    <MobileNavigation brand={<BrandMark />}>
       <CatalogNavigation />
     </MobileNavigation>
   );

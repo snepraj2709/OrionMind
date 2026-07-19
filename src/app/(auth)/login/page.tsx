@@ -2,11 +2,9 @@ import type { Metadata } from 'next';
 import type { Route } from 'next';
 import { redirect } from 'next/navigation';
 
-import { Typography } from '@/components/design-system';
 import { AuthShell, BrandMark } from '@/components/layout';
-import { AppLink } from '@/components/navigation';
 import { pathWithRedirect, routes, safeRedirectPath } from '@/config/routes';
-import { SignInForm } from '@/features/auth';
+import { AuthRoutePrompt, SignInForm } from '@/features/auth';
 import { getCurrentUser } from '@/services/auth';
 
 export const metadata: Metadata = { title: routes.login.label };
@@ -30,19 +28,16 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   return (
     <AuthShell
       brand={<BrandMark />}
-      description="Return to your private space for journaling and reflection."
+      description="Sign in to continue your practice."
       footer={
-        <Typography className="text-muted-foreground" variant="bodySmall">
-          New to Orion?{' '}
-          <AppLink
-            className="type-metadata"
-            href={pathWithRedirect(routes.signup.path, redirectTo) as Route}
-          >
-            Create an account
-          </AppLink>
-        </Typography>
+        <AuthRoutePrompt
+          actionLabel="Register"
+          href={pathWithRedirect(routes.signup.path, redirectTo) as Route}
+          prompt="No account yet?"
+        />
       }
-      title={routes.login.label}
+      title="Welcome back"
+      variant="prominent"
     >
       <SignInForm redirectTo={redirectTo} />
     </AuthShell>

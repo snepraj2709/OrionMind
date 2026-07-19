@@ -131,7 +131,7 @@ test('returns to the requested protected destination after login', async ({
 
   await page.getByLabel('Email').fill(testCredentials.email);
   await page.getByLabel('Password').fill(testCredentials.password);
-  await page.getByRole('button', { name: 'Log in' }).click();
+  await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page).toHaveURL(routes.newEntry.path);
   await expect(
@@ -143,7 +143,7 @@ test('preserves the requested destination across authentication routes', async (
   page,
 }) => {
   await page.goto(routes.newEntry.path);
-  await page.getByRole('link', { name: 'Create an account' }).click();
+  await page.getByRole('link', { name: 'Register' }).click();
 
   await expect(page).toHaveURL(
     new RegExp(`${routes.signup.path}\\?redirect=%2Fentries%2Fnew$`),

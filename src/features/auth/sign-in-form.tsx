@@ -49,6 +49,7 @@ export function SignInForm({ redirectTo }: SignInFormProps) {
         <TextInput
           autoComplete="email"
           inputMode="email"
+          placeholder="you@example.com"
           {...register('email')}
         />
       </FormField>
@@ -77,9 +78,9 @@ export function SignInForm({ redirectTo }: SignInFormProps) {
       <SubmitButton
         className="w-full"
         loading={isPending}
-        loadingLabel="Logging in"
+        loadingLabel="Signing in"
       >
-        Log in
+        Sign in
       </SubmitButton>
     </form>
   );

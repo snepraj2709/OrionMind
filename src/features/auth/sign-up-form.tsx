@@ -43,7 +43,11 @@ export function SignUpForm({ redirectTo }: SignUpFormProps) {
         label="Full name"
         required
       >
-        <TextInput autoComplete="name" {...register('name')} />
+        <TextInput
+          autoComplete="name"
+          placeholder="Your name"
+          {...register('name')}
+        />
       </FormField>
       <FormField
         error={errors.email?.message}
@@ -54,6 +58,7 @@ export function SignUpForm({ redirectTo }: SignUpFormProps) {
         <TextInput
           autoComplete="email"
           inputMode="email"
+          placeholder="you@example.com"
           {...register('email')}
         />
       </FormField>

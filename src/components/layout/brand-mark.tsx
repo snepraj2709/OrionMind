@@ -10,7 +10,7 @@ export function BrandMark() {
         <span className="bg-foreground/50 radius-pill size-2" />
         <span className="bg-foreground/20 radius-pill size-1" />
       </span>
-      <Typography as="span" variant="componentTitle">
+      <Typography as="span" variant="brandWordmarkProminent">
         Orion
       </Typography>
     </AppLink>

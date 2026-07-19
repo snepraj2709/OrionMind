@@ -6,7 +6,7 @@ This file records known differences between the Figma Make reference and the pro
 
 - **Protected screenshots unavailable:** The Make integration exposes the application-shell source, but the protected screen component bodies and screenshots are absent from the exported bundle. The bundled PNG assets contain repeated authentication captures and blank frames. The in-app browser connection is also unavailable in this session. Shell comparison is therefore source-based until a protected Make preview can be captured.
 - **Sidebar width:** The Make prototype hardcodes a 224px desktop sidebar. Production uses the approved `clamp(264px, 18vw, 296px)` design-system token.
-- **Wordmark typography:** The Make prototype uses an italic serif wordmark. Production keeps the shared Orion wordmark in Inter because the approved design system reserves Lora for reflective and long-form content.
+- **Wordmark typography:** The shared Orion brandmark follows the Login and Signup treatment everywhere: an italic Lora wordmark with the same three-dot mark, dimensions, and spacing across public and protected shells.
 - **Mobile navigation:** The prototype uses a hand-built overlay. Production uses the shared accessible sheet with focus management, escape-key dismissal, and the same navigation manifest as desktop.
 
 ## Entries
