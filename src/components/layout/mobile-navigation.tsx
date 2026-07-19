@@ -1,7 +1,7 @@
 'use client';
 
 import { Menu, X } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type MouseEvent, type ReactNode, useState } from 'react';
 
 import { AppButton, Typography } from '@/components/design-system';
 import {
@@ -30,6 +30,14 @@ export function MobileNavigation({
   description = 'Navigate Orion',
   title = 'Menu',
 }: MobileNavigationProps) {
+  const [open, setOpen] = useState(false);
+
+  function closeAfterNavigation(event: MouseEvent<HTMLElement>) {
+    if (event.target instanceof Element && event.target.closest('a[href]')) {
+      setOpen(false);
+    }
+  }
+
   return (
     <header
       className={cn(
@@ -38,7 +46,7 @@ export function MobileNavigation({
       )}
     >
       {brand}
-      <Sheet>
+      <Sheet onOpenChange={setOpen} open={open}>
         <SheetTrigger asChild>
           <AppButton aria-label="Open navigation" variant="icon">
             <Menu aria-hidden="true" className="icon-md" />
@@ -64,7 +72,11 @@ export function MobileNavigation({
             </div>
             <SheetDescription>{description}</SheetDescription>
           </SheetHeader>
-          <nav aria-label="Mobile navigation" className="min-h-0 flex-1 p-4">
+          <nav
+            aria-label="Mobile navigation"
+            className="min-h-0 flex-1 overflow-y-auto p-4"
+            onClick={closeAfterNavigation}
+          >
             {children}
           </nav>
         </SheetContent>

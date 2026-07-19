@@ -1,6 +1,8 @@
 export { PageShell } from './page-shell';
 export { AppShell, type AppShellProps } from './app-shell';
+export { AppNavigation, type AppNavigationProps } from './app-navigation';
 export { AuthShell, type AuthShellProps } from './auth-shell';
+export { BrandMark } from './brand-mark';
 export { ContentGrid, type ContentGridProps } from './content-grid';
 export {
   MobileNavigation,

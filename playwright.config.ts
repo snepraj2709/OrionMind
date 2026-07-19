@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3100';
+const usesExternalServer = Boolean(process.env.PLAYWRIGHT_BASE_URL);
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -7,7 +10,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL,
     trace: 'on-first-retry',
   },
   projects: [
@@ -16,9 +19,15 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://127.0.0.1:3000/api/health',
-    reuseExistingServer: !process.env.CI,
-  },
+  webServer: usesExternalServer
+    ? undefined
+    : {
+        command: 'npm run build && npm run start -- --port 3100',
+        env: {
+          ORION_MOCK_AUTH_SECRET: 'orion-playwright-mock-auth-only',
+        },
+        timeout: 120_000,
+        url: `${baseURL}/api/health`,
+        reuseExistingServer: !process.env.CI,
+      },
 });
