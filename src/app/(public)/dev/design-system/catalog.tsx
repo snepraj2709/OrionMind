@@ -6,8 +6,11 @@ import {
   Check,
   ChevronRight,
   Home,
+  Infinity,
+  Lightbulb,
   MoreHorizontal,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -144,6 +147,8 @@ function CatalogNavigation() {
 
 export function DesignSystemCatalog() {
   const [segment, setSegment] = useState('week');
+  const [strongSegment, setStrongSegment] = useState('all');
+  const [reflectionSegment, setReflectionSegment] = useState('drivers');
   const [selectValue, setSelectValue] = useState('career');
   const [filterValue, setFilterValue] = useState('all');
   const [dateRange, setDateRange] = useState<DateRangeValue>({
@@ -224,6 +229,9 @@ export function DesignSystemCatalog() {
             <AppButton size="compact" variant="secondary">
               Compact
             </AppButton>
+            <AppButton shape="pill" variant="secondary">
+              Pill feedback action
+            </AppButton>
           </div>
         </Section>
 
@@ -270,6 +278,17 @@ export function DesignSystemCatalog() {
                 onValueChange={setSegment}
                 value={segment}
               />
+              <SegmentedControl
+                ariaLabel="Strong date range"
+                items={[
+                  { value: 'week', label: 'Last 7 days' },
+                  { value: 'month', label: 'Last 30 days' },
+                  { value: 'all', label: 'All entries' },
+                ]}
+                onValueChange={setStrongSegment}
+                value={strongSegment}
+                variant="strong"
+              />
             </div>
             <Tabs
               ariaLabel="Catalog tabs"
@@ -297,6 +316,28 @@ export function DesignSystemCatalog() {
                   ),
                 },
               ]}
+            />
+            <SegmentedControl
+              ariaLabel="Icon segment example"
+              items={[
+                {
+                  value: 'drivers',
+                  label: 'Hidden drivers',
+                  icon: <Lightbulb aria-hidden="true" className="size-4" />,
+                },
+                {
+                  value: 'loops',
+                  label: 'Recurring loops',
+                  icon: <Infinity aria-hidden="true" className="size-4" />,
+                },
+                {
+                  value: 'tensions',
+                  label: 'Inner tensions',
+                  icon: <Zap aria-hidden="true" className="size-4" />,
+                },
+              ]}
+              onValueChange={setReflectionSegment}
+              value={reflectionSegment}
             />
           </div>
         </Section>
@@ -490,14 +531,35 @@ export function DesignSystemCatalog() {
         </Section>
 
         <Section headingId="grid-heading" title="Content grid">
-          <ContentGrid columns="two">
+          <div className="space-y-8">
+            <ContentGrid columns="two">
+              <Surface className="p-6">
+                <Typography variant="body">Grid column one</Typography>
+              </Surface>
+              <Surface className="p-6">
+                <Typography variant="body">Grid column two</Typography>
+              </Surface>
+            </ContentGrid>
             <Surface className="p-6">
-              <Typography variant="body">Grid column one</Typography>
+              <ContentGrid columns="reflectionSplit">
+                <Typography variant="body">Reflection split 5</Typography>
+                <Typography variant="body">Reflection split 4</Typography>
+              </ContentGrid>
             </Surface>
             <Surface className="p-6">
-              <Typography variant="body">Grid column two</Typography>
+              <ContentGrid columns="reflectionTriptych">
+                <Typography className="p-4" variant="body">
+                  Triptych 9
+                </Typography>
+                <Typography className="p-4" variant="body">
+                  Triptych 11
+                </Typography>
+                <Typography className="p-4" variant="body">
+                  Triptych 10
+                </Typography>
+              </ContentGrid>
             </Surface>
-          </ContentGrid>
+          </div>
         </Section>
       </PageShell>
     </AppShell>

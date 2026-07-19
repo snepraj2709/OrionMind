@@ -71,6 +71,13 @@ export const layoutTokens = {
   wideTextMeasure: 'var(--text-measure-wide)',
 } as const;
 
+export const semanticColorTokens = {
+  primary: 'var(--primary)',
+  counterpoint: 'var(--counterpoint)',
+  selectionStrong: 'var(--selection-strong)',
+  selectionStrongForeground: 'var(--selection-strong-foreground)',
+} as const;
+
 export const responsiveLayoutVariants = {
   desktopSidebar: 'sidebar-width hidden sidebar:flex',
   collapsedNavigation: 'flex sidebar:hidden',

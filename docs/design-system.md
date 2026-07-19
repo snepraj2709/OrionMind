@@ -55,20 +55,23 @@ Raw values live only in `src/styles/tokens.css`. Components use semantic Tailwin
 
 ### Semantic colors
 
-| Token              | Value     | Purpose                           |
-| ------------------ | --------- | --------------------------------- |
-| Background         | `#f7f5ef` | Warm page canvas                  |
-| Card               | `#fcfbf7` | Contained surface                 |
-| Secondary / muted  | `#ebe6da` | Quiet and selected surfaces       |
-| Sidebar            | `#f1eee5` | Desktop navigation surface        |
-| Input background   | `#ede8df` | Form-control fill                 |
-| Foreground         | `#20212a` | Primary text                      |
-| Muted foreground   | `#6f6b61` | Supporting text                   |
-| Primary            | `#293f78` | Primary action                    |
-| Primary foreground | `#f7f5ef` | Content on primary                |
-| Accent             | `#71917e` | Restrained accent and success cue |
-| Border             | `#ddd8cc` | Default one-pixel border          |
-| Destructive        | `#a9534d` | Destructive and error cue         |
+| Token                | Value     | Purpose                           |
+| -------------------- | --------- | --------------------------------- |
+| Background           | `#f7f5ef` | Warm page canvas                  |
+| Card                 | `#fcfbf7` | Contained surface                 |
+| Secondary / muted    | `#ebe6da` | Quiet and selected surfaces       |
+| Sidebar              | `#f1eee5` | Desktop navigation surface        |
+| Input background     | `#ede8df` | Form-control fill                 |
+| Foreground           | `#20212a` | Primary text                      |
+| Muted foreground     | `#6f6b61` | Supporting text                   |
+| Primary              | `#2A407A` | Primary action and loop structure |
+| Primary foreground   | `#f7f5ef` | Content on primary                |
+| Accent               | `#71917e` | Restrained accent and success cue |
+| Counterpoint         | `#A9534C` | Opposing editorial concept        |
+| Strong selection     | `#645846` | Opt-in emphasized range selection |
+| Selection foreground | `#f7f5ef` | Content on a strong selection     |
+| Border               | `#ddd8cc` | Default one-pixel border          |
+| Destructive          | `#a9534d` | Destructive and error cue         |
 
 Status aliases must use the semantic status tokens. Statuses always pair color with text, an icon, or another non-color cue.
 
@@ -97,15 +100,17 @@ Use spacing to group related content before adding more surface treatment. Do no
 
 ## Borders, radii, and elevation
 
-| Role              | Value | Utility              |
-| ----------------- | ----- | -------------------- |
-| Small control     | 8px   | `radius-control`     |
-| Button / input    | 10px  | `radius-interactive` |
-| Card              | 14px  | `radius-card`        |
-| Large surface     | 16px  | `radius-surface`     |
-| Badge / chip only | 999px | `radius-pill`        |
+| Role                                | Value | Utility              |
+| ----------------------------------- | ----- | -------------------- |
+| Small control                       | 8px   | `radius-control`     |
+| Button / input                      | 10px  | `radius-interactive` |
+| Card                                | 14px  | `radius-card`        |
+| Large surface                       | 16px  | `radius-surface`     |
+| Badge / chip / approved pill action | 999px | `radius-pill`        |
 
 Use a one-pixel `border-border` border by default. Do not use shadows on ordinary cards. The single `--shadow-overlay` token is reserved for sheets, drawers, dialogs, and other temporary elevated surfaces.
+
+Pill-shaped actions are an explicit `AppButton` shape variant for compact feedback choices. They keep the shared button typography, focus state, and 44px minimum touch target. Do not reproduce this treatment with page-local radius classes.
 
 ## Layout
 
@@ -122,6 +127,15 @@ Do not constrain an entire page with `max-w-xl`, `max-w-3xl`, or a similar readi
 - `text-measure-wide`: 80ch for journal entries and other long personal writing.
 
 The desktop sidebar uses `clamp(264px, 18vw, 296px)` and collapses below 1024px. Use the typed `responsiveLayoutVariants.desktopSidebar` and `responsiveLayoutVariants.collapsedNavigation` classes to keep both presentations on opposite sides of the same `sidebar` breakpoint. Desktop and collapsed navigation must share one future navigation manifest; a page never owns sidebar state or navigation data.
+
+Reflection compositions may use the shared `ContentGrid` variants:
+
+- `reflectionSplit`: 5:4 columns with one internal separator.
+- `reflectionTriptych`: 9:11:10 columns with separators between regions.
+
+Both variants collapse to one column below the 1024px sidebar breakpoint. The separator changes from vertical to horizontal when stacked.
+
+The brown strong-selection treatment is opt-in through `SegmentedControl variant="strong"`. Default range controls retain the quiet secondary/card treatment. `SegmentedControl` is also the shared compact view switch used by New Entry and Reflections; each item may include a decorative icon while keeping a visible text label and the same keyboard behavior.
 
 ## Responsive and accessibility rules
 

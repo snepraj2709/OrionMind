@@ -1,106 +1,78 @@
-import { Check } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
 
-import { ReflectionCard } from '@/components/cards';
-import { AppButton, Typography } from '@/components/design-system';
-import type { ReflectionViewModel } from './model';
+import { Surface } from '@/components/cards';
+import { Typography } from '@/components/design-system';
+import { ContentGrid } from '@/components/layout';
 
-export type ResonanceValue = 'resonates' | 'partly' | 'rejected';
+import type { ReflectionResponse, ReflectionViewModel } from './model';
+import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface HiddenDriverCardProps {
   driver: ReflectionViewModel['hiddenDriver'];
-  resonance?: ResonanceValue;
-  onResonanceChange: (value: ResonanceValue) => void;
+  response?: ReflectionResponse;
+  onResponseChange: (value: ReflectionResponse) => void;
   onViewEvidence: () => void;
 }
 
 export function HiddenDriverCard({
   driver,
-  onResonanceChange,
+  onResponseChange,
   onViewEvidence,
-  resonance,
+  response,
 }: HiddenDriverCardProps) {
   return (
-    <ReflectionCard
-      className={resonance === 'rejected' ? 'bg-muted' : undefined}
-      footer={
-        <div className="w-full space-y-4">
-          <div className="flex flex-wrap gap-2">
-            <AppButton
-              aria-pressed={resonance === 'resonates'}
-              onClick={() => onResonanceChange('resonates')}
-              size="compact"
-              variant={resonance === 'resonates' ? 'secondary' : 'ghost'}
-            >
-              This resonates
-            </AppButton>
-            <AppButton
-              aria-pressed={resonance === 'partly'}
-              onClick={() => onResonanceChange('partly')}
-              size="compact"
-              variant={resonance === 'partly' ? 'secondary' : 'ghost'}
-            >
-              Partly true
-            </AppButton>
-            <AppButton
-              aria-pressed={resonance === 'rejected'}
-              onClick={() => onResonanceChange('rejected')}
-              size="compact"
-              variant={resonance === 'rejected' ? 'secondary' : 'ghost'}
-            >
-              Not true for me
-            </AppButton>
-            <AppButton onClick={onViewEvidence} size="compact" variant="link">
-              View supporting entries
-            </AppButton>
-          </div>
-          {resonance === 'rejected' ? (
-            <Typography
-              aria-live="polite"
-              className="text-muted-foreground"
-              variant="bodySmall"
-            >
-              Marked as not true for you. Orion will not treat this as an
-              accepted self-pattern.
-            </Typography>
-          ) : null}
-        </div>
+    <Surface
+      className={
+        response === 'rejected' ? 'bg-muted sidebar:p-8 p-6' : 'sidebar:p-8 p-6'
       }
-      statement={driver.statement}
-      supportingText={
-        <span className="space-y-6">
-          <span className="block space-y-2">
-            <span className="type-eyebrow block">Possible underlying need</span>
-            <span className="type-body-large text-foreground block">
-              {driver.underlyingNeed}
-            </span>
-          </span>
-          <span className="flex flex-wrap gap-2">
+    >
+      <ContentGrid columns="reflectionSplit">
+        <div className="sidebar:pr-8 space-y-6">
+          <Typography as="h2" variant="reflectiveStatement">
+            {driver.statement}
+          </Typography>
+          <Typography className="text-muted-foreground" variant="bodyLarge">
+            {driver.underlyingNeed}
+          </Typography>
+          <div className="flex flex-wrap gap-2" aria-label="Hidden drivers">
             {driver.drivers.map((item) => (
               <span
-                className="type-metadata radius-pill bg-secondary text-foreground px-3 py-2"
+                className="type-metadata radius-pill border-border bg-background text-foreground border px-3 py-2"
                 key={item}
               >
                 {item}
               </span>
             ))}
-          </span>
-          <span className="border-border grid gap-3 border-t pt-6 md:grid-cols-3">
+          </div>
+        </div>
+        <div className="space-y-6">
+          <Typography variant="eyebrow">
+            Evidence from your reflections
+          </Typography>
+          <ul className="divide-border divide-y">
             {driver.evidenceStrength.map((item) => (
-              <span className="type-body-small flex gap-2" key={item}>
-                <Check
-                  aria-hidden="true"
-                  className="text-accent mt-1 size-4 shrink-0"
-                />
-                {item}
-              </span>
+              <li className="type-body flex gap-3 py-4 first:pt-0" key={item}>
+                <span aria-hidden="true">•</span>
+                <span>{item}</span>
+              </li>
             ))}
-          </span>
-          <AppButton onClick={onViewEvidence} size="compact" variant="link">
-            Why am I seeing this?
-          </AppButton>
-        </span>
-      }
-      title="What seems to drive you"
-    />
+          </ul>
+          <div className="flex items-center gap-3">
+            <BarChart3
+              aria-hidden="true"
+              className="text-selection-strong size-6"
+            />
+            <Typography variant="body">Observed across 8 entries</Typography>
+          </div>
+        </div>
+      </ContentGrid>
+      <ReflectionResponseBar
+        ariaLabel="Hidden driver feedback"
+        className="border-border mt-8 border-t pt-6"
+        onResponseChange={onResponseChange}
+        onViewEvidence={onViewEvidence}
+        response={response}
+      />
+    </Surface>
   );
 }

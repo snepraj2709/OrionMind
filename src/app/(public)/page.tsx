@@ -14,6 +14,8 @@ import { BrandMark, PageShell } from '@/components/layout';
 import { AppLink } from '@/components/navigation';
 import { routes } from '@/config/routes';
 
+import productOverviewImage from '../../../images/orion-product-overview.png';
+
 export const metadata: Metadata = {
   title: 'A private journal for clearer patterns',
   description:
@@ -224,7 +226,7 @@ export default function HomePage() {
                   className="h-auto w-full"
                   height={941}
                   sizes="(max-width: 1440px) 93vw, 1328px"
-                  src="/images/orion-product-overview.png"
+                  src={productOverviewImage}
                   width={1671}
                 />
               </div>

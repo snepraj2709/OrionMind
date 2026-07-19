@@ -5,7 +5,13 @@ import { logIn } from './helpers/auth';
 
 test.describe.configure({ mode: 'serial' });
 
-test('matches Reflections at desktop width', async ({ page }) => {
+const reflectionViews = [
+  { label: 'Hidden drivers', slug: 'hidden-drivers' },
+  { label: 'Recurring loops', slug: 'recurring-loops' },
+  { label: 'Inner tensions', slug: 'inner-tensions' },
+] as const;
+
+test('matches all Reflections tabs at desktop width', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await logIn(page);
   await page.goto(routes.reflections.path);
@@ -14,38 +20,56 @@ test('matches Reflections at desktop width', async ({ page }) => {
     page.getByRole('heading', { level: 1, name: routes.reflections.label }),
   ).toBeVisible();
   await expect(
-    page.getByText(/Patterns taking shape across 23 entries/),
-  ).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'What seems to drive you' }),
+    page.getByText('Patterns taking shape across 8 entries from 14 Apr–8 May.'),
   ).toBeVisible();
 
-  await expect(page).toHaveScreenshot('reflections-desktop.png', {
-    fullPage: true,
-  });
+  for (const view of reflectionViews) {
+    await page.getByRole('radio', { name: view.label }).click();
+    const panel = page.getByRole('region', {
+      name: `${view.label} reflection`,
+    });
+    await expect(panel).toBeVisible();
+
+    const panelBox = await panel.boundingBox();
+    expect(panelBox?.height).toBeLessThanOrEqual(1000);
+
+    await expect(page).toHaveScreenshot(
+      `reflections-${view.slug}-desktop.png`,
+      { fullPage: true },
+    );
+  }
 });
 
-test('matches Reflections without mobile page overflow', async ({ page }) => {
+test('matches all Reflections tabs without mobile page overflow', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 320, height: 900 });
   await logIn(page);
   await page.goto(routes.reflections.path);
 
   await expect(
-    page.getByRole('heading', { name: 'What seems to drive you' }),
+    page.getByText('Patterns taking shape across 8 entries from 14 Apr–8 May.'),
   ).toBeVisible();
 
-  const dimensions = await page.evaluate(() => ({
-    content: document.documentElement.scrollWidth,
-    viewport: document.documentElement.clientWidth,
-  }));
-  expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+  for (const view of reflectionViews) {
+    await page.getByRole('radio', { name: view.label }).click();
+    await expect(
+      page.getByRole('region', { name: `${view.label} reflection` }),
+    ).toBeVisible();
 
-  await expect(page).toHaveScreenshot('reflections-mobile.png', {
-    fullPage: true,
-  });
+    const dimensions = await page.evaluate(() => ({
+      content: document.documentElement.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+    }));
+    expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
+
+    await expect(page).toHaveScreenshot(`reflections-${view.slug}-mobile.png`, {
+      fullPage: true,
+    });
+  }
 });
 
-test('reveals evidence intentionally and records rejected insight feedback', async ({
+test('reveals contextual evidence and records rejected insight feedback', async ({
   page,
 }) => {
   await logIn(page);
@@ -54,7 +78,7 @@ test('reveals evidence intentionally and records rejected insight feedback', asy
   const originalSentence =
     'Explaining a difficult idea to someone else made the whole subject click for me.';
   await expect(page.getByText(originalSentence)).toHaveCount(0);
-  await page.getByRole('button', { name: 'View supporting entries' }).click();
+  await page.getByRole('button', { name: 'Why am I seeing this?' }).click();
   await expect(
     page.getByRole('heading', { name: 'Supporting entries' }),
   ).toBeVisible();

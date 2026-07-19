@@ -1,11 +1,14 @@
 'use client';
 
+import type { ReactNode } from 'react';
+
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 
 export interface SegmentedControlItem {
   value: string;
   label: string;
+  icon?: ReactNode;
   disabled?: boolean;
 }
 
@@ -16,7 +19,14 @@ export interface SegmentedControlProps {
   defaultValue?: string;
   onValueChange?: (value: string) => void;
   className?: string;
+  variant?: 'default' | 'strong';
 }
+
+const itemVariantClasses = {
+  default: 'data-[state=on]:bg-card data-[state=on]:text-primary',
+  strong:
+    'data-[state=on]:bg-selection-strong data-[state=on]:text-selection-strong-foreground',
+} as const;
 
 export function SegmentedControl({
   ariaLabel,
@@ -25,6 +35,7 @@ export function SegmentedControl({
   items,
   onValueChange,
   value,
+  variant = 'default',
 }: SegmentedControlProps) {
   return (
     <ToggleGroup
@@ -42,11 +53,15 @@ export function SegmentedControl({
     >
       {items.map((item) => (
         <ToggleGroupItem
-          className="type-button control-compact radius-control data-[state=on]:bg-card data-[state=on]:text-primary"
+          className={cn(
+            'type-button control-compact radius-control',
+            itemVariantClasses[variant],
+          )}
           disabled={item.disabled}
           key={item.value}
           value={item.value}
         >
+          {item.icon}
           {item.label}
         </ToggleGroupItem>
       ))}

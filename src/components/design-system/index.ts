@@ -5,6 +5,7 @@ export {
 } from './typography';
 export {
   AppButton,
+  type AppButtonShape,
   type AppButtonProps,
   type AppButtonSize,
   type AppButtonVariant,

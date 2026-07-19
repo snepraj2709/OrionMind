@@ -8,7 +8,7 @@ test('allows public route access', async ({ page }) => {
   await expect(page).toHaveURL(routes.home.path);
   await expect(
     page.getByRole('heading', {
-      name: 'A place to see your subconscious and what it might be be telling about you.',
+      name: 'A place for what happened—and what it may be showing you.',
     }),
   ).toBeVisible();
 
@@ -35,7 +35,7 @@ test('keeps every landing action available without mobile overflow', async ({
 
   await expect(
     page.getByRole('heading', {
-      name: 'A place to see your subconscious and what it might be be telling about you.',
+      name: 'A place for what happened—and what it may be showing you.',
     }),
   ).toBeVisible();
   await expect(page.getByRole('link', { name: 'Create account' })).toHaveCount(
@@ -67,7 +67,7 @@ test('keeps every landing action available without mobile overflow', async ({
   const footer = page.getByRole('contentinfo');
   await expect(
     footer.getByRole('heading', {
-      name: 'Begin reflecting to see the unseen.',
+      name: 'Begin with the entry only you can write.',
     }),
   ).toBeVisible();
   await expect(footer.getByRole('link', { name: 'Twitter / X' })).toBeVisible();

@@ -45,7 +45,7 @@ Route and feature code must use the public wrapper imports. The automated design
 - `PageShell` is mandatory for route content. Do not add another page-level maximum width.
 - `PageHeader` renders the route `h1`, optional eyebrow, description, breadcrumbs, and actions.
 - `Section` renders an optional `h2`, description, actions, and content spacing. Supply a stable `headingId` when a title is present.
-- `ContentGrid` supports `one`, `two`, `three`, and `editorial` responsive arrangements.
+- `ContentGrid` supports `one`, `two`, `three`, `editorial`, `reflectionSplit`, and `reflectionTriptych` responsive arrangements. The reflection grids own their approved internal separators and collapse at the sidebar breakpoint.
 
 ## Actions
 
@@ -53,8 +53,9 @@ Route and feature code must use the public wrapper imports. The automated design
 
 - variants: `primary`, `secondary`, `ghost`, `destructive`, `link`, and `icon`;
 - sizes: `default` (44px) and `compact` (36px visual height with a 44px hit area);
+- shapes: `default` (10px) and `pill` (feedback actions only);
 - `loading`, `loadingLabel`, `leftIcon`, `rightIcon`, disabled state, and `asChild`;
-- one consistent 10px radius and visible focus ring.
+- one consistent focus ring, with either the default 10px radius or approved pill shape.
 
 An icon-only button must have an `aria-label`; the component rejects an unlabeled icon variant.
 
@@ -74,7 +75,7 @@ An icon-only button must have an `aria-label`; the component rejects an unlabele
 - `NavItem` adds label, icon, optional badge, and active styling to `AppLink`.
 - `Breadcrumbs` accepts ordered `{ label, href? }` items; the final item is the current page.
 - `Tabs` accepts typed items with `value`, `label`, `content`, and optional disabled state. Radix provides arrow-key navigation and tab/panel semantics.
-- `SegmentedControl` is a single-value toggle group for filters or display ranges. It is not a substitute for page navigation.
+- `SegmentedControl` is the shared single-value switch used by New Entry, Reflections, filters, and display ranges. Items accept an optional decorative icon alongside their required visible label. Its opt-in `strong` variant uses the strong-selection tokens; `default` remains unchanged. It is not a substitute for route navigation.
 
 ## Cards and surfaces
 

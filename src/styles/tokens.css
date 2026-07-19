@@ -14,10 +14,14 @@
   --input: #ddd8cc;
   --foreground: #20212a;
   --muted-foreground: #6f6b61;
-  --primary: #293f78;
+  --primary: #2a407a;
   --primary-foreground: #f7f5ef;
   --accent: #71917e;
   --accent-foreground: #20212a;
+  --counterpoint: #a9534c;
+  --counterpoint-foreground: #f7f5ef;
+  --selection-strong: #645846;
+  --selection-strong-foreground: #f7f5ef;
   --border: #ddd8cc;
   --ring: color-mix(in srgb, var(--foreground) 28%, transparent);
   --destructive: #a9534d;
@@ -97,6 +101,10 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-counterpoint: var(--counterpoint);
+  --color-counterpoint-foreground: var(--counterpoint-foreground);
+  --color-selection-strong: var(--selection-strong);
+  --color-selection-strong-foreground: var(--selection-strong-foreground);
   --color-border: var(--border);
   --color-ring: var(--ring);
   --color-destructive: var(--destructive);

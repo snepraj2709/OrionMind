@@ -8,6 +8,7 @@ export type AppButtonVariant =
   'primary' | 'secondary' | 'ghost' | 'destructive' | 'link' | 'icon';
 
 export type AppButtonSize = 'default' | 'compact';
+export type AppButtonShape = 'default' | 'pill';
 
 export interface AppButtonProps extends Omit<
   ComponentProps<typeof ShadcnButton>,
@@ -15,6 +16,7 @@ export interface AppButtonProps extends Omit<
 > {
   variant?: AppButtonVariant;
   size?: AppButtonSize;
+  shape?: AppButtonShape;
   loading?: boolean;
   loadingLabel?: string;
   leftIcon?: ReactNode;
@@ -38,6 +40,11 @@ const sizeClasses: Record<AppButtonSize, string> = {
   compact: 'control-compact px-3',
 };
 
+const shapeClasses: Record<AppButtonShape, string> = {
+  default: 'radius-interactive',
+  pill: 'radius-pill border border-border',
+};
+
 export function AppButton({
   'aria-label': ariaLabel,
   asChild,
@@ -49,6 +56,7 @@ export function AppButton({
   loadingLabel = 'Loading',
   rightIcon,
   size = 'default',
+  shape = 'default',
   variant = 'primary',
   ...props
 }: AppButtonProps) {
@@ -65,7 +73,8 @@ export function AppButton({
       aria-busy={loading || undefined}
       aria-label={loading ? loadingLabel : ariaLabel}
       className={cn(
-        'type-button radius-interactive focus-visible:ring-ring relative gap-2 transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+        'type-button focus-visible:ring-ring relative gap-2 transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+        shapeClasses[shape],
         variantClasses[variant],
         variant === 'icon' ? iconSizeClass : sizeClasses[size],
         className,

@@ -1,21 +1,31 @@
-import { Scale } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 
 import { Surface } from '@/components/cards';
-import { AppButton, Typography } from '@/components/design-system';
+import { Typography } from '@/components/design-system';
 
-import type { InnerTension } from './model';
-
-const dateFormatter = new Intl.DateTimeFormat('en', {
-  day: 'numeric',
-  month: 'short',
-  timeZone: 'UTC',
-});
+import type { InnerTension, ReflectionResponse } from './model';
+import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface InnerTensionCardProps {
   tension: InnerTension;
-  response?: 'resonates' | 'rejected';
-  onResponseChange: (response: 'resonates' | 'rejected') => void;
+  response?: ReflectionResponse;
+  onResponseChange: (response: ReflectionResponse) => void;
   onViewEvidence: () => void;
+}
+
+function TensionConnector() {
+  return (
+    <div
+      aria-label="Two needs held in tension"
+      className="flex items-center justify-center"
+    >
+      <div className="sidebar:h-auto relative flex h-16 w-full items-center justify-center">
+        <span className="bg-primary sidebar:top-auto sidebar:left-0 sidebar:h-px sidebar:w-1/2 absolute top-0 h-8 w-px" />
+        <span className="bg-counterpoint sidebar:right-0 sidebar:bottom-auto sidebar:h-px sidebar:w-1/2 absolute bottom-0 h-8 w-px" />
+        <span className="bg-card border-selection-strong radius-pill z-10 size-4 border" />
+      </div>
+    </div>
+  );
 }
 
 export function InnerTensionCard({
@@ -26,84 +36,62 @@ export function InnerTensionCard({
 }: InnerTensionCardProps) {
   return (
     <Surface className={response === 'rejected' ? 'bg-muted p-6' : 'p-6'}>
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="sidebar:grid-cols-[minmax(0,1fr)_minmax(12rem,0.8fr)_minmax(0,1fr)] grid grid-cols-1 gap-6">
         <div className="space-y-2">
-          <Typography as="h3" variant="componentTitle">
-            {tension.leftTitle}
-          </Typography>
-          <Typography className="text-muted-foreground" variant="body">
-            {tension.leftBody}
-          </Typography>
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="bg-primary radius-pill size-3"
+            />
+            <Typography
+              as="h3"
+              className="text-primary"
+              variant="componentTitle"
+            >
+              {tension.leftTitle}
+            </Typography>
+          </div>
+          <Typography variant="body">{tension.leftBody}</Typography>
         </div>
-        <div className="space-y-2 md:text-right">
-          <Typography as="h3" variant="componentTitle">
-            {tension.rightTitle}
-          </Typography>
-          <Typography className="text-muted-foreground" variant="body">
-            {tension.rightBody}
+        <TensionConnector />
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="bg-counterpoint radius-pill size-3"
+            />
+            <Typography
+              as="h3"
+              className="text-counterpoint"
+              variant="componentTitle"
+            >
+              {tension.rightTitle}
+            </Typography>
+          </div>
+          <Typography variant="body">{tension.rightBody}</Typography>
+        </div>
+      </div>
+
+      <div className="border-border flex gap-4 border-t pt-6">
+        <Sparkles
+          aria-hidden="true"
+          className="text-selection-strong mt-1 size-5 shrink-0"
+        />
+        <div className="space-y-2">
+          <Typography variant="eyebrow">Possible integration</Typography>
+          <Typography variant="journalExcerpt">
+            {tension.integration}
           </Typography>
         </div>
       </div>
 
-      <div
-        className="flex items-center gap-3 py-2"
-        aria-label="Both needs are valid"
-      >
-        <span aria-hidden="true" className="bg-accent radius-pill size-3" />
-        <span className="bg-border h-px flex-1" />
-        <Scale aria-hidden="true" className="text-muted-foreground size-5" />
-        <span className="bg-border h-px flex-1" />
-        <span aria-hidden="true" className="bg-primary radius-pill size-3" />
-      </div>
-
-      <div className="bg-secondary radius-control space-y-2 p-4">
-        <Typography variant="eyebrow">A possible integration</Typography>
-        <Typography variant="body">{tension.integration}</Typography>
-      </div>
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <Typography className="text-muted-foreground" variant="metadata">
-          Appeared together:{' '}
-          {tension.dates
-            .map((date) => dateFormatter.format(new Date(date)))
-            .join(', ')}
-        </Typography>
-        <div className="flex flex-wrap gap-2">
-          <AppButton onClick={onViewEvidence} size="compact" variant="link">
-            View evidence
-          </AppButton>
-          <AppButton onClick={onViewEvidence} size="compact" variant="link">
-            Why am I seeing this?
-          </AppButton>
-          <AppButton
-            aria-pressed={response === 'resonates'}
-            onClick={() => onResponseChange('resonates')}
-            size="compact"
-            variant={response === 'resonates' ? 'secondary' : 'ghost'}
-          >
-            Resonates
-          </AppButton>
-          <AppButton
-            aria-pressed={response === 'rejected'}
-            onClick={() => onResponseChange('rejected')}
-            size="compact"
-            variant={response === 'rejected' ? 'secondary' : 'ghost'}
-          >
-            Does not resonate
-          </AppButton>
-        </div>
-      </div>
-      {response ? (
-        <Typography
-          aria-live="polite"
-          className="text-muted-foreground"
-          variant="bodySmall"
-        >
-          {response === 'rejected'
-            ? 'Marked as not resonating. Orion will not treat this tension as an accepted self-pattern.'
-            : 'Marked as resonating with your experience.'}
-        </Typography>
-      ) : null}
+      <ReflectionResponseBar
+        ariaLabel={`${tension.leftTitle} and ${tension.rightTitle} feedback`}
+        className="border-border border-t pt-6"
+        onResponseChange={onResponseChange}
+        onViewEvidence={onViewEvidence}
+        response={response}
+      />
     </Surface>
   );
 }

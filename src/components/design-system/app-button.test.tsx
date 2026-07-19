@@ -50,4 +50,17 @@ describe('AppButton', () => {
     expect(screen.getByTestId('left-icon')).toBeInTheDocument();
     expect(screen.getByTestId('right-icon')).toBeInTheDocument();
   });
+
+  it('applies the approved pill shape without changing button behavior', () => {
+    render(
+      <AppButton shape="pill" variant="secondary">
+        This resonates
+      </AppButton>,
+    );
+
+    expect(screen.getByRole('button', { name: 'This resonates' })).toHaveClass(
+      'radius-pill',
+      'control-default',
+    );
+  });
 });

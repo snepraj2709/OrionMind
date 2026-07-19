@@ -45,6 +45,12 @@ This file records known differences between the Figma Make reference and the pro
 
 ## Reflections
 
+- **Reference images:** The implemented tab hierarchies follow `images/Reflection-Hidden-driver-final.png`, `images/reflection-reccuring-loop.png`, and `images/Reflection-inner-tension.png`.
+- **Typography adaptation:** Page and section headings remain Inter. Screenshot serif headings are not copied; Lora is limited to the approved 24/30 reflection statement, interpretations, and long-form reflective copy.
+- **Color adaptation:** Lavender loop decoration is replaced by global primary `#2A407A`. Inner-tension sides use primary plus the non-error counterpoint token. The brown active range is an opt-in strong-selection treatment.
+- **Card adaptation:** Each tab uses flat, border-led Orion `Surface` compositions. Recurring Loops is one surface with internal separators; Inner Tensions removes nested integration cards.
+- **Responsive adaptation:** The screenshot-specific 5:4 and 9:11:10 structures collapse below 1024px. Inner Tensions changes from a horizontal comparison to a vertical comparison at the same breakpoint so the route remains usable without horizontal overflow at 320px.
+
 - **Written specification only:** The Make export includes two identical Reflections redesign briefs but no rendered protected-screen component or screenshot. Production follows that written hierarchy and copy, and its desktop/mobile captures are therefore validated against the brief rather than a pixel reference.
 - **Approved shell width:** The brief asks to preserve a 380–400px sidebar. Production retains the approved Orion shell token, `clamp(264px, 18vw, 296px)`, so Reflections does not introduce a route-specific layout exception.
 - **Semantic color limits:** The brief mentions restrained lavender and terracotta accents. Those colors do not have approved semantic roles in the Orion design system, so the implementation uses the existing `accent`, `primary`, `muted`, and border tokens and never treats color as the only status cue.
