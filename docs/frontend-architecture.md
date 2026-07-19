@@ -22,9 +22,9 @@ Core decisions:
 
 | Route | Page | Notes |
 |---|---|---|
-| `/` | Entry redirect | Redirect by session to `/entries` or `/login`; no duplicate landing UI in v1. |
+| `/` | Landing | Public, design-system-led product overview with `/signup` and `/login` actions. |
 | `/login` | Sign in | Public-only; authenticated users redirect to `/entries`. |
-| `/register` | Registration | Public-only; authenticated users redirect to `/entries`. |
+| `/signup` | Registration | Public-only; authenticated users redirect to `/entries`. |
 
 ### Protected routes
 

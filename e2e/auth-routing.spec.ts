@@ -17,13 +17,49 @@ async function logIn(page: import('@playwright/test').Page) {
 
 test('allows public route access', async ({ page }) => {
   await page.goto(routes.home.path);
-  await expect(page).toHaveURL(routes.login.path);
+  await expect(page).toHaveURL(routes.home.path);
+  await expect(
+    page.getByRole('heading', {
+      name: 'Make space for the thoughts that shape you.',
+    }),
+  ).toBeVisible();
+
+  const createAccountLinks = page.getByRole('link', {
+    name: 'Create Account',
+  });
+  await expect(createAccountLinks).toHaveCount(3);
+  for (const link of await createAccountLinks.all()) {
+    await expect(link).toHaveAttribute('href', routes.signup.path);
+  }
 
   await page.goto(routes.forgotPassword.path);
 
   await expect(
     page.getByRole('heading', { name: routes.forgotPassword.label }),
   ).toBeVisible();
+});
+
+test('keeps every landing action available without mobile overflow', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.goto(routes.home.path);
+
+  await expect(
+    page.getByRole('heading', {
+      name: 'Make space for the thoughts that shape you.',
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Create Account' })).toHaveCount(
+    3,
+  );
+
+  const pageWidth = await page.evaluate(() => ({
+    content: document.documentElement.scrollWidth,
+    viewport: document.documentElement.clientWidth,
+  }));
+
+  expect(pageWidth.content).toBeLessThanOrEqual(pageWidth.viewport);
 });
 
 test('redirects protected routes to login', async ({ page }) => {
