@@ -26,9 +26,6 @@ describe('AuthShell', () => {
     expect(within(main).getByRole('link', { name: 'Orion' })).toContainElement(
       within(main).getByText('Orion'),
     );
-    expect(within(main).getByText('Orion')).toHaveClass(
-      'type-brand-wordmark-prominent',
-    );
     expect(within(main).getByRole('contentinfo')).toHaveClass(
       'justify-center',
       'text-center',
@@ -39,14 +36,17 @@ describe('AuthShell', () => {
     render(<BrandMark />);
 
     const brand = screen.getByRole('link', { name: 'Orion' });
-    const mark = brand.querySelector('[aria-hidden="true"]');
+    const logo = brand.querySelector('img');
 
-    expect(brand).toHaveClass('gap-4');
+    expect(brand).toHaveAttribute('href', '/');
+    expect(brand).toHaveClass('gap-4', 'shrink-0');
     expect(screen.getByText('Orion')).toHaveClass(
       'type-brand-wordmark-prominent',
     );
-    expect(mark?.children[0]).toHaveClass('size-2');
-    expect(mark?.children[1]).toHaveClass('size-3');
-    expect(mark?.children[2]).toHaveClass('size-2');
+    expect(logo).toHaveAttribute('alt', '');
+    expect(logo).toHaveAttribute('src', '/images/light-mode-transparent.svg');
+    expect(logo).toHaveAttribute('width', '48');
+    expect(logo).toHaveAttribute('height', '48');
+    expect(logo).toHaveClass('size-12', 'object-contain');
   });
 });

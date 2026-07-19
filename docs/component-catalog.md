@@ -26,6 +26,7 @@ Route and feature code must use the public wrapper imports. The automated design
 - `AppShell` composes the desktop sidebar, collapsed mobile navigation, skip link, and main landmark. Authentication and data fetching stay in route layouts.
 - `PublicShell` provides a centered, full-height `PageShell` for public content.
 - `AuthShell` specializes `PublicShell` with a constrained auth composition, title, description, brand, and footer.
+- `BrandMark` renders the canonical transparent Orion symbol at 48×48px beside the shared wordmark and links to the home route. Use this component rather than rendering either brand element directly.
 - `Sidebar` owns desktop width and below-1024px visibility. Supply shared navigation data as children.
 - `MobileNavigation` uses the shadcn sheet behavior and must receive the same navigation items as `Sidebar`.
 

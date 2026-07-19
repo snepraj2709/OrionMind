@@ -17,7 +17,7 @@ Orion launches as a light-only experience. Ordinary cards are flat and border-le
 
 Inter is the primary interface family. Use it for navigation, headings, buttons, labels, metadata, forms, tables, and general interface text.
 
-Lora is the secondary editorial family. Use it only for journal excerpts, reflective statements, chapter titles, interpretations, long-form personal writing, and the shared Orion wordmark. The wordmark is the only approved italic use and uses one constant treatment across public, authentication, desktop-sidebar, and mobile-navigation surfaces. Never use Lora for navigation, buttons, filters, labels, or metadata.
+Lora is the secondary editorial family. Use it only for journal excerpts, reflective statements, chapter titles, interpretations, long-form personal writing, and the shared Orion wordmark. The wordmark is the only approved italic use. Never use Lora for navigation, buttons, filters, labels, or metadata.
 
 Only font weights 400, 500, and 600 are allowed. Both families are loaded centrally in the root layout through `next/font`.
 
@@ -40,7 +40,7 @@ Every text element must use a semantic role through the `Typography` component o
 | Body small                | `type-body-small`                | Inter  | 14 / 20px          | 400    | Supporting interface copy                 |
 | Metadata                  | `type-metadata`                  | Inter  | 14 / 20px          | 500    | Dates, status context, and compact labels |
 | Eyebrow                   | `type-eyebrow`                   | Inter  | 12 / 16px          | 600    | Uppercase with `0.08em` tracking          |
-| Prominent brand wordmark  | `type-brand-wordmark-prominent`  | Lora   | 32 / 40px          | 400    | Italic; constant shared Orion brandmark   |
+| Prominent brand wordmark  | `type-brand-wordmark-prominent`  | Lora   | 32 / 40px          | 400    | Italic; shared Orion brandmark only       |
 
 Use the semantic `as` prop to preserve heading order independently of appearance:
 
@@ -48,6 +48,12 @@ Use the semantic `as` prop to preserve heading order independently of appearance
 <Typography as="h1" variant="pageTitle">Entries</Typography>
 <Typography as="p" variant="journalExcerpt">A journal excerpt…</Typography>
 ```
+
+## Brand assets
+
+`BrandMark` is the only application brand treatment. It renders `/images/light-mode-transparent.svg` at a constant 48×48px beside the constant Orion wordmark across public, authentication, desktop-sidebar, mobile-navigation, and development-catalog surfaces. The symbol is decorative because the visible wordmark supplies the link's accessible name. Do not recreate the mark with CSS shapes or page-specific sizing.
+
+The dark-mode artwork is reserved for the application favicon. Ordinary textual references to Orion remain interface copy and do not use the brand asset.
 
 ## Color
 

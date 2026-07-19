@@ -3,6 +3,19 @@ import { expect, test } from '@playwright/test';
 import { routes } from '../src/config/routes';
 import { logIn, testCredentials } from './helpers/auth';
 
+test('serves the canonical logo and a valid favicon', async ({ request }) => {
+  const logo = await request.get('/images/light-mode-transparent.svg');
+  expect(logo.ok()).toBe(true);
+  expect(logo.headers()['content-type']).toContain('image/svg+xml');
+
+  const favicon = await request.get('/favicon.ico');
+  expect(favicon.ok()).toBe(true);
+  expect(favicon.headers()['content-type']).toContain('image/x-icon');
+  expect(Array.from((await favicon.body()).subarray(0, 4))).toEqual([
+    0x00, 0x00, 0x01, 0x00,
+  ]);
+});
+
 test('allows public route access', async ({ page }) => {
   await page.goto(routes.home.path);
   await expect(page).toHaveURL(routes.home.path);

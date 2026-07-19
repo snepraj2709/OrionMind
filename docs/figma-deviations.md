@@ -6,7 +6,7 @@ This file records known differences between the Figma Make reference and the pro
 
 - **Protected screenshots unavailable:** The Make integration exposes the application-shell source, but the protected screen component bodies and screenshots are absent from the exported bundle. The bundled PNG assets contain repeated authentication captures and blank frames. The in-app browser connection is also unavailable in this session. Shell comparison is therefore source-based until a protected Make preview can be captured.
 - **Sidebar width:** The Make prototype hardcodes a 224px desktop sidebar. Production uses the approved `clamp(264px, 18vw, 296px)` design-system token.
-- **Wordmark typography:** The shared Orion brandmark follows the Login and Signup treatment everywhere: an italic Lora wordmark with the same three-dot mark, dimensions, and spacing across public and protected shells.
+- **Brand asset:** The supplied transparent `light-mode-transparent.svg` replaces the prototype's generated dots while retaining the shared Lora wordmark. One shared `BrandMark` is used across public, authentication, desktop-sidebar, and mobile-navigation surfaces.
 - **Mobile navigation:** The prototype uses a hand-built overlay. Production uses the shared accessible sheet with focus management, escape-key dismissal, and the same navigation manifest as desktop.
 
 ## Entries
@@ -15,7 +15,7 @@ This file records known differences between the Figma Make reference and the pro
 - **Screenshot hierarchy:** The later Entries screenshot is used for its compact header, short dates, flat divided rows, two-line excerpts, and full-row navigation. The preview notice and question-mark control belong to the design tool and are intentionally omitted.
 - **Filters and pagination:** Production retains subdued text and status filters plus pagination because they are established application behavior. Page sizes use the shared 10, 20, and 50 configuration across collection screens; selected options use the semantic beige `secondary` surface instead of the green accent shown by the prototype control.
 - **Accessible theme labels:** The screenshot represents themes as color-only dots. Production keeps compact labeled `ThemeBadge` components so color is never the only identifier.
-- **Approved shell and typography:** The shared sidebar, authenticated identity, Inter interface roles, and Lora journal-excerpt role remain unchanged rather than copying the screenshot's page-specific shell and wordmark treatment.
+- **Approved shell and typography:** The shared sidebar, authenticated identity, Inter interface roles, Lora journal-excerpt role, and canonical image-based brandmark remain unchanged rather than copying the screenshot's page-specific shell and wordmark treatment.
 - **Theme vocabulary:** The prototype's Growth, Creativity, Connection, Health, and Work labels are mapped to the approved eight-theme registry rather than retaining a second page-specific palette.
 - **Route behavior:** The prototype uses local screen state. Production entry rows use stable `/entries/[entryId]` URLs and preserve the processing and failed states from the source data.
 

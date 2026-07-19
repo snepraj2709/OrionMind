@@ -1,16 +1,20 @@
+import Image from 'next/image';
 import { Typography } from '@/components/design-system';
+
 import { AppLink } from '@/components/navigation';
 import { routes } from '@/config/routes';
 
 export function BrandMark() {
   return (
-    <AppLink className="gap-4" href={routes.home.path}>
-      <span aria-hidden="true" className="flex items-end gap-1">
-        <span className="bg-foreground/20 radius-pill size-2" />
-        <span className="bg-foreground/50 radius-pill size-3" />
-        <span className="bg-foreground/20 radius-pill size-2" />
-      </span>
-      <Typography as="span" variant="brandWordmarkProminent">
+    <AppLink className="size-12 shrink-0" href={routes.home.path}>
+      <Image
+        alt="Orion"
+        className="size-12 object-contain"
+        height={48}
+        src="/images/light-mode-transparent.svg"
+        width={48}
+      />
+      <Typography as="span" variant="journalExcerpt">
         Orion
       </Typography>
     </AppLink>
