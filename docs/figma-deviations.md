@@ -1,0 +1,71 @@
+# Orion Figma deviations
+
+This file records known differences between the Figma Make reference and the production frontend. Each difference is reviewed against the approved Orion design system before implementation.
+
+## Application shell
+
+- **Protected screenshots unavailable:** The Make integration exposes the application-shell source, but the protected screen component bodies and screenshots are absent from the exported bundle. The bundled PNG assets contain repeated authentication captures and blank frames. The in-app browser connection is also unavailable in this session. Shell comparison is therefore source-based until a protected Make preview can be captured.
+- **Sidebar width:** The Make prototype hardcodes a 224px desktop sidebar. Production uses the approved `clamp(264px, 18vw, 296px)` design-system token.
+- **Wordmark typography:** The Make prototype uses an italic serif wordmark. Production keeps the shared Orion wordmark in Inter because the approved design system reserves Lora for reflective and long-form content.
+- **Mobile navigation:** The prototype uses a hand-built overlay. Production uses the shared accessible sheet with focus management, escape-key dismissal, and the same navigation manifest as desktop.
+
+## Entries
+
+- **Screen reference unavailable:** `App.tsx` supplies the five entry fixtures and route transition, but the `EntriesScreen` component body and protected screenshots are absent from the Make export. The production list follows the approved editorial list pattern and uses the source fixture content.
+- **Theme vocabulary:** The prototype's Growth, Creativity, Connection, Health, and Work labels are mapped to the approved eight-theme registry rather than retaining a second page-specific palette.
+- **Route behavior:** The prototype uses local screen state. Production entry rows use stable `/entries/[entryId]` URLs and preserve the processing and failed states from the source data.
+
+## New Entry
+
+- **Screen reference unavailable:** The Make source invokes `NewEntryScreen`, but its component definition and route screenshots are missing from the exported source manifest. Layout and state behavior therefore follow the journaling requirements, the approved page/form patterns, and the source's text/voice navigation contract.
+- **Unsaved-content warning:** Production uses the browser's native confirmation UI for protected in-app links and `beforeunload` protection for refresh, tab close, and external navigation. The Make implementation for this behavior is unavailable.
+- **Voice privacy and limit:** The recorder states the source requirement's 20-minute limit and that audio is deleted after transcription. The typed mock repository stores only a processing entry placeholder, never the audio blob.
+
+## Entry Detail
+
+- **Screen reference unavailable:** `App.tsx` routes a selected fixture into `EntryDetailScreen`, but that component body and protected screenshots are absent from the Make export. The production view uses the source-backed entry, theme, idea, memory, approval, processing, and failed data while following Orion's approved editorial detail pattern.
+- **URL and not-found behavior:** The Make prototype holds the selected entry in local state. Production uses `/entries/[entryId]`, supports direct links, and renders an explicit not-found state for unknown identifiers.
+- **Refresh and offline behavior:** The production view adds non-destructive background refresh, retry, and offline-safe decision controls required by the frontend architecture. Those states are not inspectable in the exported Make source.
+
+## Review
+
+- **Screen reference unavailable:** The Make source verifies a combined queue of pending ideas and memories, its count, and approve/reject transitions, but the `ApprovalsScreen` body and screenshots are absent from the export. Production composes the same `ReviewItemCard` and `ApprovalActions` used by Entry Detail.
+- **Filter semantics:** Production provides kind and text filters with a distinct no-results state, pagination, background refresh, and an empty caught-up state. The exported Make source does not expose its detailed filter layout.
+- **Route spelling:** The source navigation label is `Review` while the prototype state is named `approvals`. Production keeps the approved `/approvals` route and presents `Review` consistently in navigation and the page heading.
+
+## Ideas and Memories
+
+- **Screen references unavailable:** The Make source passes the full entry collection to `IdeasScreen` and `MemoriesScreen`, but neither component body nor protected screenshot is present in the export. Production uses the approved saved-item list pattern and the source-backed idea/memory content hierarchy.
+- **Shared composition:** Both routes use one typed `SavedItemsScreen` rather than duplicating search, pagination, card, status, loading, empty, error, offline, or refresh logic. Route-specific copy and item kind remain in the feature folders.
+- **Saved fixtures:** The exported Make data contains only one already-approved memory and no approved idea. Production adds clearly local, replaceable approved fixtures so both populated routes can be visually reviewed; these fixtures are not treated as an API contract.
+
+## Reflections
+
+- **Written specification only:** The Make export includes two identical Reflections redesign briefs but no rendered protected-screen component or screenshot. Production follows that written hierarchy and copy, and its desktop/mobile captures are therefore validated against the brief rather than a pixel reference.
+- **Approved shell width:** The brief asks to preserve a 380–400px sidebar. Production retains the approved Orion shell token, `clamp(264px, 18vw, 296px)`, so Reflections does not introduce a route-specific layout exception.
+- **Semantic color limits:** The brief mentions restrained lavender and terracotta accents. Those colors do not have approved semantic roles in the Orion design system, so the implementation uses the existing `accent`, `primary`, `muted`, and border tokens and never treats color as the only status cue.
+- **Refresh and filtered-empty states:** A compact refresh control, preserved-data refresh failure, offline notice, and distinct no-results state are included to satisfy the application data-state contract. They extend the brief without changing its connected Hidden Drivers, Recurring Loops, Inner Tensions, and focus-card story.
+- **API boundary:** The raw service keeps the brief's exact `getJournalEntries(): Promise<JournalEntry[]>` snake_case payload. A replaceable repository layer applies the selected range and returns `totalAvailable`, allowing the UI to distinguish an empty journal from a range with no entries.
+
+## Reflections
+
+- **Reference basis:** The Make bundle includes two identical `reflections-redesign` specifications even though the protected component body and screenshots are missing. Production follows that latest written specification, including the date-range control, hidden drivers, recurring loop, inner tensions, focus experiment, evidence separation, and feedback controls.
+- **Typography:** An older Figma description names Crimson for reflective prose. Production uses Lora through the approved `type-reflection-card-statement` semantic utility and the `reflectionCardStatement` component variant.
+- **Evidence language:** Production consistently separates original journal wording from Orion interpretations in the shared evidence drawer. This is more explicit than the inspectable prototype source, but is required by the bundled trust guidance.
+
+## Journey
+
+- **Conflicting specifications:** `journey-screen.md` describes a graph-left/vertical-rail layout, while the later `journey-redesign-spec.md` and the accessible portion of `App.tsx` describe a full-width river, horizontal chapter rail, and four detail tabs. Production follows the later redesign.
+- **Chart implementation:** Production renders the eight-theme river as accessible SVG with an accompanying data table. No chart dependency was added because the existing approved architecture does not require one and the SVG preserves the specified interaction and responsive horizontal overflow.
+- **Boundary confidence:** Chapter regions and boundary explanations are deterministic typed mock interpretations until a longitudinal backend exists. They are visibly tentative and always link back to source evidence.
+
+## Profile
+
+- **Information architecture:** The audit proposed `/settings/profile`, while the approved routing task later fixed the protected route as `/profile`. Production follows `/profile` and keeps privacy, deletion, theme configuration, and backfill outside this screen until their route structure is approved.
+- **Screen reference unavailable:** The Make export does not include an inspectable Profile component. Production implements the documented profile states—loading, dirty, submitting, saved, validation error, API error, offline, and signed out—using the shared form and feedback components.
+- **Mock persistence:** Profile updates use a typed replaceable repository. Email remains read-only because it belongs to the authentication provider; Supabase replacement can occur behind the repository and AuthProvider boundaries.
+
+## Comparison limitations
+
+- The exported `App.tsx` contains a literal truncation marker inside the source, and embedded Make images are incomplete. Figma Make does not provide node screenshots for this file type in the available integration.
+- No signed-in interactive browser instance was available during this pass. Desktop and mobile production screenshots can therefore verify responsive behavior and internal consistency, but a pixel-diff against protected Figma captures remains pending until complete source captures are available.

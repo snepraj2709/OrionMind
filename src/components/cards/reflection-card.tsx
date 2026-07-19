@@ -20,7 +20,7 @@ export function ReflectionCard({
   return (
     <ContentCard className="border-l-accent border-l-4" {...props}>
       <div className="space-y-4">
-        <Typography as="blockquote" variant="reflectiveStatement">
+        <Typography as="blockquote" variant="reflectionCardStatement">
           {statement}
         </Typography>
         {supportingText ? (

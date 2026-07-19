@@ -8,9 +8,13 @@ import { cn } from '@/lib/utils';
 
 export interface AppNavigationProps {
   className?: string;
+  reviewCount?: number;
 }
 
-export function AppNavigation({ className }: AppNavigationProps) {
+export function AppNavigation({
+  className,
+  reviewCount = 0,
+}: AppNavigationProps) {
   const pathname = usePathname();
   const activeRoute = getActiveSidebarRoute(pathname);
 
@@ -18,8 +22,18 @@ export function AppNavigation({ className }: AppNavigationProps) {
     <div className={cn('space-y-1', className)}>
       {sidebarRoutes.map(({ icon: Icon, key, label, path }) => (
         <NavItem
+          badge={
+            key === 'approvals' && reviewCount > 0 ? (
+              <span
+                aria-label={`${reviewCount} items to review`}
+                className="type-metadata radius-pill bg-status-warning/10 text-foreground px-2 py-1"
+              >
+                {reviewCount}
+              </span>
+            ) : undefined
+          }
           href={path}
-          icon={<Icon className="icon-md" />}
+          icon={<Icon className="size-4" />}
           isActive={key === activeRoute}
           key={key}
           label={label}

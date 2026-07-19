@@ -1,5 +1,3 @@
-import { Orbit } from 'lucide-react';
-
 import { Typography } from '@/components/design-system';
 import { AppLink } from '@/components/navigation';
 import { routes } from '@/config/routes';
@@ -7,7 +5,11 @@ import { routes } from '@/config/routes';
 export function BrandMark() {
   return (
     <AppLink className="gap-3" href={routes.home.path}>
-      <Orbit aria-hidden="true" className="icon-md text-primary" />
+      <span aria-hidden="true" className="flex items-end gap-1">
+        <span className="bg-foreground/20 radius-pill size-1" />
+        <span className="bg-foreground/50 radius-pill size-2" />
+        <span className="bg-foreground/20 radius-pill size-1" />
+      </span>
       <Typography as="span" variant="componentTitle">
         Orion
       </Typography>

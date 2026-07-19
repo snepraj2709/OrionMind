@@ -14,6 +14,7 @@ import {
   UserRound,
   Waypoints,
 } from 'lucide-react';
+import type { Route } from 'next';
 
 export type RouteVisibility = 'authenticated' | 'public';
 export type AuthenticationRequirement =
@@ -104,7 +105,7 @@ export const routes = {
   },
   approvals: {
     path: '/approvals',
-    label: 'Approvals',
+    label: 'Review',
     visibility: 'authenticated',
     authentication: 'required',
     showInSidebar: true,
@@ -205,7 +206,7 @@ export function entryDetailPath(entryId: string) {
   return routes.entryDetail.path.replace(
     '[entryId]',
     encodeURIComponent(entryId),
-  );
+  ) as Route;
 }
 
 export function safeRedirectPath(

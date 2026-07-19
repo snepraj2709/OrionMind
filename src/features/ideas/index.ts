@@ -1,1 +1,1 @@
-export {};
+export { IdeasScreen } from './ideas-screen';

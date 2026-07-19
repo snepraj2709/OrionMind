@@ -20,7 +20,7 @@ export function Sidebar({
 }: SidebarProps) {
   return (
     <aside
-      aria-label={ariaLabel}
+      aria-label={`${ariaLabel} sidebar`}
       className={cn(
         responsiveLayoutVariants.desktopSidebar,
         'border-border bg-sidebar sticky top-0 h-screen flex-col border-r',
@@ -28,7 +28,12 @@ export function Sidebar({
       )}
     >
       {header ? <div className="p-6">{header}</div> : null}
-      <nav className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</nav>
+      <nav
+        aria-label={ariaLabel}
+        className="min-h-0 flex-1 overflow-y-auto p-3"
+      >
+        {children}
+      </nav>
       {footer ? (
         <footer className="border-border border-t p-4">{footer}</footer>
       ) : null}

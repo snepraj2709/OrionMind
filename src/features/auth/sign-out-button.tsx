@@ -5,10 +5,19 @@ import { useState } from 'react';
 
 import { AppButton } from '@/components/design-system';
 import { InlineError } from '@/components/feedback';
+import { cn } from '@/lib/utils';
 
 import { useAuth } from './use-auth';
 
-export function SignOutButton() {
+export interface SignOutButtonProps {
+  className?: string;
+  iconOnly?: boolean;
+}
+
+export function SignOutButton({
+  className,
+  iconOnly = false,
+}: SignOutButtonProps) {
   const { isPending, signOut } = useAuth();
   const [error, setError] = useState<string>();
 
@@ -22,16 +31,25 @@ export function SignOutButton() {
   }
 
   return (
-    <div className="space-y-2">
+    <div className={cn('space-y-2', className)}>
       <AppButton
-        className="w-full justify-start"
-        leftIcon={<LogOut aria-hidden="true" className="icon-md" />}
+        aria-label={iconOnly ? 'Log out' : undefined}
+        className={iconOnly ? undefined : 'w-full justify-start'}
+        leftIcon={
+          iconOnly ? undefined : (
+            <LogOut aria-hidden="true" className="icon-md" />
+          )
+        }
         loading={isPending}
         loadingLabel="Logging out"
         onClick={() => void handleSignOut()}
-        variant="ghost"
+        variant={iconOnly ? 'icon' : 'ghost'}
       >
-        Log out
+        {iconOnly ? (
+          <LogOut aria-hidden="true" className="icon-md" />
+        ) : (
+          'Log out'
+        )}
       </AppButton>
       {error ? <InlineError>{error}</InlineError> : null}
     </div>

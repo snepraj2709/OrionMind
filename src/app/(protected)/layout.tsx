@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 
-import { Typography } from '@/components/design-system';
 import {
   AppNavigation,
   AppShell,
@@ -8,7 +7,9 @@ import {
   MobileNavigation,
   Sidebar,
 } from '@/components/layout';
-import { AuthProvider, SignOutButton } from '@/features/auth';
+import { AppLink } from '@/components/navigation';
+import { AuthProvider, UserMenu } from '@/features/auth';
+import { routes } from '@/config/routes';
 import { requireUser } from '@/services/auth';
 
 interface ProtectedLayoutProps {
@@ -19,36 +20,38 @@ export default async function ProtectedLayout({
   children,
 }: ProtectedLayoutProps) {
   const user = await requireUser();
+  const pendingReviewCount = 3;
 
   return (
     <AuthProvider initialUser={user}>
       <AppShell
         mobileNavigation={
-          <MobileNavigation brand={<BrandMark />}>
-            <AppNavigation />
+          <MobileNavigation
+            brand={<BrandMark />}
+            footer={<UserMenu name={user.name} />}
+            utility={
+              <AppLink
+                aria-label={`${pendingReviewCount} items to review`}
+                className="type-body-small text-muted-foreground gap-2"
+                href={routes.approvals.path}
+              >
+                <span
+                  aria-hidden="true"
+                  className="bg-status-warning radius-pill size-2"
+                />
+                {pendingReviewCount} to review
+              </AppLink>
+            }
+          >
+            <AppNavigation reviewCount={pendingReviewCount} />
           </MobileNavigation>
         }
         sidebar={
           <Sidebar
-            footer={
-              <div className="space-y-3">
-                <div className="min-w-0 px-3">
-                  <Typography className="truncate" variant="metadata">
-                    {user.name}
-                  </Typography>
-                  <Typography
-                    className="text-muted-foreground truncate"
-                    variant="bodySmall"
-                  >
-                    {user.email}
-                  </Typography>
-                </div>
-                <SignOutButton />
-              </div>
-            }
+            footer={<UserMenu name={user.name} />}
             header={<BrandMark />}
           >
-            <AppNavigation />
+            <AppNavigation reviewCount={pendingReviewCount} />
           </Sidebar>
         }
       >

@@ -1,19 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { routes } from '../src/config/routes';
-
-const credentials = {
-  email: 'reader@example.com',
-  password: 'calm-space-2026',
-};
-
-async function logIn(page: import('@playwright/test').Page) {
-  await page.goto(routes.login.path);
-  await page.getByLabel('Email').fill(credentials.email);
-  await page.getByLabel('Password').fill(credentials.password);
-  await page.getByRole('button', { name: 'Log in' }).click();
-  await expect(page).toHaveURL(routes.entries.path);
-}
+import { logIn, testCredentials } from './helpers/auth';
 
 test('allows public route access', async ({ page }) => {
   await page.goto(routes.home.path);
@@ -90,7 +78,7 @@ test('signs up a new mock user', async ({ page }) => {
   await page.goto(routes.signup.path);
   await page.getByLabel('Full name').fill('Orion Reader');
   await page.getByLabel('Email').fill('new-reader@example.com');
-  await page.getByLabel('Password').fill(credentials.password);
+  await page.getByLabel('Password').fill(testCredentials.password);
   await page.getByRole('button', { name: 'Create account' }).click();
 
   await expect(page).toHaveURL(routes.entries.path);
@@ -116,8 +104,8 @@ test('returns to the requested protected destination after login', async ({
     new RegExp(`${routes.login.path}\\?redirect=%2Fentries%2Fnew$`),
   );
 
-  await page.getByLabel('Email').fill(credentials.email);
-  await page.getByLabel('Password').fill(credentials.password);
+  await page.getByLabel('Email').fill(testCredentials.email);
+  await page.getByLabel('Password').fill(testCredentials.password);
   await page.getByRole('button', { name: 'Log in' }).click();
 
   await expect(page).toHaveURL(routes.newEntry.path);
@@ -138,7 +126,7 @@ test('preserves the requested destination across authentication routes', async (
 
   await page.getByLabel('Full name').fill('Redirected Reader');
   await page.getByLabel('Email').fill('redirected@example.com');
-  await page.getByLabel('Password').fill(credentials.password);
+  await page.getByLabel('Password').fill(testCredentials.password);
   await page.getByRole('button', { name: 'Create account' }).click();
 
   await expect(page).toHaveURL(routes.newEntry.path);

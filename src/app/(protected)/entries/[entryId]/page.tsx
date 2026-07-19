@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
-import { RouteScaffold } from '@/components/shared';
 import { routes } from '@/config/routes';
+import { EntryDetailScreen } from '@/features/entries';
 
 export const metadata: Metadata = { title: routes.entryDetail.label };
 
@@ -14,11 +14,5 @@ export default async function EntryDetailPage({
 }: EntryDetailPageProps) {
   const { entryId } = await params;
 
-  return (
-    <RouteScaffold
-      description="Read the journal entry and review its extracted insights."
-      detail={`Entry reference: ${entryId}`}
-      title={routes.entryDetail.label}
-    />
-  );
+  return <EntryDetailScreen entryId={entryId} />;
 }

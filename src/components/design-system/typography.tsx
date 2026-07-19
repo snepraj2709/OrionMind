@@ -7,7 +7,7 @@ import {
 import { cn } from '@/lib/utils';
 
 export type TypographyElement =
-  'blockquote' | 'div' | 'h1' | 'h2' | 'h3' | 'label' | 'p' | 'span';
+  'blockquote' | 'div' | 'h1' | 'h2' | 'h3' | 'h4' | 'label' | 'p' | 'span';
 
 export interface TypographyProps extends HTMLAttributes<HTMLElement> {
   as?: TypographyElement;

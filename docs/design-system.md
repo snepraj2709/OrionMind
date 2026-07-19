@@ -25,21 +25,21 @@ Only font weights 400, 500, and 600 are allowed. Both families are loaded centra
 
 Every text element must use a semantic role through the `Typography` component or its matching `type-*` utility. Do not use Tailwind's numeric font-size utilities or arbitrary typography values.
 
-| Role                      | Utility                     | Family | Size / line height | Weight | Additional rules                          |
-| ------------------------- | --------------------------- | ------ | ------------------ | ------ | ----------------------------------------- |
-| Display                   | `type-display`              | Inter  | 40 / 48px          | 600    | Reserved for rare top-level statements    |
-| Page title                | `type-page-title`           | Inter  | 32 / 40px          | 600    | One route `h1`                            |
-| Section title             | `type-section-title`        | Inter  | 24 / 32px          | 600    | Major page section                        |
-| Component title           | `type-component-title`      | Inter  | 20 / 28px          | 600    | Card or composed component heading        |
-| Reflection card statement | `type-reflective-statement` | Lora   | 24 / 30px          | 400    | Reflection cards; `-0.03em` tracking      |
-| Journal excerpt           | `type-journal-excerpt`      | Lora   | 18 / 30px          | 400    | User-authored excerpt or chapter text     |
-| Body large                | `type-body-large`           | Inter  | 18 / 28px          | 400    | Introductory interface copy               |
-| Body                      | `type-body`                 | Inter  | 16 / 24px          | 400    | Default interface copy                    |
-| Navigation                | `type-navigation`           | Inter  | 16 / 24px          | 500    | Navigation only                           |
-| Button                    | `type-button`               | Inter  | 15 / 20px          | 600    | Buttons and action labels                 |
-| Body small                | `type-body-small`           | Inter  | 14 / 20px          | 400    | Supporting interface copy                 |
-| Metadata                  | `type-metadata`             | Inter  | 14 / 20px          | 500    | Dates, status context, and compact labels |
-| Eyebrow                   | `type-eyebrow`              | Inter  | 12 / 16px          | 600    | Uppercase with `0.08em` tracking          |
+| Role                      | Utility                          | Family | Size / line height | Weight | Additional rules                          |
+| ------------------------- | -------------------------------- | ------ | ------------------ | ------ | ----------------------------------------- |
+| Display                   | `type-display`                   | Inter  | 40 / 48px          | 600    | Reserved for rare top-level statements    |
+| Page title                | `type-page-title`                | Inter  | 32 / 40px          | 600    | One route `h1`                            |
+| Section title             | `type-section-title`             | Inter  | 24 / 32px          | 600    | Major page section                        |
+| Component title           | `type-component-title`           | Inter  | 20 / 28px          | 600    | Card or composed component heading        |
+| Reflection card statement | `type-reflection-card-statement` | Lora   | 24 / 30px          | 400    | Reflection cards; `-0.03em` tracking      |
+| Journal excerpt           | `type-journal-excerpt`           | Lora   | 18 / 30px          | 400    | User-authored excerpt or chapter text     |
+| Body large                | `type-body-large`                | Inter  | 18 / 28px          | 400    | Introductory interface copy               |
+| Body                      | `type-body`                      | Inter  | 16 / 24px          | 400    | Default interface copy                    |
+| Navigation                | `type-navigation`                | Inter  | 16 / 24px          | 500    | Navigation only                           |
+| Button                    | `type-button`                    | Inter  | 15 / 20px          | 600    | Buttons and action labels                 |
+| Body small                | `type-body-small`                | Inter  | 14 / 20px          | 400    | Supporting interface copy                 |
+| Metadata                  | `type-metadata`                  | Inter  | 14 / 20px          | 500    | Dates, status context, and compact labels |
+| Eyebrow                   | `type-eyebrow`                   | Inter  | 12 / 16px          | 600    | Uppercase with `0.08em` tracking          |
 
 Use the semantic `as` prop to preserve heading order independently of appearance:
 

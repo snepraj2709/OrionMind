@@ -18,6 +18,8 @@ import { cn } from '@/lib/utils';
 export interface MobileNavigationProps {
   children: ReactNode;
   brand: ReactNode;
+  footer?: ReactNode;
+  utility?: ReactNode;
   title?: string;
   description?: string;
   className?: string;
@@ -28,7 +30,9 @@ export function MobileNavigation({
   children,
   className,
   description = 'Navigate Orion',
+  footer,
   title = 'Menu',
+  utility,
 }: MobileNavigationProps) {
   const [open, setOpen] = useState(false);
 
@@ -41,11 +45,10 @@ export function MobileNavigation({
   return (
     <header
       className={cn(
-        'border-border bg-background sticky top-0 z-40 flex min-h-16 items-center justify-between border-b px-4',
+        'border-border bg-sidebar sticky top-0 z-40 flex min-h-16 items-center gap-3 border-b px-4',
         className,
       )}
     >
-      {brand}
       <Sheet onOpenChange={setOpen} open={open}>
         <SheetTrigger asChild>
           <AppButton aria-label="Open navigation" variant="icon">
@@ -79,8 +82,13 @@ export function MobileNavigation({
           >
             {children}
           </nav>
+          {footer ? (
+            <footer className="border-border border-t p-4">{footer}</footer>
+          ) : null}
         </SheetContent>
       </Sheet>
+      <div className="min-w-0 flex-1">{brand}</div>
+      {utility ? <div className="shrink-0">{utility}</div> : null}
     </header>
   );
 }

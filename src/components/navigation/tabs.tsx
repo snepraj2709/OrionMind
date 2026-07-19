@@ -48,7 +48,7 @@ export function Tabs({
       >
         {items.map((item) => (
           <TabsTrigger
-            className="type-navigation control-compact min-w-fit px-3"
+            className="type-navigation min-touch-target min-w-fit px-3"
             disabled={item.disabled}
             key={item.value}
             value={item.value}
