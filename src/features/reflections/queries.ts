@@ -4,17 +4,28 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getDataViewStatus } from '@/lib/query-state';
 
-import { reflectionsRepository } from './mock-repository';
-import type { ReflectionRange } from './model';
-import type { ReflectionsRepository } from './repository';
+import type { ReflectionRequest } from './api-schema';
+import {
+  reflectionsRepository,
+  type ReflectionsRepository,
+} from './repository';
 
-export function useReflectionEntriesQuery(
-  range: ReflectionRange,
+export function useReflectionQuery(
+  input: ReflectionRequest | undefined,
   repository: ReflectionsRepository = reflectionsRepository,
 ) {
   const query = useQuery({
-    queryKey: ['reflections', range],
-    queryFn: () => repository.getReflectionEntries(range),
+    enabled: input !== undefined,
+    queryKey: [
+      'reflections',
+      input?.userId,
+      input?.reflectionTab,
+      input?.range,
+    ],
+    queryFn: () => {
+      if (!input) throw new Error('An authenticated user is required.');
+      return repository.getReflection(input);
+    },
   });
 
   return {

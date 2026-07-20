@@ -274,6 +274,14 @@ Every feature API function:
 
 Do not infer missing API fields from the Make fixtures. When the backend contract is unavailable, define an explicit `CONTRACT_PENDING` adapter boundary and keep the UI fixture behind it.
 
+#### Reflections screen-data boundary
+
+Reflections uses the authenticated `GET /api/v1/reflection` screen-data contract documented in `docs/reflections-api.md`. Its Zod-discriminated response is already shaped for one of Hidden Driver, Recurring Loop, Inner Tension, or the supported bulk `all` variant, so the UI renders the selected payload directly instead of running a second client derivation. Query keys contain the authenticated user ID, active API tab, and date range.
+
+The simulated handler derives those payloads from one typed fixture module. This is a temporary transport-compatible boundary: Review-approved reflection evidence is not merged into the production Reflections query until persistent backend storage owns both features.
+
+Client API URLs resolve through `src/config/api.ts`. `NEXT_PUBLIC_API_BASE_URL` is empty for same-origin mock routes and may be set to a real backend origin without changing feature components. The shared request includes session credentials; a cross-origin deployment therefore requires credentialed CORS and a backend-compatible cookie session, or a future auth-provider token hook at the shared client boundary.
+
 ### TanStack Query
 
 - Query keys are factories grouped by feature and include user, filters, date range, config, and pagination where relevant.

@@ -3,12 +3,12 @@ import { BarChart3 } from 'lucide-react';
 import { Typography } from '@/components/design-system';
 import { ContentGrid } from '@/components/layout';
 
-import type { ReflectionResponse, ReflectionViewModel } from './model';
+import type { HiddenDriverData, ReflectionResponse } from './model';
 import { ReflectionFeedbackSurface } from './reflection-feedback-surface';
 import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface HiddenDriverCardProps {
-  driver: ReflectionViewModel['hiddenDriver'];
+  driver: HiddenDriverData;
   response?: ReflectionResponse;
   onResponseChange: (value: ReflectionResponse) => void;
   onViewEvidence: () => void;
@@ -58,7 +58,10 @@ export function HiddenDriverCard({
               aria-hidden="true"
               className="text-selection-strong size-6"
             />
-            <Typography variant="body">Observed across 8 entries</Typography>
+            <Typography variant="body">
+              Observed across {driver.observedEntryCount}{' '}
+              {driver.observedEntryCount === 1 ? 'entry' : 'entries'}
+            </Typography>
           </div>
         </div>
       </ContentGrid>

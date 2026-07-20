@@ -8,15 +8,59 @@ import {
   MockReflectionsRepository,
   reflectionEntryFixtures,
 } from './mock-repository';
-import type { JournalEntry, ReflectionEntriesResult } from './model';
+import type { ReflectionApiResponse, ReflectionRequest } from './api-schema';
+import type { JournalEntry } from './model';
 import { ReflectionsScreen } from './reflections-screen';
 import type { ReflectionsRepository } from './repository';
+import { buildReflectionApiResponse } from './response-builder';
+
+vi.mock('@/features/auth', () => ({
+  useAuth: () => ({ user: { id: 'reader-id' } }),
+}));
 
 function result(
   entries: JournalEntry[],
   totalAvailable = entries.length,
-): ReflectionEntriesResult {
-  return { entries, totalAvailable };
+  input: ReflectionRequest = {
+    userId: 'reader-id',
+    reflectionTab: 'hiddenDriver',
+    range: 'all',
+  },
+): ReflectionApiResponse {
+  return buildReflectionApiResponse({
+    ...input,
+    entries,
+    totalAvailable,
+  });
+}
+
+function emptyArrayResult(input: ReflectionRequest): ReflectionApiResponse {
+  const response = result(reflectionEntryFixtures, 8, input);
+
+  switch (response.reflectionTab) {
+    case 'hiddenDriver':
+      return {
+        ...response,
+        data: {
+          ...response.data,
+          drivers: [],
+          evidence: [],
+          evidenceStrength: [],
+        },
+      };
+    case 'recurringLoop':
+      return {
+        ...response,
+        data: { ...response.data, evidence: [], steps: [] },
+      };
+    case 'innerTension':
+      return {
+        ...response,
+        data: { ...response.data, tensions: [] },
+      };
+    case 'all':
+      return response;
+  }
 }
 
 function renderReflections(repository: ReflectionsRepository) {
@@ -30,9 +74,11 @@ function renderReflections(repository: ReflectionsRepository) {
     );
   }
 
-  return render(<ReflectionsScreen repository={repository} />, {
+  const renderResult = render(<ReflectionsScreen repository={repository} />, {
     wrapper: Wrapper,
   });
+
+  return { ...renderResult, queryClient };
 }
 
 describe('ReflectionsScreen', () => {
@@ -70,6 +116,19 @@ describe('ReflectionsScreen', () => {
     ).toHaveAttribute('aria-checked', 'true');
   });
 
+  it('renders the API-provided observed-entry count', async () => {
+    renderReflections(
+      new MockReflectionsRepository(reflectionEntryFixtures.slice(0, 5), 0),
+    );
+
+    expect(await screen.findByText('Observed across 5 entries')).toBeVisible();
+    expect(
+      screen.getByText(
+        'Patterns taking shape across 5 entries from 14 Apr–30 Apr.',
+      ),
+    ).toBeVisible();
+  });
+
   it('switches one visible panel at a time and supports arrow-key navigation', async () => {
     const user = userEvent.setup();
     renderReflections(
@@ -105,6 +164,85 @@ describe('ReflectionsScreen', () => {
     expect(screen.getAllByRole('region', { name: /reflection$/ })).toHaveLength(
       1,
     );
+  });
+
+  it('requests only the active tab and refetches for range changes', async () => {
+    const getReflection = vi
+      .fn<ReflectionsRepository['getReflection']>()
+      .mockImplementation((input) =>
+        Promise.resolve(result(reflectionEntryFixtures, 8, input)),
+      );
+    const user = userEvent.setup();
+    const { queryClient } = renderReflections({ getReflection });
+
+    await screen.findByText('Observed across 8 entries');
+    expect(getReflection).toHaveBeenLastCalledWith({
+      userId: 'reader-id',
+      reflectionTab: 'hiddenDriver',
+      range: 'all',
+    });
+    expect(getReflection).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('radio', { name: 'Recurring loops' }));
+    await screen.findByRole('heading', {
+      name: 'A loop that may be keeping you stuck',
+    });
+    expect(getReflection).toHaveBeenLastCalledWith({
+      userId: 'reader-id',
+      reflectionTab: 'recurringLoop',
+      range: 'all',
+    });
+    expect(getReflection).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole('radio', { name: 'Last 30 days' }));
+    await screen.findByRole('heading', {
+      name: 'A loop that may be keeping you stuck',
+    });
+    expect(getReflection).toHaveBeenLastCalledWith({
+      userId: 'reader-id',
+      reflectionTab: 'recurringLoop',
+      range: '30d',
+    });
+    expect(getReflection).toHaveBeenCalledTimes(3);
+    expect(
+      queryClient.getQueryCache().find({
+        queryKey: ['reflections', 'reader-id', 'recurringLoop', '30d'],
+      }),
+    ).toBeDefined();
+    expect(
+      getReflection.mock.calls.some(([input]) => input.reflectionTab === 'all'),
+    ).toBe(false);
+  });
+
+  it('handles empty tab arrays without stale or misleading tab content', async () => {
+    const user = userEvent.setup();
+    renderReflections({
+      getReflection: vi
+        .fn()
+        .mockImplementation((input: ReflectionRequest) =>
+          Promise.resolve(emptyArrayResult(input)),
+        ),
+    });
+
+    await screen.findByText(/You appear most energised when curiosity becomes/);
+    expect(
+      screen.queryByRole('button', { name: 'Why am I seeing this?' }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Recurring loops' }));
+    expect(
+      await screen.findByRole('heading', {
+        name: 'No recurring loops in this range',
+      }),
+    ).toBeVisible();
+    expect(screen.queryByText('LOOP')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Inner tensions' }));
+    expect(
+      await screen.findByRole('heading', {
+        name: 'No inner tensions in this range',
+      }),
+    ).toBeVisible();
   });
 
   it('renders all six loop steps with their exact entry counts', async () => {
@@ -206,6 +344,11 @@ describe('ReflectionsScreen', () => {
       'text-destructive',
     );
     expect(secondTensionCard).not.toHaveClass('bg-destructive/10');
+
+    await user.click(screen.getByRole('radio', { name: 'Hidden drivers' }));
+    expect(
+      await screen.findByRole('button', { name: 'Not true for me' }),
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('opens contextual evidence from the page header', async () => {
@@ -241,7 +384,11 @@ describe('ReflectionsScreen', () => {
 
   it('distinguishes a date-range miss from an empty journal', async () => {
     const repository: ReflectionsRepository = {
-      getReflectionEntries: vi.fn().mockResolvedValue(result([], 8)),
+      getReflection: vi
+        .fn()
+        .mockImplementation((input: ReflectionRequest) =>
+          Promise.resolve(result([], 8, input)),
+        ),
     };
     renderReflections(repository);
 
@@ -254,12 +401,12 @@ describe('ReflectionsScreen', () => {
   });
 
   it('retries an initial load failure', async () => {
-    const getReflectionEntries = vi
-      .fn<ReflectionsRepository['getReflectionEntries']>()
+    const getReflection = vi
+      .fn<ReflectionsRepository['getReflection']>()
       .mockRejectedValueOnce(new Error('Unavailable'))
       .mockResolvedValueOnce(result(reflectionEntryFixtures));
     const user = userEvent.setup();
-    renderReflections({ getReflectionEntries });
+    renderReflections({ getReflection });
 
     expect(
       await screen.findByText('Reflections are unavailable'),
@@ -273,17 +420,17 @@ describe('ReflectionsScreen', () => {
 
   it('preserves the current view when a background refresh fails', async () => {
     let rejectRefresh: ((reason?: unknown) => void) | undefined;
-    const getReflectionEntries = vi
-      .fn<ReflectionsRepository['getReflectionEntries']>()
+    const getReflection = vi
+      .fn<ReflectionsRepository['getReflection']>()
       .mockResolvedValueOnce(result(reflectionEntryFixtures))
       .mockImplementationOnce(
         () =>
-          new Promise<ReflectionEntriesResult>((_resolve, reject) => {
+          new Promise<ReflectionApiResponse>((_resolve, reject) => {
             rejectRefresh = reject;
           }),
       );
     const user = userEvent.setup();
-    renderReflections({ getReflectionEntries });
+    renderReflections({ getReflection });
 
     expect(
       await screen.findByText(/Patterns taking shape across 8 entries/),

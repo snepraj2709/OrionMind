@@ -1,6 +1,15 @@
 import type { JournalEntry } from './model';
 
 export const reflectionCopyFixture = {
+  evidence: {
+    interpretation:
+      'This sentence contributes to a pattern only when it appears alongside related journal evidence across the period.',
+    sources: {
+      addedEnergy: 'Energizing',
+      drainedEnergy: 'Draining',
+      selfKnowledge: 'Self-knowledge',
+    },
+  },
   hiddenDriver: {
     statement:
       'You appear most energised when curiosity becomes something tangible—understanding a difficult subject, making something, helping someone learn or developing a capability of your own.',
@@ -59,28 +68,32 @@ export const reflectionCopyFixture = {
     interruption:
       'Turn one curiosity into one visible output before adding another.',
   },
-  tensions: [
-    {
-      id: 'novelty-focus',
-      leftTitle: 'Novelty and exploration',
-      leftBody: 'You gain energy from discovering new ideas and possibilities.',
-      rightTitle: 'Focus and completion',
-      rightBody:
-        'You also want evidence that your effort is producing something real.',
-      integration:
-        'Keep a place for new ideas, while letting only one become active work.',
-    },
-    {
-      id: 'belonging-autonomy',
-      leftTitle: 'Recognition and belonging',
-      leftBody: 'You want to feel seen, valued and connected.',
-      rightTitle: 'Autonomy and distinctiveness',
-      rightBody:
-        'You resist groups or expectations that do not feel true to you.',
-      integration:
-        'Seek recognition through work and relationships you genuinely respect.',
-    },
-  ],
+  innerTension: {
+    title: 'Needs you may be trying to hold at the same time',
+    tensions: [
+      {
+        id: 'novelty-focus',
+        leftTitle: 'Novelty and exploration',
+        leftBody:
+          'You gain energy from discovering new ideas and possibilities.',
+        rightTitle: 'Focus and completion',
+        rightBody:
+          'You also want evidence that your effort is producing something real.',
+        integration:
+          'Keep a place for new ideas, while letting only one become active work.',
+      },
+      {
+        id: 'belonging-autonomy',
+        leftTitle: 'Recognition and belonging',
+        leftBody: 'You want to feel seen, valued and connected.',
+        rightTitle: 'Autonomy and distinctiveness',
+        rightBody:
+          'You resist groups or expectations that do not feel true to you.',
+        integration:
+          'Seek recognition through work and relationships you genuinely respect.',
+      },
+    ],
+  },
 } as const;
 
 const entryDates = [

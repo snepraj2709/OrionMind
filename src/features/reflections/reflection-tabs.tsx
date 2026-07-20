@@ -8,7 +8,7 @@ import type { ReflectionView } from './model';
 export interface ReflectionTabsProps {
   value: ReflectionView;
   onValueChange: (value: ReflectionView) => void;
-  panels: Record<ReflectionView, ReactNode>;
+  panel: ReactNode;
 }
 
 const viewLabels: Record<ReflectionView, string> = {
@@ -19,7 +19,7 @@ const viewLabels: Record<ReflectionView, string> = {
 
 export function ReflectionTabs({
   onValueChange,
-  panels,
+  panel,
   value,
 }: ReflectionTabsProps) {
   return (
@@ -55,7 +55,7 @@ export function ReflectionTabs({
         value={value}
       />
       <div aria-label={`${viewLabels[value]} reflection`} role="region">
-        {panels[value]}
+        {panel}
       </div>
     </div>
   );

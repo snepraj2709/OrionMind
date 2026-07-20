@@ -1,13 +1,10 @@
 import { simulateLatency } from '@/services/mock-delay';
-import { mockOrionStore } from '@/services/mock-orion-store';
 import type { ApprovedReflectionEvidence } from '@/types/records';
 
-import type {
-  JournalEntry,
-  ReflectionEntriesResult,
-  ReflectionRange,
-} from './model';
+import type { ReflectionApiResponse, ReflectionRequest } from './api-schema';
 import { reflectionEntryFixtures } from './fixtures';
+import type { JournalEntry } from './model';
+import { buildReflectionApiResponse } from './response-builder';
 import type {
   ReflectionJournalService,
   ReflectionsRepository,
@@ -24,22 +21,6 @@ function cloneEntries(entries: JournalEntry[]) {
       self_knowledge: [...entry.content.self_knowledge],
     },
   }));
-}
-
-function entriesForRange(entries: JournalEntry[], range: ReflectionRange) {
-  if (range === 'all' || entries.length === 0) return entries;
-
-  const latestDate = entries.reduce(
-    (latest, entry) => (entry.entry_date > latest ? entry.entry_date : latest),
-    entries[0]!.entry_date,
-  );
-  const finalDay = new Date(`${latestDate}T00:00:00Z`);
-  const periodDays = range === '7d' ? 7 : 30;
-  const firstDay = new Date(finalDay);
-  firstDay.setUTCDate(firstDay.getUTCDate() - (periodDays - 1));
-  const firstDate = firstDay.toISOString().slice(0, 10);
-
-  return entries.filter((entry) => entry.entry_date >= firstDate);
 }
 
 interface ReflectionEvidenceSource {
@@ -109,19 +90,14 @@ export class MockReflectionsRepository implements ReflectionsRepository {
     );
   }
 
-  async getReflectionEntries(
-    range: ReflectionRange,
-  ): Promise<ReflectionEntriesResult> {
+  async getReflection(
+    input: ReflectionRequest,
+  ): Promise<ReflectionApiResponse> {
     const entries = await this.service.getJournalEntries();
-    return {
-      entries: entriesForRange(entries, range),
+    return buildReflectionApiResponse({
+      ...input,
+      entries,
       totalAvailable: entries.length,
-    };
+    });
   }
 }
-
-export const reflectionsRepository = new MockReflectionsRepository(
-  reflectionEntryFixtures,
-  260,
-  mockOrionStore,
-);

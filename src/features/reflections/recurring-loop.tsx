@@ -4,12 +4,12 @@ import { Typography } from '@/components/design-system';
 import { ContentGrid } from '@/components/layout';
 
 import { LoopOverviewDiagram } from './loop-overview-diagram';
-import type { ReflectionResponse, ReflectionViewModel } from './model';
+import type { RecurringLoopData, ReflectionResponse } from './model';
 import { ReflectionFeedbackSurface } from './reflection-feedback-surface';
 import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface RecurringLoopProps {
-  loop: ReflectionViewModel['loop'];
+  loop: RecurringLoopData;
   response?: ReflectionResponse;
   onResponseChange: (value: ReflectionResponse) => void;
   onViewEvidence: () => void;

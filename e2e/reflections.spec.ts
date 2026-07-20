@@ -94,6 +94,24 @@ test('reveals contextual evidence and records rejected insight feedback', async 
   ).toHaveAttribute('aria-pressed', 'true');
 });
 
+test('restores the API-backed default view after a page refresh', async ({
+  page,
+}) => {
+  await logIn(page);
+  await page.goto(routes.reflections.path);
+  await expect(page.getByText('Observed across 8 entries')).toBeVisible();
+
+  await page.reload();
+
+  await expect(
+    page.getByText('Patterns taking shape across 8 entries from 14 Apr–8 May.'),
+  ).toBeVisible();
+  await expect(page.getByText('Observed across 8 entries')).toBeVisible();
+  await expect(
+    page.getByRole('radio', { name: 'Hidden drivers' }),
+  ).toHaveAttribute('aria-checked', 'true');
+});
+
 for (const viewport of [
   { key: 'desktop', width: 1440, height: 1000 },
   { key: 'mobile', width: 320, height: 900 },

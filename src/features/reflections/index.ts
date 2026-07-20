@@ -1,16 +1,38 @@
-export { deriveReflectionViewModel } from './adapter';
+export { deriveReflectionEvidence, deriveReflectionViewModel } from './adapter';
+export {
+  evidenceItemSchema,
+  hiddenDriverDataSchema,
+  innerTensionDataSchema,
+  recurringLoopDataSchema,
+  reflectionApiResponseSchema,
+  reflectionPeriodSchema,
+  reflectionRangeSchema,
+  reflectionRequestSchema,
+  reflectionTabSchema,
+} from './api-schema';
+export type {
+  HiddenDriverData,
+  InnerTensionData,
+  RecurringLoopData,
+  ReflectionApiResponse,
+  ReflectionPeriod,
+  ReflectionRequest,
+  ReflectionTab,
+} from './api-schema';
 export {
   MockReflectionJournalService,
   MockReflectionsRepository,
   reflectionEntryFixtures,
-  reflectionsRepository,
 } from './mock-repository';
 export { reflectionCopyFixture } from './fixtures';
+export {
+  buildReflectionApiResponse,
+  reflectionEntriesForRange,
+} from './response-builder';
 export type {
   InnerTension,
   JournalEntry,
-  ReflectionEntriesResult,
-  ReflectionLoopStep,
+  RecurringLoopStep,
   ReflectionRange,
   ReflectionResponse,
   ReflectionView,
@@ -24,3 +46,4 @@ export type {
   ReflectionJournalService,
   ReflectionsRepository,
 } from './repository';
+export { HttpReflectionsRepository, reflectionsRepository } from './repository';

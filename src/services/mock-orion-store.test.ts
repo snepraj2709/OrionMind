@@ -46,24 +46,25 @@ describe('MockOrionStore', () => {
     ]);
   });
 
-  it('exposes approved reflection evidence on the next Reflections load', async () => {
+  it('can expose approved reflection evidence through an injected mock repository', async () => {
     const store = new MockOrionStore();
     store.decideExtractedItem({ itemId: 'r1', status: 'approved' });
     const repository = new MockReflectionsRepository([], 0, store);
 
-    const result = await repository.getReflectionEntries('all');
+    const result = await repository.getReflection({
+      range: 'all',
+      reflectionTab: 'hiddenDriver',
+      userId: 'reader-id',
+    });
 
-    expect(result.entries).toEqual([
-      {
-        entry_date: '2025-07-10',
-        content: {
-          added_energy: [],
-          drained_energy: [],
-          self_knowledge: [
-            'Slow, unstructured mornings help me hear what I need before the day starts asking things of me.',
-          ],
-        },
-      },
+    expect(result.reflectionTab).toBe('hiddenDriver');
+    if (result.reflectionTab !== 'hiddenDriver') return;
+    expect(result.data.evidence).toEqual([
+      expect.objectContaining({
+        date: '2025-07-10',
+        source: 'Self-knowledge',
+        text: 'Slow, unstructured mornings help me hear what I need before the day starts asking things of me.',
+      }),
     ]);
   });
 });
