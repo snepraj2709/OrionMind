@@ -4,26 +4,41 @@ import { useQuery } from '@tanstack/react-query';
 
 import { getDataViewStatus } from '@/lib/query-state';
 
-import { journeyRepository } from './mock-repository';
+import { journeyRepository } from './repository';
 import type { JourneyRange } from './model';
 import type { JourneyRepository } from './repository';
 
 export function useJourneyEntriesQuery(
   range: JourneyRange,
+  userId: string | undefined,
   repository: JourneyRepository = journeyRepository,
 ) {
-  const query = useQuery({
-    queryKey: ['journey', range],
-    queryFn: () => repository.getJourneyEntries(range),
+  const journeyQuery = useQuery({
+    enabled: userId !== undefined,
+    queryKey: ['journey', userId, range],
+    queryFn: () => {
+      if (!userId) throw new Error('An authenticated user is required.');
+      return repository.getJourney(range, userId);
+    },
+  });
+  const statusQuery = useQuery({
+    enabled: userId !== undefined,
+    queryKey: ['journey', 'status', userId],
+    queryFn: () => {
+      if (!userId) throw new Error('An authenticated user is required.');
+      return repository.getJourneyStatus(userId);
+    },
   });
 
   return {
-    query,
+    journeyQuery,
+    statusQuery,
     viewStatus: getDataViewStatus({
-      hasData: query.data !== undefined,
-      isError: query.isError,
-      isFetching: query.isFetching,
-      isPending: query.isPending,
+      hasData:
+        journeyQuery.data !== undefined && statusQuery.data !== undefined,
+      isError: journeyQuery.isError || statusQuery.isError,
+      isFetching: journeyQuery.isFetching || statusQuery.isFetching,
+      isPending: journeyQuery.isPending || statusQuery.isPending,
     }),
   };
 }

@@ -4,10 +4,37 @@ import userEvent from '@testing-library/user-event';
 import type { PropsWithChildren } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { journeyEntryFixtures, MockJourneyRepository } from './mock-repository';
+import { journeyEntryFixtures, journeyStreamForRange } from './fixtures';
 import { JourneyScreen } from './journey-screen';
-import type { JourneyEntriesResult } from './model';
+import { MockJourneyRepository } from './mock-repository';
+import type { JourneyResponse, JourneyStatusResponse } from './model';
 import type { JourneyRepository } from './repository';
+
+vi.mock('@/features/auth', () => ({
+  useAuth: () => ({ user: { id: 'reader-id' } }),
+}));
+
+const unlockedStatus: JourneyStatusResponse = {
+  enabled: true,
+  daysSinceSignup: 90,
+  entriesAdded: 30,
+};
+
+function response(
+  entries = journeyEntryFixtures,
+  range: JourneyResponse['range'] = 'all',
+): JourneyResponse {
+  return {
+    entries,
+    range,
+    stream: journeyStreamForRange(range),
+    totalAvailable: entries.length,
+  };
+}
+
+function unlockedRepository(entries = journeyEntryFixtures, delay = 0) {
+  return new MockJourneyRepository(entries, delay, unlockedStatus);
+}
 
 function renderScreen(repository: JourneyRepository) {
   const queryClient = new QueryClient({
@@ -25,16 +52,16 @@ function renderScreen(repository: JourneyRepository) {
 
 describe('JourneyScreen', () => {
   it('shows a calm loading state while the longitudinal view is assembled', () => {
-    renderScreen(new MockJourneyRepository(journeyEntryFixtures, 50));
+    renderScreen(unlockedRepository(journeyEntryFixtures, 50));
 
     expect(
       screen.getByRole('status', { name: 'Loading items' }),
     ).toBeInTheDocument();
   });
 
-  it('shows the theme river, chapters, and chapter analysis', async () => {
+  it('shows the theme river, chapters, and chapter analysis when enabled', async () => {
     const user = userEvent.setup();
-    renderScreen(new MockJourneyRepository(journeyEntryFixtures, 0));
+    renderScreen(unlockedRepository());
     expect(
       await screen.findByRole('heading', { name: 'Life Theme River' }),
     ).toBeInTheDocument();
@@ -54,9 +81,55 @@ describe('JourneyScreen', () => {
     ).toBeInTheDocument();
   });
 
+  it('renders the exact locked hierarchy and submits range changes with the user id', async () => {
+    const getJourney = vi
+      .fn<JourneyRepository['getJourney']>()
+      .mockResolvedValue(response());
+    const repository: JourneyRepository = {
+      getJourney,
+      getJourneyStatus: vi.fn().mockResolvedValue({
+        enabled: false,
+        daysSinceSignup: 18,
+        entriesAdded: 9,
+      }),
+    };
+    const user = userEvent.setup();
+    renderScreen(repository);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Not enough data yet' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        'Journey unlocks after 30 days of signup with at least 15 entries across those 30 days.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'Days since signup: 18 of 30, 60%',
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'Entries added: 9 of 15, 60%',
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('img', {
+        name: 'Sample unlocked journey theme streamgraph',
+      }),
+    ).toBeVisible();
+    expect(screen.getByRole('radio', { name: 'All' })).toBeChecked();
+
+    await user.click(screen.getByRole('radio', { name: '6M' }));
+    await waitFor(() =>
+      expect(getJourney).toHaveBeenLastCalledWith('6m', 'reader-id'),
+    );
+  });
+
   it('opens supporting evidence from an interpretation', async () => {
     const user = userEvent.setup();
-    renderScreen(new MockJourneyRepository(journeyEntryFixtures, 0));
+    renderScreen(unlockedRepository());
     await screen.findByRole('heading', { name: 'Life Theme River' });
     await user.click(
       screen.getAllByRole('button', { name: 'Why am I seeing this?' })[0]!,
@@ -68,9 +141,7 @@ describe('JourneyScreen', () => {
   });
 
   it('shows the insufficient-history state', async () => {
-    renderScreen(
-      new MockJourneyRepository(journeyEntryFixtures.slice(0, 3), 0),
-    );
+    renderScreen(unlockedRepository(journeyEntryFixtures.slice(0, 3)));
     expect(
       await screen.findByRole('heading', {
         name: 'A little more history is needed',
@@ -79,7 +150,7 @@ describe('JourneyScreen', () => {
   });
 
   it('distinguishes an empty journal from a limited date range', async () => {
-    renderScreen(new MockJourneyRepository([], 0));
+    renderScreen(unlockedRepository([]));
     expect(
       await screen.findByRole('heading', {
         name: 'Your journey is ready to begin',
@@ -89,10 +160,11 @@ describe('JourneyScreen', () => {
 
   it('distinguishes an empty date range from an empty journal', async () => {
     renderScreen({
-      getJourneyEntries: vi.fn().mockResolvedValue({
-        entries: [],
+      getJourney: vi.fn().mockResolvedValue({
+        ...response([]),
         totalAvailable: 8,
       }),
+      getJourneyStatus: vi.fn().mockResolvedValue(unlockedStatus),
     });
     expect(
       await screen.findByRole('heading', {
@@ -107,11 +179,8 @@ describe('JourneyScreen', () => {
   it('shows separate insufficient-theme and no-chapter states', async () => {
     const entriesWithoutThemes = journeyEntryFixtures
       .slice(0, 6)
-      .map((entry) => ({
-        ...entry,
-        theme: [],
-      }));
-    renderScreen(new MockJourneyRepository(entriesWithoutThemes, 0));
+      .map((entry) => ({ ...entry, theme: [] }));
+    renderScreen(unlockedRepository(entriesWithoutThemes));
 
     expect(
       await screen.findByRole('heading', {
@@ -125,7 +194,7 @@ describe('JourneyScreen', () => {
 
   it('renames a detected chapter without changing routes', async () => {
     const user = userEvent.setup();
-    renderScreen(new MockJourneyRepository(journeyEntryFixtures, 0));
+    renderScreen(unlockedRepository());
     await screen.findByRole('heading', { name: 'Life Theme River' });
 
     await user.click(screen.getByRole('button', { name: 'Edit chapter name' }));
@@ -146,7 +215,7 @@ describe('JourneyScreen', () => {
 
   it('selects a boundary and explains it without technical scores', async () => {
     const user = userEvent.setup();
-    renderScreen(new MockJourneyRepository(journeyEntryFixtures, 0));
+    renderScreen(unlockedRepository());
     await screen.findByRole('heading', { name: 'Life Theme River' });
 
     await user.click(
@@ -164,21 +233,20 @@ describe('JourneyScreen', () => {
 
   it('preserves the current journey when a background refresh fails', async () => {
     let rejectRefresh: ((reason?: unknown) => void) | undefined;
-    const initialResult: JourneyEntriesResult = {
-      entries: journeyEntryFixtures,
-      totalAvailable: journeyEntryFixtures.length,
-    };
-    const getJourneyEntries = vi
-      .fn<JourneyRepository['getJourneyEntries']>()
-      .mockResolvedValueOnce(initialResult)
+    const getJourney = vi
+      .fn<JourneyRepository['getJourney']>()
+      .mockResolvedValueOnce(response())
       .mockImplementationOnce(
         () =>
-          new Promise<JourneyEntriesResult>((_resolve, reject) => {
+          new Promise<JourneyResponse>((_resolve, reject) => {
             rejectRefresh = reject;
           }),
       );
     const user = userEvent.setup();
-    renderScreen({ getJourneyEntries });
+    renderScreen({
+      getJourney,
+      getJourneyStatus: vi.fn().mockResolvedValue(unlockedStatus),
+    });
     await screen.findByRole('heading', { name: 'Life Theme River' });
 
     await user.click(screen.getByRole('button', { name: 'Refresh journey' }));
@@ -195,23 +263,24 @@ describe('JourneyScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('retries after a repository error', async () => {
-    const getJourneyEntries = vi
-      .fn<JourneyRepository['getJourneyEntries']>()
+  it('retries both requests after a repository error', async () => {
+    const getJourney = vi
+      .fn<JourneyRepository['getJourney']>()
       .mockRejectedValueOnce(new Error('nope'))
-      .mockResolvedValueOnce({
-        entries: journeyEntryFixtures,
-        totalAvailable: journeyEntryFixtures.length,
-      });
+      .mockResolvedValueOnce(response());
+    const getJourneyStatus = vi
+      .fn<JourneyRepository['getJourneyStatus']>()
+      .mockResolvedValue(unlockedStatus);
     const user = userEvent.setup();
-    renderScreen({ getJourneyEntries });
+    renderScreen({ getJourney, getJourneyStatus });
     expect(
       await screen.findByRole('heading', {
         name: 'Your journey is unavailable',
       }),
     ).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Retry' }));
-    await waitFor(() => expect(getJourneyEntries).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(getJourney).toHaveBeenCalledTimes(2));
+    expect(getJourneyStatus).toHaveBeenCalledTimes(2);
     expect(
       await screen.findByRole('heading', { name: 'Life Theme River' }),
     ).toBeInTheDocument();

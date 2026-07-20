@@ -16,6 +16,11 @@ export {
   type PaginationControlsProps,
 } from './pagination-controls';
 export {
+  ProgressMetric,
+  type ProgressMetricProps,
+  type ProgressMetricTone,
+} from './progress-metric';
+export {
   SortControl,
   type SortControlProps,
   type SortDirection,

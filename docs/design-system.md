@@ -143,7 +143,11 @@ Reflection compositions may use the shared `ContentGrid` variants:
 
 Both variants collapse to one column below the 1024px sidebar breakpoint. The separator changes from vertical to horizontal when stacked.
 
-The brown strong-selection treatment is opt-in through `SegmentedControl variant="strong"`. All segmented controls use the shared prominent composition: a 48px control inside an 8px inset, 16px outer radius, 14px selected-item radius, navigation typography, muted inactive labels, and the approved selected-control elevation. Items may include a decorative 24px icon centered in a 40px padded icon slot beside their required label. Below 640px, icon-bearing items visually hide their labels while preserving the accessible name; text-only filters keep their labels. The control owns horizontal scrolling so it never creates page overflow.
+The brown strong-selection treatment is opt-in through `SegmentedControl variant="strong"`. Segmented controls default to the shared prominent composition: a 48px control inside an 8px inset, 16px outer radius, 14px selected-item radius, navigation typography, muted inactive labels, and the approved selected-control elevation. Compact date-range filters may opt into `density="compact"`; they use connected 44px controls, flat selection, shared borders, and no selected elevation. Items may include a decorative 24px icon centered in a 40px padded icon slot beside their required label. Below 640px, icon-bearing items visually hide their labels while preserving the accessible name; text-only filters keep their labels. The control owns horizontal scrolling so it never creates page overflow.
+
+`ProgressMetric` is the shared current-versus-target composition. It pairs an icon and explicit current/target copy with a semantic progress bar and percentage badge. Use only its primary and accent tones; never supply raw progress colors.
+
+Journey steamgraphs use the semantic `steamgraph-height` utility. It resolves to the shared `--steamgraph-height` dimension token and must be used instead of an unavailable numeric height outside the approved Tailwind scale.
 
 ## Responsive and accessibility rules
 

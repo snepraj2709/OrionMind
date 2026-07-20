@@ -35,6 +35,23 @@ export interface JourneyEntriesResult {
   totalAvailable: number;
 }
 
+export interface JourneySteamPoint {
+  date: string;
+  label: string;
+  values: Record<ThemeKey, number>;
+}
+
+export interface JourneyResponse extends JourneyEntriesResult {
+  range: JourneyRange;
+  stream: JourneySteamPoint[];
+}
+
+export interface JourneyStatusResponse {
+  enabled: boolean;
+  daysSinceSignup: number;
+  entriesAdded: number;
+}
+
 export interface ThemeRiverPoint {
   bucket: string;
   entryCount: number;

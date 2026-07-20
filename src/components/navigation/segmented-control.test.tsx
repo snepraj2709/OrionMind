@@ -87,4 +87,28 @@ describe('SegmentedControl', () => {
     expect(weekTab).not.toHaveAttribute('spacing');
     expect(screen.getByText('Week')).not.toHaveClass('max-sm:sr-only');
   });
+
+  it('supports the compact range-filter density without reducing its touch target', () => {
+    render(
+      <SegmentedControl
+        ariaLabel="Journey range"
+        density="compact"
+        items={[
+          { value: 'six-months', label: '6M' },
+          { value: 'all', label: 'All' },
+        ]}
+        value="all"
+        variant="strong"
+      />,
+    );
+
+    expect(
+      screen.getByRole('radiogroup', { name: 'Journey range' }),
+    ).toHaveClass('radius-interactive', 'gap-0', 'p-0');
+    expect(screen.getByRole('radio', { name: 'All' })).toHaveClass(
+      'control-default',
+      'data-[state=on]:bg-selection-strong',
+      'data-[state=on]:shadow-none',
+    );
+  });
 });

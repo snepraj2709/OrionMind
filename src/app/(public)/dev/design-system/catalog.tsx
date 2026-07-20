@@ -4,6 +4,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import {
   BookOpen,
   Brain,
+  CalendarDays,
   Check,
   ChevronRight,
   Home,
@@ -28,6 +29,7 @@ import {
   FilterBar,
   FilterField,
   PaginationControls,
+  ProgressMetric,
   SortControl,
   type SortValue,
   StatusBadge,
@@ -293,6 +295,18 @@ export function DesignSystemCatalog() {
                 value={strongSegment}
                 variant="strong"
               />
+              <SegmentedControl
+                ariaLabel="Compact strong date range"
+                density="compact"
+                items={[
+                  { value: 'week', label: '6M' },
+                  { value: 'month', label: '1Y' },
+                  { value: 'all', label: 'All' },
+                ]}
+                onValueChange={setStrongSegment}
+                value={strongSegment}
+                variant="strong"
+              />
             </div>
             <Tabs
               ariaLabel="Catalog tabs"
@@ -475,6 +489,14 @@ export function DesignSystemCatalog() {
               <ThemeBadge theme="homeAndLifestyle" />
             </div>
             <ConfidenceIndicator value={72} />
+            <Surface className="p-6">
+              <ProgressMetric
+                current={18}
+                icon={<CalendarDays aria-hidden="true" className="size-6" />}
+                label="Days since signup"
+                target={30}
+              />
+            </Surface>
             <FilterBar>
               <FilterField
                 id="catalog-filter"

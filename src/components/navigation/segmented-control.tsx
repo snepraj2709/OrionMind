@@ -20,6 +20,7 @@ export interface SegmentedControlProps {
   onValueChange?: (value: string) => void;
   className?: string;
   variant?: 'default' | 'strong';
+  density?: 'prominent' | 'compact';
 }
 
 const itemVariantClasses = {
@@ -29,10 +30,22 @@ const itemVariantClasses = {
     'data-[state=on]:bg-selection-strong data-[state=on]:text-selection-strong-foreground data-[state=on]:shadow-selected-control',
 } as const;
 
+const densityClasses = {
+  prominent: {
+    group: 'radius-surface gap-1 p-1',
+    item: 'control-prominent radius-card px-4',
+  },
+  compact: {
+    group: 'radius-interactive gap-0 p-0',
+    item: 'control-default radius-control border-r border-border px-3 last:border-r-0',
+  },
+} as const;
+
 export function SegmentedControl({
   ariaLabel,
   className,
   defaultValue,
+  density = 'prominent',
   items,
   onValueChange,
   value,
@@ -42,7 +55,8 @@ export function SegmentedControl({
     <ToggleGroup
       aria-label={ariaLabel}
       className={cn(
-        'radius-surface border-border bg-muted max-w-full gap-1 overflow-x-auto border p-1',
+        'border-border bg-muted max-w-full overflow-x-auto border',
+        densityClasses[density].group,
         className,
       )}
       defaultValue={defaultValue}
@@ -56,8 +70,11 @@ export function SegmentedControl({
       {items.map((item) => (
         <ToggleGroupItem
           className={cn(
-            'type-navigation control-prominent radius-card text-muted-foreground hover:bg-card/60 hover:text-foreground gap-0 px-4',
+            'type-navigation text-muted-foreground hover:bg-card/60 hover:text-foreground gap-0',
+            densityClasses[density].item,
             itemVariantClasses[variant],
+            density === 'compact' &&
+              'data-[state=on]:first:radius-interactive data-[state=on]:last:radius-interactive data-[state=on]:shadow-none',
           )}
           disabled={item.disabled}
           key={item.value}

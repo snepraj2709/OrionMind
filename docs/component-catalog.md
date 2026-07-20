@@ -78,7 +78,7 @@ An icon-only button must have an `aria-label`; the component rejects an unlabele
 - `NavItem` adds label, icon, optional badge, and active styling to `AppLink`.
 - `Breadcrumbs` accepts ordered `{ label, href? }` items; the final item is the current page.
 - `Tabs` accepts typed items with `value`, `label`, `content`, and optional disabled state. Radix provides arrow-key navigation and tab/panel semantics.
-- `SegmentedControl` is the shared prominent single-value switch used by New Entry, Reflections, filters, and display ranges. It uses a 48px control inside an 8px container inset, muted inactive labels, a card-colored selected tile, and the dedicated selected-control shadow. Items accept an optional decorative 24px icon centered in a 40px padded slot alongside their required label. Icon-bearing items become icon-only visually below 640px while retaining their accessible label; text-only items remain visible and the control scrolls internally when necessary. Its opt-in `strong` variant keeps the brown strong-selection tokens. It is not a substitute for route navigation.
+- `SegmentedControl` is the shared single-value switch used by New Entry, Reflections, filters, and display ranges. Its default prominent density uses a 48px control inside an 8px inset with the dedicated selected-control shadow. Compact date-range filters use connected 44px controls and flat selection. Items accept optional icons, text-only labels stay visible on mobile, and the control scrolls internally when necessary. Its opt-in `strong` variant uses the brown strong-selection tokens. It is not a substitute for route navigation.
 
 ## Cards and surfaces
 
@@ -128,11 +128,12 @@ React Hook Form owns form state. Register native controls normally and map schem
 
 ## Data display
 
-### Status, theme, and confidence
+### Status, theme, and progress
 
 - `StatusBadge` variants are `neutral`, `processing`, `success`, `warning`, and `error`. Each includes an icon and text so color is not the only cue.
 - `ThemeBadge` accepts only the typed canonical `ThemeKey`; API-provided color strings are not accepted.
 - `ConfidenceIndicator` exposes a progressbar value plus a Low, Moderate, or High text label.
+- `ProgressMetric` presents an icon, current/target copy, semantic progress bar, and percentage badge. Its tones are limited to primary and accent.
 
 ### Table controls
 

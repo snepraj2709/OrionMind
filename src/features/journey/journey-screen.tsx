@@ -17,15 +17,16 @@ import { routes } from '@/config/routes';
 import { dataViewMessages } from '@/config/messages';
 import { formatLongDate } from '@/lib/date';
 import { useOnlineStatus } from '@/hooks';
+import { useAuth } from '@/features/auth';
 import type { EvidenceItem } from '@/types/evidence';
 
 import { deriveJourneyViewModel } from './adapter';
 import { ChapterDetail } from './chapter-detail';
 import { ChapterRail } from './chapter-rail';
-import { journeyRepository } from './mock-repository';
+import { LockedJourney } from './locked-journey';
 import type { JourneyBoundary, JourneyRange } from './model';
 import { useJourneyEntriesQuery } from './queries';
-import type { JourneyRepository } from './repository';
+import { journeyRepository, type JourneyRepository } from './repository';
 import { ThemeRiver } from './theme-river';
 
 export interface JourneyScreenProps {
@@ -35,7 +36,8 @@ export interface JourneyScreenProps {
 export function JourneyScreen({
   repository = journeyRepository,
 }: JourneyScreenProps) {
-  const [range, setRange] = useState<JourneyRange>('2y');
+  const { user } = useAuth();
+  const [range, setRange] = useState<JourneyRange>('all');
   const [selectedChapterId, setSelectedChapterId] = useState<string>();
   const [chapterNameOverrides, setChapterNameOverrides] = useState<
     Record<string, string>
@@ -43,10 +45,11 @@ export function JourneyScreen({
   const [drawerItems, setDrawerItems] = useState<EvidenceItem[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isOnline = useOnlineStatus();
-  const { query: entriesQuery, viewStatus } = useJourneyEntriesQuery(
-    range,
-    repository,
-  );
+  const {
+    journeyQuery: entriesQuery,
+    statusQuery,
+    viewStatus,
+  } = useJourneyEntriesQuery(range, user?.id, repository);
   const viewModel = useMemo(
     () =>
       entriesQuery.data
@@ -86,6 +89,7 @@ export function JourneyScreen({
           <>
             <SegmentedControl
               ariaLabel="Journey date range"
+              density="compact"
               items={[
                 { label: '6M', value: '6m' },
                 { label: '1Y', value: '1y' },
@@ -99,15 +103,18 @@ export function JourneyScreen({
                 setSelectedChapterId(undefined);
               }}
               value={range}
+              variant="strong"
             />
-            <RefreshButton
-              aria-label="Refresh journey"
-              disabled={!isOnline}
-              loading={entriesQuery.isFetching}
-              loadingLabel="Refreshing journey"
-              onClick={() => void entriesQuery.refetch()}
-              variant="icon"
-            />
+            {statusQuery.data?.enabled ? (
+              <RefreshButton
+                aria-label="Refresh journey"
+                disabled={!isOnline}
+                loading={entriesQuery.isFetching}
+                loadingLabel="Refreshing journey"
+                onClick={() => void entriesQuery.refetch()}
+                variant="icon"
+              />
+            ) : null}
           </>
         }
         description="See how your attention, priorities and sense of self have changed over time."
@@ -116,7 +123,9 @@ export function JourneyScreen({
 
       <DataViewStatus
         initialError={dataViewMessages.journey.initial}
-        onRetry={() => void entriesQuery.refetch()}
+        onRetry={() =>
+          void Promise.all([entriesQuery.refetch(), statusQuery.refetch()])
+        }
         refreshError={dataViewMessages.journey.refresh}
         refreshingAriaLabel="Refreshing journey"
         refreshingLabel="Refreshing your journey… The current view will stay in place."
@@ -131,7 +140,15 @@ export function JourneyScreen({
         </InlineError>
       ) : null}
 
-      {viewModel?.entryCount === 0 &&
+      {statusQuery.data && !statusQuery.data.enabled && entriesQuery.data ? (
+        <LockedJourney
+          status={statusQuery.data}
+          stream={entriesQuery.data.stream}
+        />
+      ) : null}
+
+      {statusQuery.data?.enabled &&
+      viewModel?.entryCount === 0 &&
       entriesQuery.data?.totalAvailable === 0 ? (
         <EmptyState
           action={
@@ -146,7 +163,8 @@ export function JourneyScreen({
         />
       ) : null}
 
-      {viewModel?.entryCount === 0 &&
+      {statusQuery.data?.enabled &&
+      viewModel?.entryCount === 0 &&
       (entriesQuery.data?.totalAvailable ?? 0) > 0 ? (
         <NoResultsState
           action={
@@ -159,7 +177,10 @@ export function JourneyScreen({
         />
       ) : null}
 
-      {viewModel && viewModel.entryCount > 0 && viewModel.entryCount < 5 ? (
+      {statusQuery.data?.enabled &&
+      viewModel &&
+      viewModel.entryCount > 0 &&
+      viewModel.entryCount < 5 ? (
         <EmptyState
           action={
             <AppButton asChild variant="secondary">
@@ -171,7 +192,7 @@ export function JourneyScreen({
         />
       ) : null}
 
-      {viewModel && viewModel.entryCount >= 5 ? (
+      {statusQuery.data?.enabled && viewModel && viewModel.entryCount >= 5 ? (
         <div className="space-y-16">
           <section
             aria-label="Journey coverage"
