@@ -18,21 +18,25 @@ const responseOptions = [
     value: 'resonates',
     label: 'This resonates',
     icon: <Heart aria-hidden="true" className="size-4" />,
+    hoverClassName: 'hover:bg-accent/10',
   },
   {
     value: 'partly',
     label: 'Partly true',
     icon: <Waves aria-hidden="true" className="size-4" />,
+    hoverClassName: 'hover:bg-status-warning/10',
   },
   {
     value: 'rejected',
     label: 'Not true for me',
     icon: <X aria-hidden="true" className="size-4" />,
+    hoverClassName: undefined,
   },
 ] satisfies Array<{
   value: ReflectionResponse;
   label: string;
   icon: React.ReactNode;
+  hoverClassName: string | undefined;
 }>;
 
 export function ReflectionResponseBar({
@@ -53,6 +57,7 @@ export function ReflectionResponseBar({
           {responseOptions.map((option) => (
             <AppButton
               aria-pressed={response === option.value}
+              className={option.hoverClassName}
               key={option.value}
               leftIcon={option.icon}
               onClick={() => onResponseChange(option.value)}

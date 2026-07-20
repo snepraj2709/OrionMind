@@ -12,6 +12,7 @@
 
 # production
 /build/
+/e2e/
 
 # local environment files
 .env*

@@ -159,14 +159,53 @@ describe('ReflectionsScreen', () => {
     );
     await screen.findByText('Observed across 8 entries');
 
-    const rejected = screen.getByRole('button', { name: 'Not true for me' });
+    const resonates = screen.getByRole('button', { name: 'This resonates' });
+    const partly = screen.getByRole('button', { name: 'Partly true' });
+    let rejected = screen.getByRole('button', { name: 'Not true for me' });
+
+    expect(resonates).toHaveClass('hover:bg-accent/10');
+    expect(partly).toHaveClass('hover:bg-status-warning/10');
+
     await user.click(rejected);
 
     expect(rejected).toHaveAttribute('aria-pressed', 'true');
     expect(rejected).toHaveClass('radius-pill');
+    expect(rejected.closest('[data-reflection-response]')).toHaveClass(
+      'bg-destructive/10',
+    );
+    expect(
+      screen.getByRole('region', { name: 'Hidden drivers reflection' }),
+    ).not.toHaveClass('bg-destructive/10');
     expect(
       screen.getByText(/will not treat this as an accepted self-pattern/),
     ).toBeVisible();
+
+    await user.click(screen.getByRole('radio', { name: 'Recurring loops' }));
+    rejected = screen.getByRole('button', { name: 'Not true for me' });
+    await user.click(rejected);
+    expect(rejected.closest('[data-reflection-response]')).toHaveClass(
+      'bg-destructive/10',
+    );
+
+    await user.click(screen.getByRole('radio', { name: 'Inner tensions' }));
+    const tensionRejections = screen.getAllByRole('button', {
+      name: 'Not true for me',
+    });
+    const firstTensionCard = tensionRejections[0].closest(
+      '[data-reflection-response]',
+    );
+    const secondTensionCard = tensionRejections[1].closest(
+      '[data-reflection-response]',
+    );
+
+    await user.click(tensionRejections[0]);
+
+    expect(firstTensionCard).toHaveClass('bg-destructive/10');
+    expect(firstTensionCard).not.toHaveClass(
+      'border-destructive/40',
+      'text-destructive',
+    );
+    expect(secondTensionCard).not.toHaveClass('bg-destructive/10');
   });
 
   it('opens contextual evidence from the page header', async () => {

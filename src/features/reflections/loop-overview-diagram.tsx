@@ -4,7 +4,7 @@ import { Typography } from '@/components/design-system';
 
 export function LoopOverviewDiagram() {
   return (
-    <figure className="flex h-full flex-col items-center justify-center gap-4">
+    <figure className="flex h-full flex-col items-center gap-4">
       <Typography as="h3" className="self-start" variant="body">
         The loop at a glance
       </Typography>

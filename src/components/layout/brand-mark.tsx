@@ -6,15 +6,15 @@ import { routes } from '@/config/routes';
 
 export function BrandMark() {
   return (
-    <AppLink className="size-12 shrink-0" href={routes.home.path}>
+    <AppLink className="shrink-0 gap-4" href={routes.home.path}>
       <Image
-        alt="Orion"
+        alt=""
         className="size-12 object-contain"
         height={48}
         src="/images/light-mode-transparent.svg"
         width={48}
       />
-      <Typography as="span" variant="journalExcerpt">
+      <Typography as="span" variant="brandWordmarkProminent">
         Orion
       </Typography>
     </AppLink>

@@ -58,6 +58,8 @@ Route and feature code must use the public wrapper imports. The automated design
 - `loading`, `loadingLabel`, `leftIcon`, `rightIcon`, disabled state, and `asChild`;
 - one consistent focus ring, with either the default 10px radius or approved pill shape.
 
+Reflection feedback pills keep the shared button implementation. “This resonates” uses the semantic accent at 10% on hover, “Partly true” uses the semantic warning color at 10% on hover, and a rejected reflection changes only its owning surface to the existing `destructive/10` error background.
+
 An icon-only button must have an `aria-label`; the component rejects an unlabeled icon variant.
 
 ```tsx

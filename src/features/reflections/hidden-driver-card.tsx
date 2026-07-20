@@ -1,10 +1,10 @@
 import { BarChart3 } from 'lucide-react';
 
-import { Surface } from '@/components/cards';
 import { Typography } from '@/components/design-system';
 import { ContentGrid } from '@/components/layout';
 
 import type { ReflectionResponse, ReflectionViewModel } from './model';
+import { ReflectionFeedbackSurface } from './reflection-feedback-surface';
 import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface HiddenDriverCardProps {
@@ -21,11 +21,7 @@ export function HiddenDriverCard({
   response,
 }: HiddenDriverCardProps) {
   return (
-    <Surface
-      className={
-        response === 'rejected' ? 'bg-muted sidebar:p-8 p-6' : 'sidebar:p-8 p-6'
-      }
-    >
+    <ReflectionFeedbackSurface className="sidebar:p-8 p-6" response={response}>
       <ContentGrid columns="reflectionSplit">
         <div className="sidebar:pr-8 space-y-6">
           <Typography as="h2" variant="reflectiveStatement">
@@ -73,6 +69,6 @@ export function HiddenDriverCard({
         onViewEvidence={onViewEvidence}
         response={response}
       />
-    </Surface>
+    </ReflectionFeedbackSurface>
   );
 }

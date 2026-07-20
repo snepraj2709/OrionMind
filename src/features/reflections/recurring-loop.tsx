@@ -1,11 +1,11 @@
 import { Shield, Zap } from 'lucide-react';
 
-import { Surface } from '@/components/cards';
 import { Typography } from '@/components/design-system';
 import { ContentGrid } from '@/components/layout';
 
 import { LoopOverviewDiagram } from './loop-overview-diagram';
 import type { ReflectionResponse, ReflectionViewModel } from './model';
+import { ReflectionFeedbackSurface } from './reflection-feedback-surface';
 import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface RecurringLoopProps {
@@ -22,12 +22,9 @@ export function RecurringLoop({
   response,
 }: RecurringLoopProps) {
   return (
-    <Surface
-      className={
-        response === 'rejected'
-          ? 'bg-muted overflow-hidden p-0'
-          : 'overflow-hidden p-0'
-      }
+    <ReflectionFeedbackSurface
+      className="overflow-hidden p-0"
+      response={response}
     >
       <ContentGrid columns="reflectionTriptych">
         <div className="p-6">
@@ -92,6 +89,6 @@ export function RecurringLoop({
         onViewEvidence={onViewEvidence}
         response={response}
       />
-    </Surface>
+    </ReflectionFeedbackSurface>
   );
 }

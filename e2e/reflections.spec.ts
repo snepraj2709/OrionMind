@@ -93,3 +93,54 @@ test('reveals contextual evidence and records rejected insight feedback', async 
     page.getByRole('button', { name: 'Not true for me' }),
   ).toHaveAttribute('aria-pressed', 'true');
 });
+
+for (const viewport of [
+  { key: 'desktop', width: 1440, height: 1000 },
+  { key: 'mobile', width: 320, height: 900 },
+] as const) {
+  test(`shows rejected cards across all tabs at ${viewport.key} width`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({
+      width: viewport.width,
+      height: viewport.height,
+    });
+    await logIn(page);
+    await page.goto(routes.reflections.path);
+
+    for (const view of reflectionViews) {
+      await page.getByRole('radio', { name: view.label }).click();
+      const rejected = page
+        .getByRole('button', { name: 'Not true for me' })
+        .first();
+      await rejected.click();
+
+      const rejectedCard = rejected.locator(
+        'xpath=ancestor::*[@data-reflection-response="rejected"][1]',
+      );
+      await expect(rejectedCard).toHaveClass(/bg-destructive\/10/);
+      await expect(page).toHaveScreenshot(
+        `reflections-${view.slug}-rejected-${viewport.key}.png`,
+        { fullPage: true },
+      );
+    }
+  });
+}
+
+test('shows the shared positive and partial hover treatments', async ({
+  page,
+}) => {
+  await logIn(page);
+  await page.goto(routes.reflections.path);
+
+  const feedbackGroup = page.getByRole('group', {
+    name: 'Hidden driver feedback',
+  });
+  await feedbackGroup.getByRole('button', { name: 'This resonates' }).hover();
+  await expect(feedbackGroup).toHaveScreenshot(
+    'reflections-resonates-hover.png',
+  );
+
+  await feedbackGroup.getByRole('button', { name: 'Partly true' }).hover();
+  await expect(feedbackGroup).toHaveScreenshot('reflections-partly-hover.png');
+});

@@ -1,9 +1,9 @@
 import { Sparkles } from 'lucide-react';
 
-import { Surface } from '@/components/cards';
 import { Typography } from '@/components/design-system';
 
 import type { InnerTension, ReflectionResponse } from './model';
+import { ReflectionFeedbackSurface } from './reflection-feedback-surface';
 import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface InnerTensionCardProps {
@@ -35,7 +35,7 @@ export function InnerTensionCard({
   tension,
 }: InnerTensionCardProps) {
   return (
-    <Surface className={response === 'rejected' ? 'bg-muted p-6' : 'p-6'}>
+    <ReflectionFeedbackSurface className="p-6" response={response}>
       <div className="sidebar:grid-cols-[minmax(0,1fr)_minmax(12rem,0.8fr)_minmax(0,1fr)] grid grid-cols-1 gap-6">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
@@ -92,6 +92,6 @@ export function InnerTensionCard({
         onViewEvidence={onViewEvidence}
         response={response}
       />
-    </Surface>
+    </ReflectionFeedbackSurface>
   );
 }
