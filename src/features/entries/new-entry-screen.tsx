@@ -155,8 +155,7 @@ export function NewEntryScreen({
           </FormField>
           {createEntry.isError ? (
             <FormError>
-              Your entry could not be added. Your writing is still here—try
-              again when you are ready.
+              Your entry could not be added. Retry after sometime.
             </FormError>
           ) : null}
           {createEntry.isPending ? (
@@ -166,7 +165,7 @@ export function NewEntryScreen({
             loading={createEntry.isPending}
             loadingLabel="Adding entry"
           >
-            Add Entry
+            Add
           </SubmitButton>
         </form>
       ) : (
@@ -178,11 +177,9 @@ export function NewEntryScreen({
 
             {voice.state === 'idle' ? (
               <div className="space-y-2">
-                <Typography as="h2" variant="componentTitle">
-                  Record a voice entry
-                </Typography>
                 <Typography className="text-muted-foreground" variant="body">
-                  Speak naturally. Orion keeps the transcript, not the audio.
+                  Speak naturally, transcription and processesing begin when you
+                  finish.
                 </Typography>
               </div>
             ) : null}
@@ -240,7 +237,7 @@ export function NewEntryScreen({
                   leftIcon={<Mic aria-hidden="true" />}
                   onClick={startRecording}
                 >
-                  Start recording
+                  Start
                 </AppButton>
               ) : null}
               {voice.state === 'recording' ? (
@@ -256,7 +253,7 @@ export function NewEntryScreen({
                     leftIcon={<Square aria-hidden="true" />}
                     onClick={voice.stop}
                   >
-                    Stop recording
+                    Stop
                   </AppButton>
                 </>
               ) : null}
@@ -273,7 +270,7 @@ export function NewEntryScreen({
                     leftIcon={<Square aria-hidden="true" />}
                     onClick={voice.stop}
                   >
-                    Stop recording
+                    Stop
                   </AppButton>
                 </>
               ) : null}
@@ -292,15 +289,15 @@ export function NewEntryScreen({
                     loadingLabel="Adding voice entry"
                     onClick={submitVoice}
                   >
-                    Add Entry
+                    Add
                   </AppButton>
                 </>
               ) : null}
             </div>
 
-            <Typography className="text-muted-foreground" variant="bodySmall">
-              Up to 20 minutes. Audio is deleted after transcription.
-            </Typography>
+            {/* <Typography className="text-muted-foreground" variant="bodySmall">
+              Audio is deleted after transcription.
+            </Typography> */}
           </Surface>
         </div>
       )}
