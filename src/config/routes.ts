@@ -4,7 +4,6 @@ import {
   FileText,
   Home,
   KeyRound,
-  Lightbulb,
   LogIn,
   type LucideIcon,
   Palette,
@@ -28,8 +27,6 @@ export type RouteKey =
   | 'newEntry'
   | 'entryDetail'
   | 'approvals'
-  | 'ideas'
-  | 'memories'
   | 'reflections'
   | 'journey'
   | 'profile'
@@ -110,22 +107,6 @@ export const routes = {
     authentication: 'required',
     showInSidebar: true,
     icon: CheckCircle2,
-  },
-  ideas: {
-    path: '/ideas',
-    label: 'Ideas',
-    visibility: 'authenticated',
-    authentication: 'required',
-    showInSidebar: true,
-    icon: Lightbulb,
-  },
-  memories: {
-    path: '/memories',
-    label: 'Memories',
-    visibility: 'authenticated',
-    authentication: 'required',
-    showInSidebar: true,
-    icon: FileText,
   },
   reflections: {
     path: '/reflections',

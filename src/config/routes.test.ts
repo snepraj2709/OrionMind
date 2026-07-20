@@ -22,6 +22,11 @@ describe('route registry', () => {
     expect(getActiveSidebarRoute('/entries/entry-123')).toBe('entries');
   });
 
+  it('does not register the retired Ideas and Memories routes', () => {
+    expect(findRouteByPathname('/ideas')).toBeUndefined();
+    expect(findRouteByPathname('/memories')).toBeUndefined();
+  });
+
   it('builds encoded entry detail paths', () => {
     expect(entryDetailPath('entry / 123')).toBe('/entries/entry%20%2F%20123');
   });

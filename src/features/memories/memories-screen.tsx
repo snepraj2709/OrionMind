@@ -1,5 +1,4 @@
 import { SavedItemsScreen } from '@/components/shared';
-import { routes } from '@/config/routes';
 
 export function MemoriesScreen() {
   return (
@@ -8,7 +7,7 @@ export function MemoriesScreen() {
       emptyDescription="Approve a memory in Review and it will become part of this collection."
       emptyTitle="No saved memories yet"
       kind="memory"
-      title={routes.memories.label}
+      title="Memories"
     />
   );
 }

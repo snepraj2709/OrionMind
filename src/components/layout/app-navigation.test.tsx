@@ -16,5 +16,11 @@ describe('AppNavigation', () => {
       'page',
     );
     expect(screen.getByLabelText('3 items to review')).toHaveTextContent('3');
+    expect(
+      screen.queryByRole('link', { name: 'Ideas' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Memories' }),
+    ).not.toBeInTheDocument();
   });
 });

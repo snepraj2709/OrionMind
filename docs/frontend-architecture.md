@@ -34,8 +34,6 @@ Core decisions:
 | `/entries/new` | New Entry | Text and voice capture. Whether it remains a sidebar item is a product decision. |
 | `/entries/[entryId]` | — | Entry detail and extracted-item review in context. |
 | `/review` | Review | Pending idea and memory approval queue. |
-| `/ideas` | Ideas | Approved ideas by default. |
-| `/memories` | Memories | Approved extracted memories by default. |
 | `/reflections` | Reflections | Cross-entry Hidden Drivers, Recurring Loops, and Inner Tensions. |
 | `/journey` | Journey | Theme River, chapters, transformations, echoes, and evidence. |
 | `/insights` | Insights | Theme composition and EMA. Required by the brief but missing from exported Make navigation. |

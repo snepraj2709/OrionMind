@@ -176,9 +176,9 @@ test('closes mobile navigation after route changes', async ({ page }) => {
   await page.getByRole('button', { name: 'Open navigation' }).click();
   await page
     .getByRole('dialog')
-    .getByRole('link', { name: routes.ideas.label })
+    .getByRole('link', { name: routes.reflections.label })
     .click();
 
-  await expect(page).toHaveURL(routes.ideas.path);
+  await expect(page).toHaveURL(routes.reflections.path);
   await expect(page.getByRole('dialog')).toBeHidden();
 });

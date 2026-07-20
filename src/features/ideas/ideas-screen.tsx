@@ -1,5 +1,4 @@
 import { SavedItemsScreen } from '@/components/shared';
-import { routes } from '@/config/routes';
 
 export function IdeasScreen() {
   return (
@@ -8,7 +7,7 @@ export function IdeasScreen() {
       emptyDescription="Approve an idea in Review and it will become part of this collection."
       emptyTitle="No saved ideas yet"
       kind="idea"
-      title={routes.ideas.label}
+      title="Ideas"
     />
   );
 }
