@@ -3,14 +3,14 @@
 import type { ColumnDef } from '@tanstack/react-table';
 import {
   BookOpen,
+  Brain,
   Check,
   ChevronRight,
   Home,
-  Infinity,
   Lightbulb,
   MoreHorizontal,
   Sparkles,
-  Zap,
+  UserRound,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -148,7 +148,7 @@ function CatalogNavigation() {
 export function DesignSystemCatalog() {
   const [segment, setSegment] = useState('week');
   const [strongSegment, setStrongSegment] = useState('all');
-  const [reflectionSegment, setReflectionSegment] = useState('drivers');
+  const [reflectionSegment, setReflectionSegment] = useState('ideas');
   const [selectValue, setSelectValue] = useState('career');
   const [filterValue, setFilterValue] = useState('all');
   const [dateRange, setDateRange] = useState<DateRangeValue>({
@@ -321,19 +321,19 @@ export function DesignSystemCatalog() {
               ariaLabel="Icon segment example"
               items={[
                 {
-                  value: 'drivers',
-                  label: 'Hidden drivers',
-                  icon: <Lightbulb aria-hidden="true" className="size-4" />,
+                  value: 'ideas',
+                  label: 'Ideas',
+                  icon: <Lightbulb aria-hidden="true" className="size-6" />,
                 },
                 {
-                  value: 'loops',
-                  label: 'Recurring loops',
-                  icon: <Infinity aria-hidden="true" className="size-4" />,
+                  value: 'memories',
+                  label: 'Memories',
+                  icon: <Brain aria-hidden="true" className="size-6" />,
                 },
                 {
-                  value: 'tensions',
-                  label: 'Inner tensions',
-                  icon: <Zap aria-hidden="true" className="size-4" />,
+                  value: 'reflections',
+                  label: 'Reflections',
+                  icon: <UserRound aria-hidden="true" className="size-6" />,
                 },
               ]}
               onValueChange={setReflectionSegment}

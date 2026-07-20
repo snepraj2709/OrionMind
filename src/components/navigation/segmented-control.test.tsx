@@ -25,6 +25,7 @@ describe('SegmentedControl', () => {
     expect(screen.getByRole('radio', { name: 'All entries' })).toHaveClass(
       'data-[state=on]:bg-selection-strong',
       'data-[state=on]:text-selection-strong-foreground',
+      'data-[state=on]:shadow-selected-control',
     );
     await user.click(screen.getByRole('radio', { name: 'Last 7 days' }));
     expect(onValueChange).toHaveBeenCalledWith('week');
@@ -48,6 +49,42 @@ describe('SegmentedControl', () => {
     );
 
     expect(screen.getByRole('radio', { name: 'Hidden drivers' })).toBeVisible();
-    expect(screen.getByTestId('reflection-icon')).toBeInTheDocument();
+    const icon = screen.getByTestId('reflection-icon');
+    expect(icon).toBeInTheDocument();
+    expect(icon.parentElement).toHaveClass(
+      'size-10',
+      'items-center',
+      'justify-center',
+    );
+    expect(screen.getByText('Hidden drivers')).toHaveClass('max-sm:sr-only');
+  });
+
+  it('uses the prominent shared proportions and keeps text-only labels visible on mobile', () => {
+    render(
+      <SegmentedControl
+        ariaLabel="Date range"
+        items={[{ value: 'week', label: 'Week' }]}
+        value="week"
+      />,
+    );
+
+    const control = screen.getByRole('radiogroup', { name: 'Date range' });
+    expect(control).toHaveClass(
+      'radius-surface',
+      'overflow-x-auto',
+      'gap-1',
+      'p-1',
+    );
+    expect(control).toHaveStyle({ '--gap': '1' });
+
+    const weekTab = screen.getByRole('radio', { name: 'Week' });
+    expect(weekTab).toHaveClass(
+      'control-prominent',
+      'type-navigation',
+      'data-[state=on]:shadow-selected-control',
+      'gap-0',
+    );
+    expect(weekTab).not.toHaveAttribute('spacing');
+    expect(screen.getByText('Week')).not.toHaveClass('max-sm:sr-only');
   });
 });

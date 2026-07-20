@@ -39,6 +39,11 @@
   }
 }
 
+@utility control-prominent {
+  height: var(--control-height-prominent) !important;
+  min-height: var(--touch-target) !important;
+}
+
 @utility icon-control-default {
   width: var(--control-height-default) !important;
   height: var(--control-height-default) !important;
@@ -95,6 +100,10 @@
 
 @utility shadow-overlay {
   box-shadow: var(--shadow-overlay);
+}
+
+@utility shadow-selected-control {
+  box-shadow: var(--shadow-selected-control);
 }
 
 @utility textarea-height {

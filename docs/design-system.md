@@ -114,7 +114,7 @@ Use spacing to group related content before adding more surface treatment. Do no
 | Large surface                       | 16px  | `radius-surface`     |
 | Badge / chip / approved pill action | 999px | `radius-pill`        |
 
-Use a one-pixel `border-border` border by default. Do not use shadows on ordinary cards. The single `--shadow-overlay` token is reserved for sheets, drawers, dialogs, and other temporary elevated surfaces.
+Use a one-pixel `border-border` border by default. Do not use shadows on ordinary cards. `--shadow-overlay` is reserved for sheets, drawers, dialogs, and other temporary elevated surfaces. `--shadow-selected-control` is the only approved control elevation and identifies the selected item in the shared prominent `SegmentedControl`.
 
 Pill-shaped actions are an explicit `AppButton` shape variant for compact feedback choices. They keep the shared button typography, focus state, and 44px minimum touch target. Do not reproduce this treatment with page-local radius classes.
 
@@ -141,7 +141,7 @@ Reflection compositions may use the shared `ContentGrid` variants:
 
 Both variants collapse to one column below the 1024px sidebar breakpoint. The separator changes from vertical to horizontal when stacked.
 
-The brown strong-selection treatment is opt-in through `SegmentedControl variant="strong"`. Default range controls retain the quiet secondary/card treatment. `SegmentedControl` is also the shared compact view switch used by New Entry and Reflections; each item may include a decorative icon while keeping a visible text label and the same keyboard behavior.
+The brown strong-selection treatment is opt-in through `SegmentedControl variant="strong"`. All segmented controls use the shared prominent composition: a 48px control inside an 8px inset, 16px outer radius, 14px selected-item radius, navigation typography, muted inactive labels, and the approved selected-control elevation. Items may include a decorative 24px icon centered in a 40px padded icon slot beside their required label. Below 640px, icon-bearing items visually hide their labels while preserving the accessible name; text-only filters keep their labels. The control owns horizontal scrolling so it never creates page overflow.
 
 ## Responsive and accessibility rules
 

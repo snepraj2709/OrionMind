@@ -1,7 +1,7 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mic, Pause, Play, RotateCcw, Square } from 'lucide-react';
+import { Mic, Pause, PenLine, Play, RotateCcw, Square } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
@@ -118,10 +118,16 @@ export function NewEntryScreen({
             disabled:
               createEntry.isPending ||
               (mode === 'voice' && voice.state !== 'idle'),
+            icon: <PenLine aria-hidden="true" className="size-4" />,
             label: 'Write',
             value: 'text',
           },
-          { disabled: createEntry.isPending, label: 'Record', value: 'voice' },
+          {
+            disabled: createEntry.isPending,
+            icon: <Mic aria-hidden="true" className="size-4" />,
+            label: 'Record',
+            value: 'voice',
+          },
         ]}
         onValueChange={changeMode}
         value={mode}

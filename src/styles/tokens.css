@@ -67,6 +67,7 @@
   --touch-target: 44px;
   --control-height-default: 44px;
   --control-height-compact: 36px;
+  --control-height-prominent: 48px;
   --mobile-header-height: 64px;
   --state-contained-min-height: 256px;
   --textarea-min-height: 128px;
@@ -75,6 +76,8 @@
   --motion-standard: 180ms;
   --motion-overlay: 220ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --shadow-selected-control: 0 2px 4px
+    color-mix(in srgb, var(--foreground) 12%, transparent);
   --shadow-overlay: 0 16px 48px
     color-mix(in srgb, var(--foreground) 12%, transparent);
 }

@@ -23,9 +23,10 @@ export interface SegmentedControlProps {
 }
 
 const itemVariantClasses = {
-  default: 'data-[state=on]:bg-card data-[state=on]:text-primary',
+  default:
+    'data-[state=on]:bg-card data-[state=on]:text-foreground data-[state=on]:shadow-selected-control',
   strong:
-    'data-[state=on]:bg-selection-strong data-[state=on]:text-selection-strong-foreground',
+    'data-[state=on]:bg-selection-strong data-[state=on]:text-selection-strong-foreground data-[state=on]:shadow-selected-control',
 } as const;
 
 export function SegmentedControl({
@@ -41,7 +42,7 @@ export function SegmentedControl({
     <ToggleGroup
       aria-label={ariaLabel}
       className={cn(
-        'radius-interactive border-border bg-muted max-w-full overflow-x-auto border p-1',
+        'radius-surface border-border bg-muted max-w-full gap-1 overflow-x-auto border p-1',
         className,
       )}
       defaultValue={defaultValue}
@@ -50,19 +51,26 @@ export function SegmentedControl({
       }}
       type="single"
       value={value}
+      spacing={1}
     >
       {items.map((item) => (
         <ToggleGroupItem
           className={cn(
-            'type-button control-compact radius-control',
+            'type-navigation control-prominent radius-card text-muted-foreground hover:bg-card/60 hover:text-foreground gap-0 px-4',
             itemVariantClasses[variant],
           )}
           disabled={item.disabled}
           key={item.value}
           value={item.value}
         >
-          {item.icon}
-          {item.label}
+          {item.icon ? (
+            <span className="flex size-10 shrink-0 items-center justify-center">
+              {item.icon}
+            </span>
+          ) : null}
+          <span className={cn(item.icon && 'max-sm:sr-only')}>
+            {item.label}
+          </span>
         </ToggleGroupItem>
       ))}
     </ToggleGroup>
