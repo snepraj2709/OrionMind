@@ -23,6 +23,10 @@
   min-height: var(--state-contained-min-height);
 }
 
+@utility steamgraph-height {
+  height: var(--steamgraph-height);
+}
+
 @utility control-default {
   height: var(--control-height-default) !important;
   min-height: var(--touch-target) !important;

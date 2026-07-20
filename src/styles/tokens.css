@@ -70,6 +70,7 @@
   --control-height-prominent: 48px;
   --mobile-header-height: 64px;
   --state-contained-min-height: 256px;
+  --steamgraph-height: 256px;
   --textarea-min-height: 128px;
 
   --motion-fast: 140ms;
