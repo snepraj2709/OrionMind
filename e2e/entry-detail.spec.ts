@@ -15,7 +15,7 @@ test('matches a completed entry detail at desktop width', async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Themes' })).toBeVisible();
   await expect(
-    page.getByRole('heading', { name: 'Ideas and memories' }),
+    page.getByRole('heading', { name: 'Extracted items' }),
   ).toBeVisible();
 
   await expect(page).toHaveScreenshot('entry-detail-desktop.png', {
@@ -27,7 +27,7 @@ test('matches entry detail without mobile page overflow', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 900 });
   await logIn(page);
   await page.goto(entryDetailPath('e1'));
-  await expect(page.getByText('Needs review')).toBeVisible();
+  await expect(page.getByText('Needs review').first()).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
     content: document.documentElement.scrollWidth,
@@ -43,7 +43,7 @@ test('matches entry detail without mobile page overflow', async ({ page }) => {
 test('reviews an extracted item in place', async ({ page }) => {
   await logIn(page);
   await page.goto(entryDetailPath('e1'));
-  await page.getByRole('button', { name: 'Approve' }).click();
+  await page.getByRole('button', { name: 'Approve' }).first().click();
 
   await expect(page.getByText('Approved')).toBeVisible();
   await expect(

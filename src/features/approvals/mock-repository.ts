@@ -12,7 +12,10 @@ export class MockApprovalsRepository implements ApprovalsRepository {
     approvals?: ApprovalRecord[],
     private readonly delay = 220,
   ) {
-    this.approvals = approvals?.map((item) => ({ ...item }));
+    this.approvals = approvals?.map((item) => ({
+      ...item,
+      themes: [...item.themes],
+    }));
   }
 
   async listPendingApprovals(query: ApprovalsQuery): Promise<ApprovalsResult> {
@@ -22,7 +25,11 @@ export class MockApprovalsRepository implements ApprovalsRepository {
     ).filter((item) => item.status === 'pending_approval');
     const normalizedSearch = query.search.trim().toLocaleLowerCase();
     const matching = pending
+      .filter((item) => query.status === 'all' || item.status === query.status)
       .filter((item) => query.kind === 'all' || item.kind === query.kind)
+      .filter(
+        (item) => query.theme === 'all' || item.themes.includes(query.theme),
+      )
       .filter(
         (item) =>
           normalizedSearch.length === 0 ||

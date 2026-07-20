@@ -31,6 +31,7 @@ export type ApprovalStatus = keyof typeof approvalStatusPresentation;
 export const extractedItemKindPresentation = {
   idea: { label: 'Idea', pluralLabel: 'Ideas' },
   memory: { label: 'Memory', pluralLabel: 'Memories' },
+  reflection: { label: 'Reflection', pluralLabel: 'Reflections' },
 } as const;
 
 export type ExtractedItemKind = keyof typeof extractedItemKindPresentation;

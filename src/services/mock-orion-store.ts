@@ -1,5 +1,6 @@
 import type { ApprovalStatus, ExtractedItemKind } from '@/config/status';
 import type {
+  ApprovedReflectionEvidence,
   ApprovalRecord,
   EntryDetail,
   SavedItemRecord,
@@ -24,6 +25,15 @@ const entryFixtures: EntryDetail[] = [
       },
     ],
     memories: [],
+    reflections: [
+      {
+        id: 'r1',
+        content:
+          'Slow, unstructured mornings help me hear what I need before the day starts asking things of me.',
+        kind: 'reflection',
+        status: 'pending_approval',
+      },
+    ],
   },
   {
     id: 'e2',
@@ -51,6 +61,15 @@ const entryFixtures: EntryDetail[] = [
         status: 'pending_approval',
       },
     ],
+    reflections: [
+      {
+        id: 'r2',
+        content:
+          'I trust my judgment more when I state it plainly and let the conversation respond.',
+        kind: 'reflection',
+        status: 'pending_approval',
+      },
+    ],
   },
   {
     id: 'e3',
@@ -70,6 +89,15 @@ const entryFixtures: EntryDetail[] = [
         status: 'approved',
       },
     ],
+    reflections: [
+      {
+        id: 'r3',
+        content:
+          'Finishing imperfect work teaches me more than protecting the possibility of perfect work.',
+        kind: 'reflection',
+        status: 'pending_approval',
+      },
+    ],
   },
   {
     id: 'e4',
@@ -81,6 +109,7 @@ const entryFixtures: EntryDetail[] = [
     themes: [],
     ideas: [],
     memories: [],
+    reflections: [],
   },
   {
     id: 'e5',
@@ -92,6 +121,7 @@ const entryFixtures: EntryDetail[] = [
     themes: [],
     ideas: [],
     memories: [],
+    reflections: [],
     processingError:
       'Orion could not complete this reflection. Your original entry is safe.',
   },
@@ -137,6 +167,7 @@ function cloneEntries(entries: EntryDetail[]) {
     ...entry,
     ideas: entry.ideas.map((item) => ({ ...item })),
     memories: entry.memories.map((item) => ({ ...item })),
+    reflections: entry.reflections.map((item) => ({ ...item })),
     themes: [...entry.themes],
   }));
 }
@@ -155,12 +186,24 @@ export class MockOrionStore {
 
   listPendingApprovals(): ApprovalRecord[] {
     return this.entries.flatMap((entry) =>
-      [...entry.ideas, ...entry.memories]
+      [...entry.ideas, ...entry.memories, ...entry.reflections]
         .filter((item) => item.status === 'pending_approval')
         .map((item) => ({
           ...item,
           entryDate: entry.date,
           entryId: entry.id,
+          themes: [...entry.themes],
+        })),
+    );
+  }
+
+  listApprovedReflectionEvidence(): ApprovedReflectionEvidence[] {
+    return this.entries.flatMap((entry) =>
+      entry.reflections
+        .filter((item) => item.status === 'approved')
+        .map((item) => ({
+          content: item.content,
+          entryDate: entry.date,
         })),
     );
   }
@@ -174,17 +217,22 @@ export class MockOrionStore {
     const entry = this.entries.find(
       (candidate) =>
         (!input.entryId || candidate.id === input.entryId) &&
-        [...candidate.ideas, ...candidate.memories].some(
-          (item) => item.id === input.itemId,
-        ),
+        [
+          ...candidate.ideas,
+          ...candidate.memories,
+          ...candidate.reflections,
+        ].some((item) => item.id === input.itemId),
     );
     if (!entry) throw new Error('The review item was not found.');
 
+    const itemCollections = {
+      idea: entry.ideas,
+      memory: entry.memories,
+      reflection: entry.reflections,
+    } satisfies Record<ExtractedItemKind, typeof entry.ideas>;
     const items = input.kind
-      ? input.kind === 'idea'
-        ? entry.ideas
-        : entry.memories
-      : [...entry.ideas, ...entry.memories];
+      ? itemCollections[input.kind]
+      : [...entry.ideas, ...entry.memories, ...entry.reflections];
     const item = items.find((candidate) => candidate.id === input.itemId);
     if (!item) throw new Error('The review item was not found.');
     if (item.status !== 'pending_approval') {
@@ -192,9 +240,15 @@ export class MockOrionStore {
     }
 
     item.status = input.status;
-    const record = { ...item, entryDate: entry.date, entryId: entry.id };
+    const record = {
+      ...item,
+      entryDate: entry.date,
+      entryId: entry.id,
+      themes: [...entry.themes],
+    };
     if (
       input.status === 'approved' &&
+      item.kind !== 'reflection' &&
       !this.savedItems.some((savedItem) => savedItem.id === item.id)
     ) {
       this.savedItems.unshift({

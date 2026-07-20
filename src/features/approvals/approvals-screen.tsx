@@ -1,13 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { Brain, Lightbulb, UserRound } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 
-import {
-  FilterBar,
-  FilterField,
-  PaginationControls,
-  StatusBadge,
-} from '@/components/data-display';
+import { FilterField, PaginationControls } from '@/components/data-display';
 import { AppButton, Typography } from '@/components/design-system';
 import {
   DataViewStatus,
@@ -15,28 +11,57 @@ import {
   InlineError,
   NoResultsState,
 } from '@/components/feedback';
-import { SearchInput } from '@/components/forms';
+import { SearchControl } from '@/components/forms';
 import { PageHeader, PageShell } from '@/components/layout';
-import { AppLink } from '@/components/navigation';
-import {
-  ApprovalActions,
-  RefreshButton,
-  ReviewItemCard,
-} from '@/components/shared';
-import { entryDetailPath, routes } from '@/config/routes';
+import { AppLink, SegmentedControl } from '@/components/navigation';
+import { themeRegistry } from '@/config/design-system';
 import { dataViewMessages } from '@/config/messages';
-import {
-  approvalStatusPresentation,
-  extractedItemKindPresentation,
-} from '@/config/status';
-import { collectionPageSizeOptions } from '@/constants/pagination';
+import { routes } from '@/config/routes';
+import { extractedItemKindPresentation } from '@/config/status';
 import { useCollectionControls, useOnlineStatus } from '@/hooks';
-import { formatLongDate } from '@/lib/date';
 
 import { approvalsRepository } from './mock-repository';
-import type { ApprovalKindFilter, ApprovalRecord } from './model';
+import type {
+  ApprovalKindFilter,
+  ApprovalRecord,
+  ApprovalStatusFilter,
+  ApprovalThemeFilter,
+} from './model';
 import { useApprovalDecisionMutation, useApprovalsQuery } from './queries';
 import type { ApprovalsRepository } from './repository';
+import { ReviewQueueItem } from './review-queue-item';
+
+const reviewPageSize = 5;
+
+const kindItems = [
+  {
+    icon: <Lightbulb aria-hidden="true" className="size-5" />,
+    label: 'Ideas',
+    value: 'idea',
+  },
+  {
+    icon: <Brain aria-hidden="true" className="size-5" />,
+    label: 'Memories',
+    value: 'memory',
+  },
+  {
+    icon: <UserRound aria-hidden="true" className="size-5" />,
+    label: 'Reflections',
+    value: 'reflection',
+  },
+] satisfies Array<{
+  icon: ReactNode;
+  label: string;
+  value: Exclude<ApprovalKindFilter, 'all'>;
+}>;
+
+const themeOptions = [
+  { label: 'All Themes', value: 'all' },
+  ...Object.entries(themeRegistry).map(([value, presentation]) => ({
+    label: presentation.label,
+    value,
+  })),
+];
 
 export interface ApprovalsScreenProps {
   repository?: ApprovalsRepository;
@@ -46,98 +71,98 @@ export function ApprovalsScreen({
   repository = approvalsRepository,
 }: ApprovalsScreenProps) {
   const isOnline = useOnlineStatus();
-  const [kind, setKind] = useState<ApprovalKindFilter>('all');
-  const {
-    clearSearch,
-    pageIndex,
-    pageSize,
-    search,
-    setPageIndex,
-    setPageSize,
-    setSearch,
-  } = useCollectionControls();
+  const [kind, setKind] = useState<ApprovalKindFilter>('idea');
+  const [status, setStatus] = useState<ApprovalStatusFilter>('all');
+  const [theme, setTheme] = useState<ApprovalThemeFilter>('all');
+  const { clearSearch, pageIndex, pageSize, search, setPageIndex, setSearch } =
+    useCollectionControls(reviewPageSize);
   const [lastDecision, setLastDecision] = useState<string>();
 
   const { query: approvalsQuery, viewStatus } = useApprovalsQuery(
-    { kind, pageIndex, pageSize, search },
+    { kind, pageIndex, pageSize, search, status, theme },
     repository,
   );
   const decision = useApprovalDecisionMutation(repository, (item) => {
     setLastDecision(
       `${extractedItemKindPresentation[item.kind].label} ${item.status === 'approved' ? 'approved' : 'rejected'}.`,
     );
+    setPageIndex(0);
   });
 
   const pageCount = approvalsQuery.data
     ? Math.ceil(approvalsQuery.data.total / pageSize)
     : 0;
-  const hasFilters = kind !== 'all' || search.trim().length > 0;
+  const hasFilters =
+    kind !== 'idea' ||
+    status !== 'all' ||
+    theme !== 'all' ||
+    search.trim().length > 0;
 
   function clearFilters() {
-    setKind('all');
+    setKind('idea');
+    setStatus('all');
+    setTheme('all');
     clearSearch();
   }
 
-  function actionsFor(item: ApprovalRecord) {
+  function decisionState(item: ApprovalRecord) {
     const isCurrentItem = decision.variables?.id === item.id;
-    const loadingAction = isCurrentItem
-      ? decision.variables?.status === 'approved'
-        ? 'approve'
-        : 'reject'
-      : undefined;
-
-    return (
-      <ApprovalActions
-        disabled={!isOnline || decision.isPending}
-        loadingAction={decision.isPending ? loadingAction : undefined}
-        onApprove={() => decision.mutate({ id: item.id, status: 'approved' })}
-        onReject={() => decision.mutate({ id: item.id, status: 'rejected' })}
-      />
-    );
+    if (!isCurrentItem || !decision.isPending) return undefined;
+    return decision.variables?.status === 'approved' ? 'approve' : 'reject';
   }
 
   return (
     <PageShell className="space-y-8">
       <PageHeader
-        description="Choose which ideas and memories should become part of your Orion record."
+        description="Approve or dismiss what Orion extracted from your entries."
         title={routes.approvals.label}
       />
 
-      <FilterBar
-        actions={
-          <RefreshButton
-            loading={approvalsQuery.isFetching && !approvalsQuery.isPending}
-            loadingLabel="Refreshing review queue"
-            onClick={() => void approvalsQuery.refetch()}
-          >
-            Refresh
-          </RefreshButton>
+      <SegmentedControl
+        ariaLabel="Review item type"
+        items={kindItems}
+        onValueChange={(value) => {
+          setKind(value as Exclude<ApprovalKindFilter, 'all'>);
+          setPageIndex(0);
+        }}
+        value={kind}
+      />
+
+      <SearchControl
+        filters={
+          <>
+            <FilterField
+              id="review-status"
+              hideLabel
+              label="Status"
+              onValueChange={(value) => {
+                setStatus(value as ApprovalStatusFilter);
+                setPageIndex(0);
+              }}
+              options={[
+                { label: 'All Status', value: 'all' },
+                { label: 'Needs review', value: 'pending_approval' },
+              ]}
+              value={status}
+            />
+            <FilterField
+              id="review-theme"
+              hideLabel
+              label="Theme"
+              onValueChange={(value) => {
+                setTheme(value as ApprovalThemeFilter);
+                setPageIndex(0);
+              }}
+              options={themeOptions}
+              value={theme}
+            />
+          </>
         }
-        ariaLabel="Review filters"
-      >
-        <SearchInput
-          label="Search review queue"
-          onChange={(event) => {
-            setSearch(event.target.value);
-          }}
-          placeholder="Search ideas and memories"
-          value={search}
-        />
-        <FilterField
-          id="review-kind"
-          label="Show"
-          onValueChange={(value) => {
-            setKind(value as ApprovalKindFilter);
-            setPageIndex(0);
-          }}
-          options={[
-            { label: 'Ideas and memories', value: 'all' },
-            { label: 'Ideas', value: 'idea' },
-            { label: 'Memories', value: 'memory' },
-          ]}
-          value={kind}
-        />
-      </FilterBar>
+        label="Search review queue"
+        onSearch={setSearch}
+        placeholder="Search extracted items…"
+        value={search}
+      />
 
       {!isOnline ? (
         <InlineError>
@@ -172,7 +197,7 @@ export function ApprovalsScreen({
               <AppLink href={routes.entries.path}>Return to entries</AppLink>
             </AppButton>
           }
-          description="New ideas and memories will appear here after Orion reflects on an entry."
+          description="New ideas, memories, and reflections will appear here after Orion reflects on an entry."
           title="You are all caught up"
         />
       ) : null}
@@ -191,39 +216,28 @@ export function ApprovalsScreen({
 
       {approvalsQuery.data && approvalsQuery.data.items.length > 0 ? (
         <div className="space-y-6">
-          <div className="space-y-4">
+          <ul aria-live="polite">
             {approvalsQuery.data.items.map((item) => (
-              <ReviewItemCard
-                actions={actionsFor(item)}
+              <ReviewQueueItem
                 content={item.content}
+                disabled={!isOnline || decision.isPending}
                 key={item.id}
-                metadata={
-                  <AppLink
-                    className="type-body-small"
-                    href={entryDetailPath(item.entryId)}
-                  >
-                    From {formatLongDate(item.entryDate)}
-                  </AppLink>
+                loadingAction={decisionState(item)}
+                onApprove={() =>
+                  decision.mutate({ id: item.id, status: 'approved' })
                 }
-                status={
-                  <StatusBadge
-                    label={approvalStatusPresentation.pending_approval.label}
-                    variant={approvalStatusPresentation.pending_approval.tone}
-                  />
+                onReject={() =>
+                  decision.mutate({ id: item.id, status: 'rejected' })
                 }
-                title={extractedItemKindPresentation[item.kind].label}
               />
             ))}
-          </div>
+          </ul>
           <PaginationControls
             canNextPage={pageIndex + 1 < pageCount}
             canPreviousPage={pageIndex > 0}
             onPageChange={setPageIndex}
-            onPageSizeChange={setPageSize}
             pageCount={pageCount}
             pageIndex={pageIndex}
-            pageSize={pageSize}
-            pageSizeOptions={collectionPageSizeOptions}
           />
         </div>
       ) : null}

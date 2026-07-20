@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +20,7 @@ const idea: ApprovalRecord = {
   entryId: 'entry-1',
   kind: 'idea',
   status: 'pending_approval',
+  themes: ['health'],
 };
 
 const memory: ApprovalRecord = {
@@ -27,6 +28,15 @@ const memory: ApprovalRecord = {
   id: 'memory-1',
   content: 'I found language for my own authority.',
   kind: 'memory',
+  themes: ['career'],
+};
+
+const reflection: ApprovalRecord = {
+  ...idea,
+  id: 'reflection-1',
+  content: 'Quiet gives me room to notice what I need.',
+  kind: 'reflection',
+  themes: ['personalGrowth'],
 };
 
 function renderApprovals(repository: ApprovalsRepository) {
@@ -43,9 +53,12 @@ function renderApprovals(repository: ApprovalsRepository) {
     );
   }
 
-  return render(<ApprovalsScreen repository={repository} />, {
-    wrapper: Wrapper,
-  });
+  return {
+    queryClient,
+    ...render(<ApprovalsScreen repository={repository} />, {
+      wrapper: Wrapper,
+    }),
+  };
 }
 
 function result(
@@ -60,27 +73,118 @@ afterEach(() => {
 });
 
 describe('ApprovalsScreen', () => {
-  it('shows an editorial loading shape before the queue arrives', () => {
+  it('shows the approved header, defaults, and editorial loading shape', () => {
     renderApprovals({
       decideApproval: vi.fn(),
       listPendingApprovals: () => new Promise(() => undefined),
     });
 
+    expect(
+      screen.getByText(
+        'Approve or dismiss what Orion extracted from your entries.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole('radio', { name: 'Ideas' })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveTextContent(
+      'All Status',
+    );
+    expect(screen.getByRole('combobox', { name: 'Theme' })).toHaveTextContent(
+      'All Themes',
+    );
     expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
   });
 
-  it('filters the review queue by item kind', async () => {
+  it('switches immediately between Ideas, Memories, and Reflections', async () => {
     const user = userEvent.setup();
-    renderApprovals(new MockApprovalsRepository([idea, memory], 0));
+    renderApprovals(new MockApprovalsRepository([idea, memory, reflection], 0));
 
     expect(await screen.findByText(idea.content)).toBeVisible();
-    expect(screen.getByText(memory.content)).toBeVisible();
+    expect(screen.queryByText(memory.content)).not.toBeInTheDocument();
 
-    screen.getByRole('combobox', { name: 'Show' }).focus();
-    await user.keyboard('{Enter}{ArrowDown}{ArrowDown}{Enter}');
-
+    await user.click(screen.getByRole('radio', { name: 'Memories' }));
     expect(await screen.findByText(memory.content)).toBeVisible();
     expect(screen.queryByText(idea.content)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Reflections' }));
+    expect(await screen.findByText(reflection.content)).toBeVisible();
+    expect(screen.queryByText(memory.content)).not.toBeInTheDocument();
+  });
+
+  it('submits search explicitly while theme filtering remains immediate', async () => {
+    const user = userEvent.setup();
+    renderApprovals(
+      new MockApprovalsRepository(
+        [
+          idea,
+          {
+            ...idea,
+            id: 'idea-2',
+            content: 'A career experiment.',
+            themes: ['career'],
+          },
+        ],
+        0,
+      ),
+    );
+
+    await screen.findByText(idea.content);
+    const searchbox = screen.getByRole('searchbox', {
+      name: 'Search review queue',
+    });
+    await user.type(searchbox, 'career');
+    expect(screen.getByText(idea.content)).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('A career experiment.')).toBeVisible();
+    expect(screen.queryByText(idea.content)).not.toBeInTheDocument();
+
+    await user.clear(
+      screen.getByRole('searchbox', { name: 'Search review queue' }),
+    );
+    await user.keyboard('{Enter}');
+    await user.click(screen.getByRole('combobox', { name: 'Theme' }));
+    await user.click(screen.getByRole('option', { name: 'Health' }));
+    expect(await screen.findByText(idea.content)).toBeVisible();
+    expect(screen.queryByText('A career experiment.')).not.toBeInTheDocument();
+  });
+
+  it('renders minimal rows with editorial action styles and separators', async () => {
+    renderApprovals(new MockApprovalsRepository([idea], 0));
+
+    const statement = await screen.findByText(idea.content);
+    expect(statement).toHaveClass('type-journal-excerpt');
+    const row = statement.closest('li');
+    expect(row?.querySelector('hr')).toHaveClass('border-border');
+    expect(row?.querySelector('[data-slot="surface"]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Approve' })).toHaveClass(
+      'border-accent',
+      'text-accent',
+    );
+    expect(screen.getByRole('button', { name: 'Reject' })).toHaveClass(
+      'border-border',
+      'text-muted-foreground',
+      'hover:border-destructive',
+      'hover:text-destructive',
+    );
+  });
+
+  it('uses a fixed five-item page and clamps after a decision', async () => {
+    const items = Array.from({ length: 6 }, (_, index) => ({
+      ...idea,
+      id: `idea-${index + 1}`,
+      content: `Idea statement ${index + 1}`,
+    }));
+    const user = userEvent.setup();
+    renderApprovals(new MockApprovalsRepository(items, 0));
+
+    expect(await screen.findAllByText(/Idea statement/)).toHaveLength(5);
+    expect(screen.getByText('Page 1 of 2')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Idea statement 6')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(await screen.findByText('Page 1 of 1')).toBeVisible();
+    expect(screen.getByText('Idea statement 1')).toBeVisible();
   });
 
   it('decides an item and removes it from the pending queue', async () => {
@@ -99,6 +203,24 @@ describe('ApprovalsScreen', () => {
     });
   });
 
+  it('marks Reflections stale without immediately refetching after approval', async () => {
+    const repository = new MockApprovalsRepository([reflection], 0);
+    const user = userEvent.setup();
+    const { queryClient } = renderApprovals(repository);
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
+
+    await user.click(screen.getByRole('radio', { name: 'Reflections' }));
+    await screen.findByText(reflection.content);
+    await user.click(screen.getByRole('button', { name: 'Approve' }));
+
+    await waitFor(() =>
+      expect(invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ['reflections'],
+        refetchType: 'none',
+      }),
+    );
+  });
+
   it('distinguishes an empty queue from filtered-empty results', async () => {
     const user = userEvent.setup();
     renderApprovals(new MockApprovalsRepository([idea], 0));
@@ -108,6 +230,8 @@ describe('ApprovalsScreen', () => {
       screen.getByRole('searchbox', { name: 'Search review queue' }),
       'missing',
     );
+    expect(screen.queryByText('No matching results')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Search' }));
     expect(await screen.findByText('No matching results')).toBeVisible();
     expect(screen.queryByText('You are all caught up')).not.toBeInTheDocument();
 
@@ -129,15 +253,15 @@ describe('ApprovalsScreen', () => {
             resolveRefresh = resolve;
           }),
       );
-    const user = userEvent.setup();
-    renderApprovals({ decideApproval: vi.fn(), listPendingApprovals });
+    const { queryClient } = renderApprovals({
+      decideApproval: vi.fn(),
+      listPendingApprovals,
+    });
 
     await screen.findByText(idea.content);
-    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    void queryClient.invalidateQueries({ queryKey: ['approvals'] });
 
-    expect(
-      screen.getByRole('button', { name: 'Refreshing review queue' }),
-    ).toBeDisabled();
+    expect(await screen.findByText('Refreshing review queue…')).toBeVisible();
     expect(screen.getByText(idea.content)).toBeVisible();
     await act(async () => resolveRefresh?.(result([idea])));
   });
@@ -171,5 +295,23 @@ describe('ApprovalsScreen', () => {
     expect(await screen.findByText(/You are offline/)).toBeVisible();
     expect(await screen.findByText(idea.content)).toBeVisible();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  });
+
+  it('sends complete typed filters to the repository', async () => {
+    const listPendingApprovals = vi
+      .fn<ApprovalsRepository['listPendingApprovals']>()
+      .mockResolvedValue(result([idea]));
+    renderApprovals({ decideApproval: vi.fn(), listPendingApprovals });
+
+    await waitFor(() =>
+      expect(listPendingApprovals).toHaveBeenCalledWith({
+        kind: 'idea',
+        pageIndex: 0,
+        pageSize: 5,
+        search: '',
+        status: 'all',
+        theme: 'all',
+      }),
+    );
   });
 });

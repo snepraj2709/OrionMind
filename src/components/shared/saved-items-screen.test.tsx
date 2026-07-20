@@ -74,6 +74,8 @@ describe('SavedItemsScreen', () => {
       screen.getByRole('searchbox', { name: 'Search ideas' }),
       'missing',
     );
+    expect(screen.getByText(item.content)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByText('No matching results')).toBeVisible();
     expect(screen.queryByText('No saved ideas yet')).not.toBeInTheDocument();

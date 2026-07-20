@@ -5,7 +5,7 @@ export {
 } from './date-range-field';
 export { FormError, type FormErrorProps } from './form-error';
 export { FormField, type FormFieldProps } from './form-field';
-export { SearchInput, type SearchInputProps } from './search-input';
+export { SearchControl, type SearchControlProps } from './search-control';
 export {
   SelectField,
   type SelectFieldProps,

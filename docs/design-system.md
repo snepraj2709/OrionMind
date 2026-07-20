@@ -118,6 +118,8 @@ Use a one-pixel `border-border` border by default. Do not use shadows on ordinar
 
 Pill-shaped actions are an explicit `AppButton` shape variant for compact feedback choices. They keep the shared button typography, focus state, and 44px minimum touch target. Do not reproduce this treatment with page-local radius classes.
 
+Outline actions remain part of the same `AppButton` implementation. `outline` is the neutral bordered treatment used by pagination, `accentOutline` is the affirmative editorial action, and `rejectOutline` stays neutral until pointer hover reveals destructive text and border color. Destructive meaning must still be present in the action label or icon so hover color is not the only cue.
+
 ## Layout
 
 Every route uses `PageShell` or an approved layout shell that contains it. `PageShell` is full width, centered at a maximum of 1440px, and applies:
@@ -165,6 +167,16 @@ The brown strong-selection treatment is opt-in through `SegmentedControl variant
 - `src/features/<feature>`: feature-owned behavior exposed through that feature's root `index.ts` only.
 
 Search these locations before creating a component. Do not change a shadcn primitive for feature-specific behavior; add a design-system or shared wrapper instead. Features may import another feature only through its public root export, never through internal paths.
+
+## Search and collection controls
+
+`SearchControl` is the canonical search composition. It combines a labeled search field, decorative search icon, primary Search action, and optional filter/action slots. Typing changes only its internal draft; Search or Enter commits the text through `onSearch`. Dropdown filters and segmented controls remain immediate. Do not add keyboard-shortcut decoration to the field.
+
+When a compact filter row uses the selected value as its visible copy, `FilterField hideLabel` may visually hide the field label while preserving it for assistive technology. Do not remove the accessible label or replace it with placeholder-only naming.
+
+`PaginationControls` always renders outlined Prev and Next actions around `Page X of Y` metadata. First/last actions and user-facing page-size selectors are not part of Orion's pagination language. Consumers keep a fixed page size in their data/query boundary.
+
+The Review queue uses a feature-owned editorial row instead of a card: one full Lora statement, accent-outline Approve, neutral-to-destructive-hover Reject, and a semantic horizontal separator after every row. The row has no surface background, border, radius, shadow, title, date, or status badge. This treatment is specific to Review; richer extracted-item cards remain valid in Entry Detail and saved collections.
 
 ## Required view states
 

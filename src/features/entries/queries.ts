@@ -85,11 +85,17 @@ export function useEntryDecisionMutation(
   return useMutation({
     mutationFn: (input: ExtractedItemDecisionInput) =>
       repository.decideExtractedItem(input),
-    onSuccess: (entry) => {
+    onSuccess: (entry, input) => {
       queryClient.setQueryData(entryKeys.detail(entry.id), entry);
       void queryClient.invalidateQueries({ queryKey: entryKeys.lists });
       void queryClient.invalidateQueries({ queryKey: ['approvals'] });
       void queryClient.invalidateQueries({ queryKey: ['saved-items'] });
+      if (input.kind === 'reflection' && input.status === 'approved') {
+        void queryClient.invalidateQueries({
+          queryKey: ['reflections'],
+          refetchType: 'none',
+        });
+      }
     },
   });
 }

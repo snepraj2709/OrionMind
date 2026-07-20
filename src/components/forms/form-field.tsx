@@ -19,6 +19,7 @@ export interface FormFieldProps {
   error?: string;
   required?: boolean;
   className?: string;
+  hideLabel?: boolean;
 }
 
 export function FormField({
@@ -26,6 +27,7 @@ export function FormField({
   className,
   description,
   error,
+  hideLabel = false,
   id,
   label,
   required = false,
@@ -36,8 +38,11 @@ export function FormField({
     [descriptionId, errorId].filter(Boolean).join(' ') || undefined;
 
   return (
-    <div className={cn('space-y-2', className)}>
-      <Label className="type-metadata" htmlFor={id}>
+    <div className={cn('grid gap-2', className)}>
+      <Label
+        className={cn('type-metadata', hideLabel && 'sr-only')}
+        htmlFor={id}
+      >
         {label}
         {required ? (
           <span aria-hidden="true" className="text-destructive">

@@ -41,6 +41,8 @@ export function usePendingApprovalCount(initialCount = 0) {
     pageIndex: 0,
     pageSize: 1,
     search: '',
+    status: 'all',
+    theme: 'all',
   });
 
   return query.data?.totalAll ?? initialCount;
@@ -65,6 +67,14 @@ export function useApprovalDecisionMutation(
           queryKey: entryKeys.detail(item.entryId),
         }),
         queryClient.invalidateQueries({ queryKey: entryKeys.lists }),
+        ...(item.kind === 'reflection' && item.status === 'approved'
+          ? [
+              queryClient.invalidateQueries({
+                queryKey: ['reflections'],
+                refetchType: 'none',
+              }),
+            ]
+          : []),
       ]);
       await onSuccess?.(item);
     },

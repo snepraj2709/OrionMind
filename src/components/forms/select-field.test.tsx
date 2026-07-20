@@ -5,6 +5,23 @@ import { describe, expect, it } from 'vitest';
 import { SelectField } from './select-field';
 
 describe('SelectField', () => {
+  it('can hide its visual label without removing the accessible name', () => {
+    render(
+      <SelectField
+        hideLabel
+        id="status"
+        label="Status"
+        options={[{ label: 'All Status', value: 'all' }]}
+        value="all"
+      />,
+    );
+
+    expect(screen.getByText('Status', { selector: 'label' })).toHaveClass(
+      'sr-only',
+    );
+    expect(screen.getByRole('combobox', { name: 'Status' })).toBeVisible();
+  });
+
   it('uses the semantic beige surface for the selected and focused option', async () => {
     const user = userEvent.setup();
 

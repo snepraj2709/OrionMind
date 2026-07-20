@@ -29,6 +29,7 @@ export interface SelectFieldProps {
   required?: boolean;
   disabled?: boolean;
   name?: string;
+  hideLabel?: boolean;
 }
 
 export function SelectField({
@@ -36,6 +37,7 @@ export function SelectField({
   description,
   disabled,
   error,
+  hideLabel,
   id,
   label,
   name,
@@ -49,6 +51,7 @@ export function SelectField({
     <FormField
       description={description}
       error={error}
+      hideLabel={hideLabel}
       id={id}
       label={label}
       required={required}

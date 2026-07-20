@@ -12,7 +12,7 @@ test('matches the protected desktop shell', async ({ page }) => {
   await expect(
     navigation.getByRole('link', { name: 'Entries' }),
   ).toHaveAttribute('aria-current', 'page');
-  await expect(navigation.getByLabel('3 items to review')).toBeVisible();
+  await expect(navigation.getByLabel('6 items to review')).toBeVisible();
 
   await expect(page.getByLabel('Primary navigation sidebar')).toHaveScreenshot(
     'protected-shell-desktop.png',
@@ -28,7 +28,7 @@ test('matches the protected mobile navigation sheet', async ({ page }) => {
     name: 'Mobile navigation',
   });
   await expect(navigation.getByRole('link', { name: 'Entries' })).toBeVisible();
-  await expect(navigation.getByLabel('3 items to review')).toBeVisible();
+  await expect(navigation.getByLabel('6 items to review')).toBeVisible();
 
   await expect(page.getByRole('dialog')).toHaveScreenshot(
     'protected-shell-mobile.png',

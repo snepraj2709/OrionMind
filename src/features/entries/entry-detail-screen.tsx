@@ -101,7 +101,11 @@ function CompletedEntry({
   entry: EntryDetail;
   isOnline: boolean;
 }) {
-  const extractedItems = [...entry.ideas, ...entry.memories];
+  const extractedItems = [
+    ...entry.ideas,
+    ...entry.memories,
+    ...entry.reflections,
+  ];
 
   return (
     <div className="space-y-10">
@@ -138,8 +142,8 @@ function CompletedEntry({
       </Section>
 
       <Section
-        description="Choose which extracted ideas and memories belong in your Orion record."
-        title="Ideas and memories"
+        description="Choose which extracted ideas, memories, and reflections belong in your Orion record."
+        title="Extracted items"
       >
         {!isOnline ? (
           <InlineError>
@@ -156,7 +160,7 @@ function CompletedEntry({
         {extractedItems.length === 0 ? (
           <EmptyState
             className="py-8"
-            description="This entry did not produce an idea or memory that needs your review."
+            description="This entry did not produce an extracted item that needs your review."
             title="Nothing to review"
           />
         ) : (

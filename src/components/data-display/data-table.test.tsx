@@ -59,6 +59,8 @@ describe('DataTable', () => {
     );
 
     const table = screen.getByRole('table', { name: 'Notes' });
+    expect(within(table).getByText('Alpha note')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Search' }));
     expect(within(table).getByText('Beta note')).toBeInTheDocument();
     expect(within(table).queryByText('Alpha note')).not.toBeInTheDocument();
   });
@@ -82,6 +84,7 @@ describe('DataTable', () => {
       screen.getByRole('searchbox', { name: 'Search notes' }),
       'missing',
     );
+    await userEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(screen.getByText('No matching results')).toBeVisible();
   });

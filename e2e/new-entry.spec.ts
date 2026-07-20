@@ -25,7 +25,7 @@ test('matches voice capture without mobile page overflow', async ({ page }) => {
   await page.getByRole('radio', { name: 'Record' }).click();
 
   await expect(
-    page.getByRole('heading', { name: 'Record a voice entry' }),
+    page.getByText(/transcription and processesing begin when you finish/i),
   ).toBeVisible();
   const dimensions = await page.evaluate(() => ({
     content: document.documentElement.scrollWidth,

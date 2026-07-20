@@ -52,7 +52,7 @@ Route and feature code must use the public wrapper imports. The automated design
 
 `AppButton` is the only Orion action implementation. It wraps the shadcn button primitive and supports:
 
-- variants: `primary`, `secondary`, `ghost`, `destructive`, `link`, and `icon`;
+- variants: `primary`, `secondary`, `outline`, `accentOutline`, `rejectOutline`, `ghost`, `destructive`, `link`, and `icon`;
 - sizes: `default` (44px) and `compact` (36px visual height with a 44px hit area);
 - shapes: `default` (10px) and `pill` (feedback actions only);
 - `loading`, `loadingLabel`, `leftIcon`, `rightIcon`, disabled state, and `asChild`;
@@ -117,8 +117,9 @@ Actions are passed as `ReactNode` so callers expose only recovery actions suppor
 
 - `FormField` owns the label, description, error association, required cue, and `aria-describedby` wiring. It accepts a control element or a render function for compound controls.
 - `TextInput` and `TextArea` apply the Orion input surface, typography, radius, focus, disabled, and invalid states.
-- `SearchInput` adds a decorative search icon and an explicit accessible label.
+- `SearchControl` adds a decorative search icon, explicit label, primary Search action, and optional filter/action slots. It owns an internal draft and commits only on Search or Enter; external value changes reset the draft.
 - `SelectField` wraps the shadcn select and `FormField` association.
+- Collection filters may opt into `hideLabel` when the selected value is the visible control copy; the real label remains available to assistive technology.
 - `DateRangeField` renders a labeled start/end fieldset and constrains the dates against each other.
 - `FormError` is the form-level accessible error region.
 - `SubmitButton` is `AppButton` with `type="submit"`; use its loading state during submission.
@@ -138,7 +139,7 @@ React Hook Form owns form state. Register native controls normally and map schem
 - `FilterBar` composes filter fields and optional actions.
 - `FilterField` is the table-oriented select wrapper.
 - `SortControl` provides column and direction selection where header sorting is not suitable.
-- `PaginationControls` provides first, previous, next, last, page count, and page-size controls.
+- `PaginationControls` provides outlined Prev and Next actions with `Page X of Y` metadata. Consumers keep their page size fixed internally; first/last and page-size controls are intentionally absent.
 
 ### Generic data table
 
@@ -165,7 +166,7 @@ Supported behavior:
 
 - client-side sorting through sortable headers;
 - global text search and exact column filters;
-- pagination and page-size selection;
+- fixed-size pagination through the shared minimal controls;
 - optional toolbar content and row actions;
 - optional bulk selection and selected-row actions;
 - loading, safe error, empty-data, and filtered-no-results states;

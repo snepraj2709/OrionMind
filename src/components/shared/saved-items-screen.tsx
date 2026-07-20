@@ -1,10 +1,6 @@
 'use client';
 
-import {
-  FilterBar,
-  PaginationControls,
-  StatusBadge,
-} from '@/components/data-display';
+import { PaginationControls, StatusBadge } from '@/components/data-display';
 import { AppButton } from '@/components/design-system';
 import {
   DataViewStatus,
@@ -12,7 +8,7 @@ import {
   InlineError,
   NoResultsState,
 } from '@/components/feedback';
-import { SearchInput } from '@/components/forms';
+import { SearchControl } from '@/components/forms';
 import { PageHeader, PageShell } from '@/components/layout';
 import { AppLink } from '@/components/navigation';
 import { entryDetailPath, routes } from '@/config/routes';
@@ -21,7 +17,6 @@ import {
   extractedItemKindPresentation,
   savedItemStatusPresentation,
 } from '@/config/status';
-import { collectionPageSizeOptions } from '@/constants/pagination';
 import {
   useCollectionControls,
   useOnlineStatus,
@@ -54,15 +49,8 @@ export function SavedItemsScreen({
   title,
 }: SavedItemsScreenProps) {
   const isOnline = useOnlineStatus();
-  const {
-    clearSearch,
-    pageIndex,
-    pageSize,
-    search,
-    setPageIndex,
-    setPageSize,
-    setSearch,
-  } = useCollectionControls();
+  const { clearSearch, pageIndex, pageSize, search, setPageIndex, setSearch } =
+    useCollectionControls();
   const { query, viewStatus } = useSavedItemsQuery(
     { kind, pageIndex, pageSize, search },
     repository,
@@ -73,7 +61,7 @@ export function SavedItemsScreen({
   return (
     <PageShell className="space-y-8">
       <PageHeader description={description} title={title} />
-      <FilterBar
+      <SearchControl
         actions={
           <RefreshButton
             disabled={!isOnline}
@@ -84,17 +72,11 @@ export function SavedItemsScreen({
             Refresh
           </RefreshButton>
         }
-        ariaLabel={`${title} filters`}
-      >
-        <SearchInput
-          label={`Search ${title.toLocaleLowerCase()}`}
-          onChange={(event) => {
-            setSearch(event.target.value);
-          }}
-          placeholder={`Search saved ${title.toLocaleLowerCase()}`}
-          value={search}
-        />
-      </FilterBar>
+        label={`Search ${title.toLocaleLowerCase()}`}
+        onSearch={setSearch}
+        placeholder={`Search saved ${title.toLocaleLowerCase()}`}
+        value={search}
+      />
 
       {!isOnline ? (
         <InlineError>
@@ -163,11 +145,8 @@ export function SavedItemsScreen({
             canNextPage={pageIndex + 1 < pageCount}
             canPreviousPage={pageIndex > 0}
             onPageChange={setPageIndex}
-            onPageSizeChange={setPageSize}
             pageCount={pageCount}
             pageIndex={pageIndex}
-            pageSize={pageSize}
-            pageSizeOptions={collectionPageSizeOptions}
           />
         </div>
       ) : null}

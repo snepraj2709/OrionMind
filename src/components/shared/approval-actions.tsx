@@ -9,9 +9,11 @@ export interface ApprovalActionsProps {
   onReject: () => void;
   disabled?: boolean;
   loadingAction?: 'approve' | 'reject';
+  appearance?: 'default' | 'editorial';
 }
 
 export function ApprovalActions({
+  appearance = 'default',
   disabled = false,
   loadingAction,
   onApprove,
@@ -25,7 +27,8 @@ export function ApprovalActions({
         loading={loadingAction === 'approve'}
         loadingLabel="Approving item"
         onClick={onApprove}
-        size="compact"
+        size={appearance === 'default' ? 'compact' : 'default'}
+        variant={appearance === 'editorial' ? 'accentOutline' : 'primary'}
       >
         Approve
       </AppButton>
@@ -35,8 +38,8 @@ export function ApprovalActions({
         loading={loadingAction === 'reject'}
         loadingLabel="Rejecting item"
         onClick={onReject}
-        size="compact"
-        variant="ghost"
+        size={appearance === 'default' ? 'compact' : 'default'}
+        variant={appearance === 'editorial' ? 'rejectOutline' : 'ghost'}
       >
         Reject
       </AppButton>

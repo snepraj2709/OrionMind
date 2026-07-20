@@ -124,7 +124,7 @@ describe('NewEntryScreen', () => {
     const user = userEvent.setup();
     renderNewEntry(repository);
 
-    await user.click(screen.getByRole('button', { name: 'Add Entry' }));
+    await user.click(screen.getByRole('button', { name: 'Add' }));
     expect(
       await screen.findByText('Write something before adding this entry.'),
     ).toBeVisible();
@@ -133,7 +133,7 @@ describe('NewEntryScreen', () => {
       screen.getByRole('textbox', { name: 'Your entry' }),
       'I noticed how much quieter the afternoon felt.',
     );
-    await user.click(screen.getByRole('button', { name: 'Add Entry' }));
+    await user.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() =>
       expect(repository.createTextEntry).toHaveBeenCalledWith({
@@ -156,7 +156,7 @@ describe('NewEntryScreen', () => {
 
     const textbox = screen.getByRole('textbox', { name: 'Your entry' });
     await user.type(textbox, 'Keep these words safe.');
-    await user.click(screen.getByRole('button', { name: 'Add Entry' }));
+    await user.click(screen.getByRole('button', { name: 'Add' }));
 
     expect(
       await screen.findByText(
@@ -201,14 +201,12 @@ describe('NewEntryScreen', () => {
     renderNewEntry();
 
     await user.click(screen.getByRole('radio', { name: 'Record' }));
-    await user.click(screen.getByRole('button', { name: 'Start recording' }));
+    await user.click(screen.getByRole('button', { name: 'Start' }));
 
     expect(
       await screen.findByText(/Microphone access is blocked/),
     ).toBeVisible();
-    expect(
-      screen.getByRole('button', { name: 'Start recording' }),
-    ).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Start' })).toBeEnabled();
   });
 
   it('records, pauses, stops, and submits a voice entry', async () => {
@@ -218,17 +216,17 @@ describe('NewEntryScreen', () => {
     renderNewEntry(repository);
 
     await user.click(screen.getByRole('radio', { name: 'Record' }));
-    await user.click(screen.getByRole('button', { name: 'Start recording' }));
+    await user.click(screen.getByRole('button', { name: 'Start' }));
     expect(await screen.findByText('Recording')).toBeVisible();
 
     await user.click(screen.getByRole('button', { name: 'Pause' }));
     expect(screen.getByText('Paused')).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Resume' }));
-    await user.click(screen.getByRole('button', { name: 'Stop recording' }));
+    await user.click(screen.getByRole('button', { name: 'Stop' }));
 
     expect(await screen.findByText('Recording ready')).toBeVisible();
     expect(stopTrack).toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Add Entry' }));
+    await user.click(screen.getByRole('button', { name: 'Add' }));
 
     await waitFor(() =>
       expect(repository.createVoiceEntry).toHaveBeenCalledWith(
@@ -244,11 +242,11 @@ describe('NewEntryScreen', () => {
     renderNewEntry();
 
     await user.click(screen.getByRole('radio', { name: 'Record' }));
-    await user.click(screen.getByRole('button', { name: 'Start recording' }));
+    await user.click(screen.getByRole('button', { name: 'Start' }));
 
     const writeMode = screen.getByRole('radio', { name: 'Write' });
     expect(writeMode).toBeDisabled();
-    await user.click(screen.getByRole('button', { name: 'Stop recording' }));
+    await user.click(screen.getByRole('button', { name: 'Stop' }));
     expect(writeMode).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Record again' }));
@@ -265,14 +263,14 @@ describe('NewEntryScreen', () => {
     );
 
     await user.click(screen.getByRole('radio', { name: 'Record' }));
-    await user.click(screen.getByRole('button', { name: 'Start recording' }));
-    await user.click(screen.getByRole('button', { name: 'Stop recording' }));
-    await user.click(screen.getByRole('button', { name: 'Add Entry' }));
+    await user.click(screen.getByRole('button', { name: 'Start' }));
+    await user.click(screen.getByRole('button', { name: 'Stop' }));
+    await user.click(screen.getByRole('button', { name: 'Add' }));
 
     expect(
       await screen.findByText(/The voice entry could not be added/),
     ).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Add Entry' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Record again' })).toBeEnabled();
   });
 });

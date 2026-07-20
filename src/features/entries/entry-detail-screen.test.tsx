@@ -32,6 +32,7 @@ const completedEntry: EntryDetail = {
       status: 'approved',
     },
   ],
+  reflections: [],
 };
 
 function createRepository(

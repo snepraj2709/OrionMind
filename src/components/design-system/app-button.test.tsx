@@ -8,6 +8,9 @@ describe('AppButton', () => {
   it.each<AppButtonVariant>([
     'primary',
     'secondary',
+    'outline',
+    'accentOutline',
+    'rejectOutline',
     'ghost',
     'destructive',
     'link',
@@ -23,6 +26,17 @@ describe('AppButton', () => {
     );
 
     expect(screen.getByRole('button')).toHaveAttribute('data-slot', 'button');
+  });
+
+  it('keeps reject neutral until pointer hover classes apply', () => {
+    render(<AppButton variant="rejectOutline">Reject</AppButton>);
+
+    expect(screen.getByRole('button', { name: 'Reject' })).toHaveClass(
+      'border-border',
+      'text-muted-foreground',
+      'hover:border-destructive',
+      'hover:text-destructive',
+    );
   });
 
   it('exposes loading and disabled state without removing the button label', () => {

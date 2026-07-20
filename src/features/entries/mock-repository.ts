@@ -62,6 +62,7 @@ export class MockEntriesRepository implements EntriesRepository {
       themes: [],
       ideas: [],
       memories: [],
+      reflections: [],
     };
     this.entries.unshift(entry);
     return entry;
@@ -81,6 +82,7 @@ export class MockEntriesRepository implements EntriesRepository {
       themes: [],
       ideas: [],
       memories: [],
+      reflections: [],
     };
     this.entries.unshift(entry);
     return entry;
@@ -108,7 +110,12 @@ export class MockEntriesRepository implements EntriesRepository {
     );
     if (!entry) throw new Error('Entry not found.');
 
-    const collection = input.kind === 'idea' ? entry.ideas : entry.memories;
+    const collections = {
+      idea: entry.ideas,
+      memory: entry.memories,
+      reflection: entry.reflections,
+    } satisfies Record<ExtractedItemKind, typeof entry.ideas>;
+    const collection = collections[input.kind];
     const item = collection.find((candidate) => candidate.id === input.itemId);
     if (!item) throw new Error('Extracted item not found.');
     if (item.status !== 'pending_approval') {

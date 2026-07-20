@@ -3,8 +3,6 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { collectionPageSizeOptions } from '@/constants/pagination';
-
 import type { EntriesRepository } from './repository';
 import { EntriesScreen } from './entries-screen';
 import type { EntriesResult, EntrySummary } from './model';
@@ -79,18 +77,26 @@ describe('EntriesScreen', () => {
     renderEntries(repository);
 
     expect(await screen.findAllByText(completedEntry.content)).toHaveLength(3);
-    expect(screen.getByText('Processing')).toBeVisible();
-    expect(screen.getByText('Processing failed')).toBeVisible();
+    expect(
+      screen.getByText('Processing', { selector: '[data-slot="badge"]' }),
+    ).toBeVisible();
+    expect(
+      screen.getByText('Processing failed', {
+        selector: '[data-slot="badge"]',
+      }),
+    ).toBeVisible();
     expect(screen.getAllByRole('link', { name: /10 Jul/ })).toHaveLength(3);
     expect(screen.getByText('Voice')).toBeVisible();
     expect(screen.getAllByText('Personal Growth')).toHaveLength(3);
     expect(screen.getAllByText(completedEntry.content)[0]).toHaveClass(
       'line-clamp-2',
     );
-    expect(screen.queryByText('Complete')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Complete', { selector: '[data-slot="badge"]' }),
+    ).not.toBeInTheDocument();
   });
 
-  it('shows dynamic entry and review totals with the approved pagination sizes', async () => {
+  it('shows dynamic entry and review totals with the fixed pagination size', async () => {
     const listEntries = vi
       .fn<EntriesRepository['listEntries']>()
       .mockResolvedValue(result([completedEntry]));
@@ -104,9 +110,8 @@ describe('EntriesScreen', () => {
       expect.objectContaining({ pageSize: 10 }),
     );
     expect(
-      screen.getByRole('combobox', { name: 'Rows per page' }),
-    ).toHaveTextContent('10');
-    expect(collectionPageSizeOptions).toEqual([10, 20, 50]);
+      screen.queryByRole('combobox', { name: 'Rows per page' }),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps status filtering and resets the query to the first page', async () => {
@@ -133,7 +138,9 @@ describe('EntriesScreen', () => {
         expect.objectContaining({ pageIndex: 0, status: 'processing' }),
       ),
     );
-    expect(screen.getAllByText('Processing')).toHaveLength(2);
+    expect(
+      screen.getByText('Processing', { selector: '[data-slot="badge"]' }),
+    ).toBeVisible();
     expect(screen.getAllByRole('link', { name: /10 Jul/ })).toHaveLength(1);
   });
 
@@ -164,6 +171,8 @@ describe('EntriesScreen', () => {
       screen.getByRole('searchbox', { name: 'Search entries' }),
       'missing',
     );
+    expect(screen.queryByText('No matching results')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Search' }));
 
     expect(await screen.findByText('No matching results')).toBeVisible();
     expect(screen.queryByText('Your journal is ready')).not.toBeInTheDocument();

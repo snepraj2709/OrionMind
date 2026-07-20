@@ -51,7 +51,7 @@ import {
   type DateRangeValue,
   FormError,
   FormField,
-  SearchInput,
+  SearchControl,
   SelectField,
   SubmitButton,
   TextArea,
@@ -160,6 +160,7 @@ export function DesignSystemCatalog() {
     direction: 'asc',
   });
   const [catalogPage, setCatalogPage] = useState(0);
+  const [catalogSearch, setCatalogSearch] = useState('');
 
   const sidebar = (
     <Sidebar
@@ -211,6 +212,9 @@ export function DesignSystemCatalog() {
           <div className="flex flex-wrap items-center gap-4">
             <AppButton variant="primary">Primary</AppButton>
             <AppButton variant="secondary">Secondary</AppButton>
+            <AppButton variant="outline">Outline</AppButton>
+            <AppButton variant="accentOutline">Approve outline</AppButton>
+            <AppButton variant="rejectOutline">Reject outline</AppButton>
             <AppButton variant="ghost">Ghost</AppButton>
             <AppButton variant="destructive">Destructive</AppButton>
             <AppButton
@@ -420,19 +424,23 @@ export function DesignSystemCatalog() {
             <FormField id="catalog-reflection" label="Reflection">
               <TextArea placeholder="Write what feels true…" />
             </FormField>
-            <SearchInput
+            <SearchControl
+              filters={
+                <SelectField
+                  id="catalog-theme"
+                  label="Theme"
+                  onValueChange={setSelectValue}
+                  options={[
+                    { value: 'career', label: 'Career' },
+                    { value: 'health', label: 'Health' },
+                  ]}
+                  value={selectValue}
+                />
+              }
               label="Search catalog"
+              onSearch={setCatalogSearch}
               placeholder="Search components"
-            />
-            <SelectField
-              id="catalog-theme"
-              label="Theme"
-              onValueChange={setSelectValue}
-              options={[
-                { value: 'career', label: 'Career' },
-                { value: 'health', label: 'Health' },
-              ]}
-              value={selectValue}
+              value={catalogSearch}
             />
             <DateRangeField
               id="catalog-range"
@@ -491,10 +499,8 @@ export function DesignSystemCatalog() {
               canNextPage={catalogPage < 2}
               canPreviousPage={catalogPage > 0}
               onPageChange={setCatalogPage}
-              onPageSizeChange={() => undefined}
               pageCount={3}
               pageIndex={catalogPage}
-              pageSize={10}
             />
             <DataTable
               bulkActions={(rows) => (

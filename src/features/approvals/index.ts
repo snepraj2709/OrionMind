@@ -6,6 +6,8 @@ export {
 export type {
   ApprovalKindFilter,
   ApprovalRecord,
+  ApprovalStatusFilter,
+  ApprovalThemeFilter,
   ApprovalsQuery,
   ApprovalsResult,
 } from './model';

@@ -5,7 +5,15 @@ import { Button as ShadcnButton } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export type AppButtonVariant =
-  'primary' | 'secondary' | 'ghost' | 'destructive' | 'link' | 'icon';
+  | 'primary'
+  | 'secondary'
+  | 'outline'
+  | 'accentOutline'
+  | 'rejectOutline'
+  | 'ghost'
+  | 'destructive'
+  | 'link'
+  | 'icon';
 
 export type AppButtonSize = 'default' | 'compact';
 export type AppButtonShape = 'default' | 'pill';
@@ -28,6 +36,12 @@ const variantClasses: Record<AppButtonVariant, string> = {
     'bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80',
   secondary:
     'border border-border bg-secondary text-secondary-foreground hover:bg-muted',
+  outline:
+    'border border-border bg-card text-foreground hover:bg-muted active:bg-secondary',
+  accentOutline:
+    'border border-accent bg-transparent text-accent hover:bg-accent/10 active:bg-accent/20',
+  rejectOutline:
+    'border border-border bg-transparent text-muted-foreground hover:border-destructive hover:text-destructive',
   ghost: 'bg-transparent text-foreground hover:bg-muted',
   destructive:
     'bg-destructive text-destructive-foreground hover:bg-destructive/90',

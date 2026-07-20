@@ -26,7 +26,7 @@ import {
   NoResultsState,
   SkeletonList,
 } from '@/components/feedback';
-import { SearchInput } from '@/components/forms';
+import { SearchControl } from '@/components/forms';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Table,
@@ -73,7 +73,6 @@ export interface DataTableProps<TData, TValue> {
   bulkActions?: (selectedRows: TData[]) => ReactNode;
   getRowId?: (row: TData, index: number) => string;
   pageSize?: number;
-  pageSizeOptions?: number[];
   emptyTitle?: string;
   emptyDescription?: string;
 }
@@ -92,7 +91,6 @@ export function DataTable<TData, TValue>({
   loading = false,
   onRetry,
   pageSize = 10,
-  pageSizeOptions,
   renderMobileRow,
   rowActions,
   search,
@@ -173,17 +171,38 @@ export function DataTable<TData, TValue>({
 
   return (
     <div className="space-y-6">
-      {search || filters.length > 0 || toolbar ? (
+      {search ? (
+        <SearchControl
+          actions={toolbar}
+          filters={filters.map((filter) => {
+            const column = table.getColumn(filter.columnId);
+            if (!column) return null;
+
+            const currentValue = String(column.getFilterValue() ?? '__all__');
+
+            return (
+              <FilterField
+                id={`filter-${filter.columnId}`}
+                key={filter.columnId}
+                label={filter.label}
+                onValueChange={(value) =>
+                  column.setFilterValue(value === '__all__' ? undefined : value)
+                }
+                options={[
+                  { value: '__all__', label: 'All' },
+                  ...filter.options,
+                ]}
+                value={currentValue}
+              />
+            );
+          })}
+          label={search.label ?? 'Search table'}
+          onSearch={setGlobalFilter}
+          placeholder={search.placeholder ?? 'Search…'}
+          value={globalFilter}
+        />
+      ) : filters.length > 0 || toolbar ? (
         <FilterBar actions={toolbar}>
-          {search ? (
-            <SearchInput
-              className="w-full sm:max-w-xs"
-              label={search.label ?? 'Search table'}
-              onChange={(event) => setGlobalFilter(event.target.value)}
-              placeholder={search.placeholder ?? 'Search…'}
-              value={globalFilter}
-            />
-          ) : null}
           {filters.map((filter) => {
             const column = table.getColumn(filter.columnId);
             if (!column) return null;
@@ -377,11 +396,8 @@ export function DataTable<TData, TValue>({
         canNextPage={table.getCanNextPage()}
         canPreviousPage={table.getCanPreviousPage()}
         onPageChange={(pageIndex) => table.setPageIndex(pageIndex)}
-        onPageSizeChange={(nextPageSize) => table.setPageSize(nextPageSize)}
         pageCount={table.getPageCount()}
         pageIndex={table.getState().pagination.pageIndex}
-        pageSize={table.getState().pagination.pageSize}
-        pageSizeOptions={pageSizeOptions}
       />
       <span className="sr-only">
         {visibleRows.length} rows shown across{' '}

@@ -4,23 +4,18 @@ import { PenLine } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
-import {
-  FilterBar,
-  FilterField,
-  PaginationControls,
-} from '@/components/data-display';
+import { FilterField, PaginationControls } from '@/components/data-display';
 import { AppButton, Typography } from '@/components/design-system';
 import {
   DataViewStatus,
   EmptyState,
   NoResultsState,
 } from '@/components/feedback';
-import { SearchInput } from '@/components/forms';
+import { SearchControl } from '@/components/forms';
 import { PageHeader, PageShell } from '@/components/layout';
 import { routes } from '@/config/routes';
 import { dataViewMessages } from '@/config/messages';
 import { entryStatusPresentation } from '@/config/status';
-import { collectionPageSizeOptions } from '@/constants/pagination';
 import { useCollectionControls } from '@/hooks';
 
 import { EntryListItem } from './entry-list-item';
@@ -39,15 +34,8 @@ export function EntriesScreen({
   repository = entriesRepository,
 }: EntriesScreenProps) {
   const [status, setStatus] = useState<EntryStatusFilter>('all');
-  const {
-    clearSearch,
-    pageIndex,
-    pageSize,
-    search,
-    setPageIndex,
-    setPageSize,
-    setSearch,
-  } = useCollectionControls();
+  const { clearSearch, pageIndex, pageSize, search, setPageIndex, setSearch } =
+    useCollectionControls();
   const { query, viewStatus } = useEntriesQuery(
     { pageIndex, pageSize, search, status },
     repository,
@@ -87,41 +75,40 @@ export function EntriesScreen({
         title={routes.entries.label}
       />
 
-      <FilterBar ariaLabel="Entry filters" className="pb-3">
-        <SearchInput
-          className="bg-background"
-          label="Search entries"
-          onChange={(event) => {
-            setSearch(event.target.value);
-          }}
-          placeholder="Search your writing"
-          value={search}
-        />
-        <FilterField
-          id="entry-status"
-          label="Status"
-          onValueChange={(value) => {
-            setStatus(value as EntryStatusFilter);
-            setPageIndex(0);
-          }}
-          options={[
-            { label: 'All entries', value: 'all' },
-            {
-              label: entryStatusPresentation.completed.filterLabel,
-              value: 'completed',
-            },
-            {
-              label: entryStatusPresentation.processing.filterLabel,
-              value: 'processing',
-            },
-            {
-              label: entryStatusPresentation.failed.filterLabel,
-              value: 'failed',
-            },
-          ]}
-          value={status}
-        />
-      </FilterBar>
+      <SearchControl
+        className="pb-3"
+        filters={
+          <FilterField
+            id="entry-status"
+            label="Status"
+            onValueChange={(value) => {
+              setStatus(value as EntryStatusFilter);
+              setPageIndex(0);
+            }}
+            options={[
+              { label: 'All entries', value: 'all' },
+              {
+                label: entryStatusPresentation.completed.filterLabel,
+                value: 'completed',
+              },
+              {
+                label: entryStatusPresentation.processing.filterLabel,
+                value: 'processing',
+              },
+              {
+                label: entryStatusPresentation.failed.filterLabel,
+                value: 'failed',
+              },
+            ]}
+            value={status}
+          />
+        }
+        inputClassName="bg-background"
+        label="Search entries"
+        onSearch={setSearch}
+        placeholder="Search your writing"
+        value={search}
+      />
 
       <DataViewStatus
         initialError={dataViewMessages.entries.initial}
@@ -167,11 +154,8 @@ export function EntriesScreen({
               canNextPage={pageIndex + 1 < pageCount}
               canPreviousPage={pageIndex > 0}
               onPageChange={setPageIndex}
-              onPageSizeChange={setPageSize}
               pageCount={pageCount}
               pageIndex={pageIndex}
-              pageSize={pageSize}
-              pageSizeOptions={collectionPageSizeOptions}
             />
           </div>
         </div>

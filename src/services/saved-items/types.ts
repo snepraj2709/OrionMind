@@ -1,8 +1,6 @@
-import type { ExtractedItemKind } from '@/config/status';
-import type { SavedItemRecord } from '@/types/records';
+import type { SavedItemKind, SavedItemRecord } from '@/types/records';
 
-export type SavedItemKind = ExtractedItemKind;
-export type { SavedItemRecord } from '@/types/records';
+export type { SavedItemKind, SavedItemRecord } from '@/types/records';
 
 export interface SavedItemsQuery {
   kind: SavedItemKind;

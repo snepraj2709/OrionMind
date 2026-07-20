@@ -24,18 +24,27 @@ export interface EntrySummary {
 export interface EntryDetail extends EntrySummary {
   ideas: ExtractedItem[];
   memories: ExtractedItem[];
+  reflections: ExtractedItem[];
   processingError?: string;
 }
 
 export interface ApprovalRecord extends ExtractedItem {
   entryId: string;
   entryDate: string;
+  themes: ThemeKey[];
 }
+
+export type SavedItemKind = Exclude<ExtractedItemKind, 'reflection'>;
 
 export interface SavedItemRecord {
   id: string;
   content: string;
   entryId: string;
   entryDate: string;
-  kind: ExtractedItemKind;
+  kind: SavedItemKind;
+}
+
+export interface ApprovedReflectionEvidence {
+  entryDate: string;
+  content: string;
 }
