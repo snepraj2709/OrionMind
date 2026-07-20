@@ -1,0 +1,85 @@
+.heroWord {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+}
+
+.heroWord > span {
+  display: inline-block;
+  transform: translateY(110%);
+  animation: landing-word-reveal 700ms var(--ease-out) forwards;
+}
+
+.networkPath {
+  stroke-dasharray: 7 9;
+  animation: landing-network-drift 9s linear infinite;
+}
+
+.networkNode {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: landing-node-pulse 4.8s var(--ease-out) infinite;
+}
+
+.loopStage {
+  opacity: 0.68;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: landing-loop-stage 7s var(--ease-out) infinite;
+}
+
+.sectionAnchor {
+  scroll-margin-top: var(--mobile-header-height);
+}
+
+@keyframes landing-word-reveal {
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-network-drift {
+  to {
+    stroke-dashoffset: -64;
+  }
+}
+
+@keyframes landing-node-pulse {
+  0%,
+  100% {
+    opacity: 0.62;
+    transform: scale(0.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes landing-loop-stage {
+  0%,
+  14%,
+  100% {
+    opacity: 0.68;
+    transform: scale(1);
+  }
+
+  6% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .heroWord > span {
+    animation: none;
+    transform: none;
+  }
+
+  .networkPath,
+  .networkNode,
+  .loopStage {
+    animation: none;
+  }
+}

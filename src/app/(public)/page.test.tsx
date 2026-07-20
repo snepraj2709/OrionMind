@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { routes } from '@/config/routes';
@@ -6,94 +6,100 @@ import { routes } from '@/config/routes';
 import HomePage, { metadata } from './page';
 
 describe('HomePage', () => {
-  it('routes every account action to the auth routes', () => {
+  it('routes every account action through the existing auth routes', () => {
     render(<HomePage />);
 
-    const createAccountLinks = screen.getAllByRole('link', {
-      name: 'Create account',
-    });
-    const loginLinks = screen.getAllByRole('link', { name: 'Log in' });
-
-    expect(createAccountLinks).toHaveLength(3);
-    for (const link of createAccountLinks) {
+    for (const link of screen.getAllByRole('link', {
+      name: 'Start reflecting',
+    })) {
       expect(link).toHaveAttribute('href', routes.signup.path);
     }
 
-    expect(loginLinks).toHaveLength(3);
-    for (const link of loginLinks) {
+    for (const link of screen.getAllByRole('link', { name: 'Sign in' })) {
       expect(link).toHaveAttribute('href', routes.login.path);
     }
+
+    expect(
+      screen.getByRole('link', { name: 'Write your first entry' }),
+    ).toHaveAttribute('href', routes.newEntry.path);
+    expect(
+      screen.getByRole('link', { name: 'Begin your journey' }),
+    ).toHaveAttribute('href', routes.signup.path);
   });
 
-  it('routes the hero and footer calls to action to signup', () => {
+  it('connects landing navigation to matching sections', () => {
     render(<HomePage />);
 
-    const hero = screen.getByRole('region', {
-      name: 'A place for what happened—and what it may be showing you.',
-    });
-    const footer = screen.getByRole('contentinfo');
+    const expectedAnchors = [
+      ['How it works', '#how-it-works'],
+      ['Reflections', '#reflections'],
+      ['Journey', '#journey'],
+      ['Privacy', '#privacy'],
+    ] as const;
 
-    expect(
-      within(hero).getByRole('link', { name: 'Create account' }),
-    ).toHaveAttribute('href', routes.signup.path);
-    expect(
-      within(footer).getByRole('link', {
-        name: 'Create account',
-      }),
-    ).toHaveAttribute('href', routes.signup.path);
+    for (const [name, href] of expectedAnchors) {
+      const links = screen.getAllByRole('link', { name });
+      expect(links.length).toBeGreaterThan(0);
+      for (const link of links) expect(link).toHaveAttribute('href', href);
+    }
   });
 
   it('provides route-specific metadata', () => {
-    expect(metadata.title).toBe('A private journal for clearer patterns');
-    expect(metadata.description).toContain('ideas and memories');
+    expect(metadata.title).toBe('Connect the dots in your thoughts');
+    expect(metadata.description).toContain('patterns shaping your life');
   });
 
-  it('uses one page heading with semantic supporting sections', () => {
+  it('uses one page heading and preserves the Figma section order', () => {
     render(<HomePage />);
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-    expect(
-      screen.getByRole('heading', {
-        name: 'Five ways to stay close to what your life is teaching you.',
-      }),
-    ).toHaveAttribute('id', 'features-title');
-    expect(
-      screen.getByRole('heading', {
-        name: /Your ideas, memories, and reflections/,
-      }),
-    ).toHaveAttribute('id', 'product-preview-title');
-    expect(
-      screen.getByRole('heading', {
-        name: 'Begin with the entry only you can write.',
-      }),
-    ).toHaveAttribute('id', 'footer-cta-title');
+
+    const sectionHeadings = [
+      'From a passing thought to a visible pattern.',
+      'Start with what is already in your mind.',
+      'You decide what becomes part of your story.',
+      'See your thoughts beside each other.',
+      'Patterns appear slowly, across repeated evidence rather than a single moment.',
+      'Notice the hopes that keep repeating.',
+      'Notice how one response turns into another.',
+      'Understand the needs you are trying to hold at once.',
+      'See what has occupied your life over time.',
+      'Reflection without surrendering authority.',
+      'Make your thinking visible.',
+    ];
+
+    const positions = sectionHeadings.map((name) => {
+      const heading = screen.getByRole('heading', { name });
+      return heading.compareDocumentPosition(document.body) === 0
+        ? -1
+        : (document.body.textContent?.indexOf(name) ?? -1);
+    });
+
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    expect(positions.every((position) => position >= 0)).toBe(true);
   });
 
-  it('presents the product screenshot as an accessible preview', () => {
+  it('provides accessible descriptions for the recurring loop and journey chart', () => {
     render(<HomePage />);
 
+    expect(
+      screen.getByRole('img', { name: /A recurring avoidance loop/ }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole('img', {
-        name: /Orion product preview showing ideas, reflections, and memories/,
+        name: /Relative presence of eight life themes/,
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Product direction preview/)).toBeInTheDocument();
+    expect(screen.getByRole('table')).toHaveAccessibleName(
+      /Relative presence of eight life themes.*data/,
+    );
   });
 
-  it('provides accessible external social links in the compact footer', () => {
+  it('exposes the existing mobile navigation pattern', () => {
     render(<HomePage />);
 
-    const footer = screen.getByRole('contentinfo');
-
-    for (const [name, href] of [
-      ['Twitter / X', 'https://twitter.com'],
-      ['LinkedIn', 'https://linkedin.com'],
-      ['Instagram', 'https://instagram.com'],
-    ]) {
-      const link = within(footer).getByRole('link', { name });
-      expect(link).toHaveAttribute('href', href);
-      expect(link).toHaveAttribute('target', '_blank');
-      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
-    }
+    expect(
+      screen.getByRole('button', { name: 'Open navigation' }),
+    ).toBeInTheDocument();
   });
 });

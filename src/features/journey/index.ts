@@ -1,5 +1,9 @@
 export { JourneyScreen, type JourneyScreenProps } from './journey-screen';
 export {
+  JourneySteamgraph,
+  type JourneySteamgraphProps,
+} from './journey-steamgraph';
+export {
   journeyEntriesForRange,
   journeyEntryFixtures,
   journeyStatusFixture,
