@@ -1,11 +1,9 @@
 import type { Metadata } from 'next';
 import type { Route } from 'next';
-import { redirect } from 'next/navigation';
 
 import { AuthShell, BrandMark } from '@/components/layout';
 import { pathWithRedirect, routes, safeRedirectPath } from '@/config/routes';
 import { AuthRoutePrompt, SignUpForm } from '@/features/auth';
-import { getCurrentUser } from '@/services/auth';
 
 export const metadata: Metadata = { title: routes.signup.label };
 
@@ -21,9 +19,6 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
   const redirectTo = requestedRedirect
     ? safeRedirectPath(requestedRedirect)
     : undefined;
-  const user = await getCurrentUser();
-
-  if (user) redirect(safeRedirectPath(redirectTo) as Route);
 
   return (
     <AuthShell
@@ -39,7 +34,7 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
       title="Begin your journal"
       variant="prominent"
     >
-      <SignUpForm redirectTo={redirectTo} />
+      <SignUpForm />
     </AuthShell>
   );
 }

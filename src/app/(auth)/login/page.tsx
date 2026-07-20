@@ -1,11 +1,9 @@
 import type { Metadata } from 'next';
 import type { Route } from 'next';
-import { redirect } from 'next/navigation';
 
 import { AuthShell, BrandMark } from '@/components/layout';
 import { pathWithRedirect, routes, safeRedirectPath } from '@/config/routes';
 import { AuthRoutePrompt, SignInForm } from '@/features/auth';
-import { getCurrentUser } from '@/services/auth';
 
 export const metadata: Metadata = { title: routes.login.label };
 
@@ -21,9 +19,6 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const redirectTo = requestedRedirect
     ? safeRedirectPath(requestedRedirect)
     : undefined;
-  const user = await getCurrentUser();
-
-  if (user) redirect(safeRedirectPath(redirectTo) as Route);
 
   return (
     <AuthShell

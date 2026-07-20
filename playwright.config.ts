@@ -1,4 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
+import { loadEnvConfig } from '@next/env';
+
+loadEnvConfig(process.cwd());
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3100';
 const usesExternalServer = Boolean(process.env.PLAYWRIGHT_BASE_URL);
@@ -14,7 +17,9 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL,
-    trace: 'on-first-retry',
+    // Authenticated tests use live test credentials. Never persist their
+    // password, access token, refresh token, or session in trace artifacts.
+    trace: 'off',
   },
   projects: [
     {
@@ -26,9 +31,6 @@ export default defineConfig({
     ? undefined
     : {
         command: 'npm run build && npm run start -- --port 3100',
-        env: {
-          ORION_MOCK_AUTH_SECRET: 'orion-playwright-mock-auth-only',
-        },
         timeout: 120_000,
         url: `${baseURL}/api/health`,
         reuseExistingServer: !process.env.CI,

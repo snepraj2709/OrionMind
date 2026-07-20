@@ -33,7 +33,7 @@ export function SignInForm({ redirectTo }: SignInFormProps) {
 
   const onSubmit = handleSubmit(async (values) => {
     setFormError(undefined);
-    const result = await signIn(values, redirectTo);
+    const result = await signIn(values);
     if (!result.ok) setFormError(result.error.message);
   });
 

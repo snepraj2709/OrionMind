@@ -6,12 +6,12 @@ import { SignOutButton } from './sign-out-button';
 import { useAuth } from './use-auth';
 
 export interface UserMenuProps {
-  name: string;
+  name?: string;
 }
 
 export function UserMenu({ name }: UserMenuProps) {
   const { user } = useAuth();
-  const displayName = user?.name ?? name;
+  const displayName = user?.name ?? name ?? 'Orion user';
   const initials = displayName
     .split(' ')
     .map((part) => part[0])

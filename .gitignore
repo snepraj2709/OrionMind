@@ -12,7 +12,7 @@
 
 # production
 /build/
-/e2e/
+/e2e/*-snapshots/
 
 # local environment files
 .env*

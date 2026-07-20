@@ -10,43 +10,36 @@ import {
   ApprovalAwareNavigation,
   ReviewQueueSummary,
 } from '@/features/approvals';
-import { AuthProvider, UserMenu } from '@/features/auth';
-import { requireUser } from '@/services/auth';
+import { ProtectedRoute, UserMenu } from '@/features/auth';
 import { mockOrionStore } from '@/services/mock-orion-store';
 
 interface ProtectedLayoutProps {
   children: ReactNode;
 }
 
-export default async function ProtectedLayout({
-  children,
-}: ProtectedLayoutProps) {
-  const user = await requireUser();
+export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
   const pendingReviewCount = mockOrionStore.listPendingApprovals().length;
 
   return (
-    <AuthProvider initialUser={user}>
+    <ProtectedRoute>
       <AppShell
         mobileNavigation={
           <MobileNavigation
             brand={<BrandMark />}
-            footer={<UserMenu name={user.name} />}
+            footer={<UserMenu />}
             utility={<ReviewQueueSummary initialCount={pendingReviewCount} />}
           >
             <ApprovalAwareNavigation initialCount={pendingReviewCount} />
           </MobileNavigation>
         }
         sidebar={
-          <Sidebar
-            footer={<UserMenu name={user.name} />}
-            header={<BrandMark />}
-          >
+          <Sidebar footer={<UserMenu />} header={<BrandMark />}>
             <ApprovalAwareNavigation initialCount={pendingReviewCount} />
           </Sidebar>
         }
       >
         {children}
       </AppShell>
-    </AuthProvider>
+    </ProtectedRoute>
   );
 }

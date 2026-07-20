@@ -1,7 +1,11 @@
 import { expect, test } from '@playwright/test';
 
 import { routes } from '../src/config/routes';
-import { logIn, testCredentials } from './helpers/auth';
+import {
+  installMockSupabaseAuth,
+  logIn,
+  testCredentials,
+} from './helpers/auth';
 
 test('serves the canonical logo and a valid favicon', async ({ request }) => {
   const logo = await request.get('/images/light-mode-transparent.svg');
@@ -91,9 +95,7 @@ test('keeps every landing action available without mobile overflow', async ({
 test('redirects protected routes to login', async ({ page }) => {
   await page.goto(routes.entries.path);
 
-  await expect(page).toHaveURL(
-    new RegExp(`${routes.login.path}\\?redirect=%2Fentries$`),
-  );
+  await expect(page).toHaveURL(routes.login.path);
 });
 
 test('logs in and redirects authenticated users away from login', async ({
@@ -112,15 +114,17 @@ test('logs in and redirects authenticated users away from login', async ({
   await expect(page).toHaveURL(routes.entries.path);
 });
 
-test('signs up a new mock user', async ({ page }) => {
+test('shows email confirmation after signup', async ({ page }) => {
+  await installMockSupabaseAuth(page);
   await page.goto(routes.signup.path);
   await page.getByLabel('Full name').fill('Orion Reader');
-  await page.getByLabel('Email').fill('new-reader@example.com');
+  await page.getByLabel('Email').fill(testCredentials.email);
   await page.getByLabel('Password').fill(testCredentials.password);
   await page.getByRole('button', { name: 'Create account' }).click();
 
-  await expect(page).toHaveURL(routes.entries.path);
-  await expect(page.getByText('Orion Reader')).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('Check your email');
+  await expect(page.getByRole('status')).toContainText(testCredentials.email);
+  await expect(page).toHaveURL(routes.signup.path);
 });
 
 test('logs out from the protected shell', async ({ page }) => {
@@ -129,45 +133,35 @@ test('logs out from the protected shell', async ({ page }) => {
 
   await expect(page).toHaveURL(routes.login.path);
   await page.goto(routes.entries.path);
-  await expect(page).toHaveURL(
-    new RegExp(`${routes.login.path}\\?redirect=%2Fentries$`),
-  );
+  await expect(page).toHaveURL(routes.login.path);
 });
 
-test('returns to the requested protected destination after login', async ({
-  page,
-}) => {
+test('always sends a successful login to entries', async ({ page }) => {
   await page.goto(routes.newEntry.path);
-  await expect(page).toHaveURL(
-    new RegExp(`${routes.login.path}\\?redirect=%2Fentries%2Fnew$`),
-  );
+  await expect(page).toHaveURL(routes.login.path);
+
+  await installMockSupabaseAuth(page);
 
   await page.getByLabel('Email').fill(testCredentials.email);
   await page.getByLabel('Password').fill(testCredentials.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
-  await expect(page).toHaveURL(routes.newEntry.path);
+  await expect(page).toHaveURL(routes.entries.path);
   await expect(
-    page.getByRole('heading', { name: routes.newEntry.label }),
+    page.getByRole('heading', { name: routes.entries.label }),
   ).toBeVisible();
 });
 
-test('preserves the requested destination across authentication routes', async ({
+test('moves between authentication routes without a protected redirect', async ({
   page,
 }) => {
   await page.goto(routes.newEntry.path);
   await page.getByRole('link', { name: 'Register' }).click();
 
-  await expect(page).toHaveURL(
-    new RegExp(`${routes.signup.path}\\?redirect=%2Fentries%2Fnew$`),
-  );
-
-  await page.getByLabel('Full name').fill('Redirected Reader');
-  await page.getByLabel('Email').fill('redirected@example.com');
-  await page.getByLabel('Password').fill(testCredentials.password);
-  await page.getByRole('button', { name: 'Create account' }).click();
-
-  await expect(page).toHaveURL(routes.newEntry.path);
+  await expect(page).toHaveURL(routes.signup.path);
+  await expect(
+    page.getByRole('heading', { name: 'Begin your journal' }),
+  ).toBeVisible();
 });
 
 test('closes mobile navigation after route changes', async ({ page }) => {

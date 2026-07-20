@@ -1,15 +1,13 @@
 import type { ReactNode } from 'react';
 
-import { AuthProvider } from '@/features/auth';
-import { getCurrentUser } from '@/services/auth';
+import { AuthRouteGuard } from '@/features/auth';
 
 interface AuthenticationLayoutProps {
   children: ReactNode;
 }
 
-export default async function AuthenticationLayout({
+export default function AuthenticationLayout({
   children,
 }: AuthenticationLayoutProps) {
-  const user = await getCurrentUser();
-  return <AuthProvider initialUser={user}>{children}</AuthProvider>;
+  return <AuthRouteGuard>{children}</AuthRouteGuard>;
 }

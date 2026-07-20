@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +20,7 @@ function renderWithAuth(children: ReactNode) {
   const value: AuthContextValue = {
     user: null,
     isAuthenticated: false,
+    isInitialized: true,
     isPending: false,
     signIn: vi.fn(),
     signUp: vi.fn(),
@@ -84,5 +86,37 @@ describe('authentication forms', () => {
     expect(
       screen.getByRole('button', { name: 'Create account' }),
     ).toBeEnabled();
+  });
+
+  it('replaces signup with a check-your-email confirmation', async () => {
+    const { value } = renderWithAuth(<SignUpForm />);
+    vi.mocked(value.signUp).mockResolvedValue({
+      ok: true,
+      email: 'reader@example.com',
+    });
+
+    await userEvent.type(screen.getByLabelText('Full name *'), 'Ada Reader');
+    await userEvent.type(
+      screen.getByLabelText('Email *'),
+      'reader@example.com',
+    );
+    await userEvent.type(
+      screen.getByLabelText('Password *'),
+      'secure-password',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Create account' }),
+    );
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Check your email',
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('reader@example.com');
+    expect(value.signUp).toHaveBeenCalledWith({
+      name: 'Ada Reader',
+      email: 'reader@example.com',
+      password: 'secure-password',
+    });
+    expect(screen.queryByLabelText('Password *')).not.toBeInTheDocument();
   });
 });
