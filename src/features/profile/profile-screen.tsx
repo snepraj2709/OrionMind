@@ -111,11 +111,7 @@ export function ProfileScreen({
                   {...form.register('displayName')}
                 />
               </FormField>
-              <FormField
-                description="Your email is managed by your authentication provider."
-                id="email"
-                label="Email"
-              >
+              <FormField id="email" label="Email">
                 <TextInput
                   disabled
                   readOnly
@@ -127,7 +123,7 @@ export function ProfileScreen({
           </Section>
 
           <Section
-            description="These settings control how dates and weekly summaries are organized."
+            description="This control how dates and weekly summaries are organized in reflection and journey"
             headingId="journal-preferences-heading"
             title="Journal preferences"
           >
