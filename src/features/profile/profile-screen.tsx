@@ -14,7 +14,7 @@ import {
   SubmitButton,
   TextInput,
 } from '@/components/forms';
-import { PageHeader, PageShell, Section } from '@/components/layout';
+import { PageHeader, PageShell } from '@/components/layout';
 import { routes } from '@/config/routes';
 import { dataViewMessages } from '@/config/messages';
 import { SignOutButton, useAuth } from '@/features/auth';
@@ -76,7 +76,7 @@ export function ProfileScreen({
   return (
     <PageShell className="space-y-12">
       <PageHeader
-        description="Manage how Orion addresses you and presents dates across your journal."
+        description="Manage your account and privacy settings."
         title={routes.profile.label}
       />
 
@@ -94,73 +94,42 @@ export function ProfileScreen({
           noValidate
           onSubmit={form.handleSubmit(handleSubmit)}
         >
-          <Section
-            description="This information identifies your account and personalizes your experience."
-            headingId="profile-details-heading"
-            title="Profile details"
-          >
-            <Surface className="grid gap-6 p-6 md:grid-cols-2">
-              <FormField
-                error={form.formState.errors.displayName?.message}
-                id="display-name"
-                label="Display name"
-                required
-              >
-                <TextInput
-                  autoComplete="name"
-                  {...form.register('displayName')}
-                />
-              </FormField>
-              <FormField id="email" label="Email">
-                <TextInput
-                  disabled
-                  readOnly
-                  type="email"
-                  {...form.register('email')}
-                />
-              </FormField>
-            </Surface>
-          </Section>
-
-          <Section
-            description="This control how dates and weekly summaries are organized in reflection and journey"
-            headingId="journal-preferences-heading"
-            title="Journal preferences"
-          >
-            <Surface className="grid gap-6 p-6 md:grid-cols-2">
-              <Controller
-                control={form.control}
-                name="timezone"
-                render={({ field, fieldState }) => (
-                  <SelectField
-                    error={fieldState.error?.message}
-                    id="timezone"
-                    label="Timezone"
-                    onValueChange={field.onChange}
-                    options={timezoneOptions}
-                    required
-                    value={field.value}
-                  />
-                )}
+          <Surface className="grid gap-6 p-6 md:grid-cols-2">
+            <FormField
+              error={form.formState.errors.displayName?.message}
+              id="display-name"
+              label="Display name"
+              required
+            >
+              <TextInput
+                autoComplete="name"
+                {...form.register('displayName')}
               />
-              <Controller
-                control={form.control}
-                name="weekStartsOn"
-                render={({ field }) => (
-                  <SelectField
-                    id="week-start"
-                    label="Week starts on"
-                    onValueChange={field.onChange}
-                    options={[
-                      { label: 'Monday', value: 'monday' },
-                      { label: 'Sunday', value: 'sunday' },
-                    ]}
-                    value={field.value}
-                  />
-                )}
+            </FormField>
+            <FormField id="email" label="Email">
+              <TextInput
+                disabled
+                readOnly
+                type="email"
+                {...form.register('email')}
               />
-            </Surface>
-          </Section>
+            </FormField>
+            <Controller
+              control={form.control}
+              name="timezone"
+              render={({ field, fieldState }) => (
+                <SelectField
+                  error={fieldState.error?.message}
+                  id="timezone"
+                  label="Timezone"
+                  onValueChange={field.onChange}
+                  options={timezoneOptions}
+                  required
+                  value={field.value}
+                />
+              )}
+            />
+          </Surface>
 
           {!isOnline ? (
             <FormError>
@@ -194,18 +163,12 @@ export function ProfileScreen({
         </form>
       ) : null}
 
-      <Section
-        description="End your current Orion session on this device."
-        headingId="session-heading"
-        title="Session"
-      >
-        <Surface className="items-start gap-4 p-6">
-          <Typography variant="body">
-            Signed in as {user?.email ?? 'your account'}.
-          </Typography>
-          <SignOutButton />
-        </Surface>
-      </Section>
+      <Surface className="flex-row items-center justify-between gap-4 p-6">
+        <Typography variant="body">
+          Signed in as {user?.email ?? 'your account'}.
+        </Typography>
+        <SignOutButton />
+      </Surface>
     </PageShell>
   );
 }
