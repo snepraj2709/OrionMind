@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { EntriesRepository } from './repository';
+import type { EntriesListRepository } from './repository';
 import { EntriesScreen } from './entries-screen';
 import type { EntriesResult, EntrySummary } from './model';
 import { entryKeys } from './query-keys';
@@ -18,23 +18,25 @@ const completedEntry: EntrySummary = {
 };
 
 function result(items: EntrySummary[], totalAll = items.length): EntriesResult {
-  return { items, total: items.length, totalAll };
-}
-
-function repositoryWithList(
-  listEntries: EntriesRepository['listEntries'],
-): EntriesRepository {
   return {
-    listEntries,
-    getEntry: vi.fn(),
-    createTextEntry: vi.fn(),
-    createVoiceEntry: vi.fn(),
-    decideExtractedItem: vi.fn(),
-    retryEntry: vi.fn(),
+    items,
+    total: items.length,
+    totalAll,
+    page: 1,
+    pageSize: 10,
   };
 }
 
-function renderEntries(repository: EntriesRepository, pendingReviewCount = 0) {
+function repositoryWithList(
+  listEntries: EntriesListRepository['listEntries'],
+): EntriesListRepository {
+  return { listEntries };
+}
+
+function renderEntries(
+  repository: EntriesListRepository,
+  pendingReviewCount = 0,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -98,7 +100,7 @@ describe('EntriesScreen', () => {
 
   it('shows dynamic entry and review totals with the fixed pagination size', async () => {
     const listEntries = vi
-      .fn<EntriesRepository['listEntries']>()
+      .fn<EntriesListRepository['listEntries']>()
       .mockResolvedValue(result([completedEntry]));
 
     renderEntries(repositoryWithList(listEntries), 3);
@@ -120,7 +122,7 @@ describe('EntriesScreen', () => {
       id: 'entry-processing',
       status: 'processing' as const,
     };
-    const listEntries = vi.fn<EntriesRepository['listEntries']>(
+    const listEntries = vi.fn<EntriesListRepository['listEntries']>(
       async (query) =>
         query.status === 'processing'
           ? result([processingEntry], 2)
@@ -178,9 +180,77 @@ describe('EntriesScreen', () => {
     expect(screen.queryByText('Your journal is ready')).not.toBeInTheDocument();
   });
 
+  it('keeps API pagination aligned and requests each selected page once', async () => {
+    const secondPageEntry = {
+      ...completedEntry,
+      id: 'entry-11',
+      content: 'The final entry on the second page.',
+    };
+    const listEntries = vi.fn<EntriesListRepository['listEntries']>(
+      async (query) => ({
+        items: query.pageIndex === 0 ? [completedEntry] : [secondPageEntry],
+        page: query.pageIndex + 1,
+        pageSize: 10,
+        total: 11,
+        totalAll: 11,
+      }),
+    );
+    const user = userEvent.setup();
+
+    renderEntries(repositoryWithList(listEntries));
+    expect(await screen.findByText('Page 1 of 2')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(await screen.findByText(secondPageEntry.content)).toBeVisible();
+    expect(screen.getByText('Page 2 of 2')).toBeVisible();
+    expect(listEntries).toHaveBeenCalledTimes(2);
+    expect(listEntries).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pageIndex: 1, pageSize: 10 }),
+    );
+  });
+
+  it('clamps back to the last valid page when a response page is empty', async () => {
+    let secondPageRequested = false;
+    const listEntries = vi.fn<EntriesListRepository['listEntries']>(
+      async (query) => {
+        if (query.pageIndex === 1) {
+          secondPageRequested = true;
+          return {
+            items: [],
+            page: 2,
+            pageSize: 10,
+            total: 5,
+            totalAll: 5,
+          };
+        }
+
+        return {
+          items: [completedEntry],
+          page: 1,
+          pageSize: 10,
+          total: secondPageRequested ? 5 : 11,
+          totalAll: secondPageRequested ? 5 : 11,
+        };
+      },
+    );
+    const user = userEvent.setup();
+
+    renderEntries(repositoryWithList(listEntries));
+    expect(await screen.findByText('Page 1 of 2')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() =>
+      expect(listEntries).toHaveBeenLastCalledWith(
+        expect.objectContaining({ pageIndex: 0 }),
+      ),
+    );
+    expect(await screen.findByText('Page 1 of 1')).toBeVisible();
+    expect(listEntries).toHaveBeenCalledTimes(3);
+  });
+
   it('shows an error and retries through the repository boundary', async () => {
     const listEntries = vi
-      .fn<EntriesRepository['listEntries']>()
+      .fn<EntriesListRepository['listEntries']>()
       .mockRejectedValueOnce(new Error('Unavailable'))
       .mockResolvedValueOnce(result([completedEntry]));
     const user = userEvent.setup();
@@ -197,7 +267,7 @@ describe('EntriesScreen', () => {
   it('keeps existing content visible during a background refresh', async () => {
     let resolveRefresh: ((value: EntriesResult) => void) | undefined;
     const listEntries = vi
-      .fn<EntriesRepository['listEntries']>()
+      .fn<EntriesListRepository['listEntries']>()
       .mockResolvedValueOnce(result([completedEntry]))
       .mockImplementationOnce(
         () =>

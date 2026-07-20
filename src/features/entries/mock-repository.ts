@@ -43,6 +43,8 @@ export class MockEntriesRepository implements EntriesRepository {
       items: matching.slice(start, start + query.pageSize),
       total: matching.length,
       totalAll: this.entries.length,
+      page: query.pageIndex + 1,
+      pageSize: query.pageSize,
     };
   }
 

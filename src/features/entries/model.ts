@@ -21,6 +21,8 @@ export interface EntriesResult {
   items: EntrySummary[];
   total: number;
   totalAll: number;
+  page: number;
+  pageSize: number;
 }
 
 export interface CreateTextEntryInput {

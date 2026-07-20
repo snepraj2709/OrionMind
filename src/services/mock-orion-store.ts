@@ -1,131 +1,11 @@
 import type { ApprovalStatus, ExtractedItemKind } from '@/config/status';
+import { entryDetailFixtures } from '@/features/entries/fixtures';
 import type {
   ApprovedReflectionEvidence,
   ApprovalRecord,
   EntryDetail,
   SavedItemRecord,
 } from '@/types/records';
-
-const entryFixtures: EntryDetail[] = [
-  {
-    id: 'e1',
-    date: '2025-07-10',
-    inputType: 'text',
-    status: 'completed',
-    content:
-      'This morning I sat with my coffee longer than usual, watching the light change across the kitchen wall. There was something in that stillness — a kind of permission to exist without producing anything.',
-    themes: ['personalGrowth', 'health', 'familyAndFriends'],
-    ideas: [
-      {
-        id: 'i1',
-        content:
-          'I want to establish a morning ritual centered on slow, screen-free time before engaging with the day.',
-        kind: 'idea',
-        status: 'pending_approval',
-      },
-    ],
-    memories: [],
-    reflections: [
-      {
-        id: 'r1',
-        content:
-          'Slow, unstructured mornings help me hear what I need before the day starts asking things of me.',
-        kind: 'reflection',
-        status: 'pending_approval',
-      },
-    ],
-  },
-  {
-    id: 'e2',
-    date: '2025-07-09',
-    inputType: 'voice',
-    status: 'completed',
-    content:
-      'I had a difficult conversation with my manager about the project direction. I went in feeling uncertain and came out feeling heard, which surprised me.',
-    themes: ['career', 'personalGrowth', 'familyAndFriends'],
-    ideas: [
-      {
-        id: 'i2',
-        content:
-          'I should practice stating my technical judgments clearly and early in meetings, rather than over-qualifying everything.',
-        kind: 'idea',
-        status: 'pending_approval',
-      },
-    ],
-    memories: [
-      {
-        id: 'm1',
-        content:
-          'I found words in a work meeting that changed how I understand my own authority in technical conversations.',
-        kind: 'memory',
-        status: 'pending_approval',
-      },
-    ],
-    reflections: [
-      {
-        id: 'r2',
-        content:
-          'I trust my judgment more when I state it plainly and let the conversation respond.',
-        kind: 'reflection',
-        status: 'pending_approval',
-      },
-    ],
-  },
-  {
-    id: 'e3',
-    date: '2025-07-08',
-    inputType: 'text',
-    status: 'completed',
-    content:
-      'I finally finished the painting I started three weeks ago. Finishing it taught me more than the canvases that came out beautifully ever could.',
-    themes: ['funAndRecreation', 'personalGrowth', 'health'],
-    ideas: [],
-    memories: [
-      {
-        id: 'm2',
-        content:
-          'I completed a painting I was unsatisfied with, and discovered it taught me more than my successful works have.',
-        kind: 'memory',
-        status: 'approved',
-      },
-    ],
-    reflections: [
-      {
-        id: 'r3',
-        content:
-          'Finishing imperfect work teaches me more than protecting the possibility of perfect work.',
-        kind: 'reflection',
-        status: 'pending_approval',
-      },
-    ],
-  },
-  {
-    id: 'e4',
-    date: '2025-07-07',
-    inputType: 'text',
-    status: 'processing',
-    content:
-      'Went for a long walk along the canal. I did not bring headphones. I just walked and let thoughts come and go without chasing any of them.',
-    themes: [],
-    ideas: [],
-    memories: [],
-    reflections: [],
-  },
-  {
-    id: 'e5',
-    date: '2025-07-04',
-    inputType: 'voice',
-    status: 'failed',
-    content:
-      'Woke up early. The apartment was very quiet. Made tea and sat on the floor, reading old journal entries from two years ago.',
-    themes: [],
-    ideas: [],
-    memories: [],
-    reflections: [],
-    processingError:
-      'Orion could not complete this reflection. Your original entry is safe.',
-  },
-];
 
 const savedItemFixtures: SavedItemRecord[] = [
   {
@@ -177,7 +57,7 @@ export class MockOrionStore {
   readonly savedItems: SavedItemRecord[];
 
   constructor(
-    entries: EntryDetail[] = entryFixtures,
+    entries: EntryDetail[] = entryDetailFixtures,
     savedItems: SavedItemRecord[] = savedItemFixtures,
   ) {
     this.entries = cloneEntries(entries);

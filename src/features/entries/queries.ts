@@ -12,7 +12,9 @@ import { getDataViewStatus } from '@/lib/query-state';
 import { entriesRepository } from './mock-repository';
 import type { EntriesQuery } from './model';
 import { entryKeys } from './query-keys';
+import { entriesListRepository } from './repository';
 import type {
+  EntriesListRepository,
   CreateEntryInput,
   EntriesRepository,
   ExtractedItemDecisionInput,
@@ -20,7 +22,7 @@ import type {
 
 export function useEntriesQuery(
   queryInput: EntriesQuery,
-  repository: EntriesRepository = entriesRepository,
+  repository: EntriesListRepository = entriesListRepository,
 ) {
   const query = useQuery({
     queryKey: entryKeys.list(queryInput),

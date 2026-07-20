@@ -1,0 +1,171 @@
+{
+  "entries": [
+    {
+      "id": "e1",
+      "input_type": "text",
+      "entry_date": "2025-07-10T08:30:00.000Z",
+      "processing_status": "completed",
+      "created_at": "2025-07-10T08:30:00.000Z",
+      "content_preview": "This morning I sat with my coffee longer than usual, watching the light change across the kitchen wall. There was something in that stillness — a kind of permission to exist without producing anything.",
+      "themes": [
+        {
+          "key": "personalGrowth",
+          "name": "Personal Growth",
+          "color_hex": "#C47D67",
+          "tier": "primary"
+        },
+        {
+          "key": "health",
+          "name": "Health",
+          "color_hex": "#71917E",
+          "tier": "secondary"
+        },
+        {
+          "key": "familyAndFriends",
+          "name": "Family and Friends",
+          "color_hex": "#7086A7",
+          "tier": "tertiary"
+        }
+      ],
+      "ideas": [
+        {
+          "id": "i1",
+          "content": "I want to establish a morning ritual centered on slow, screen-free time before engaging with the day.",
+          "kind": "idea",
+          "status": "pending_approval"
+        }
+      ],
+      "memories": [],
+      "reflections": [
+        {
+          "id": "r1",
+          "content": "Slow, unstructured mornings help me hear what I need before the day starts asking things of me.",
+          "kind": "reflection",
+          "status": "pending_approval"
+        }
+      ]
+    },
+    {
+      "id": "e2",
+      "input_type": "voice",
+      "entry_date": "2025-07-09T18:15:00.000Z",
+      "processing_status": "completed",
+      "created_at": "2025-07-09T18:15:00.000Z",
+      "content_preview": "I had a difficult conversation with my manager about the project direction. I went in feeling uncertain and came out feeling heard, which surprised me.",
+      "themes": [
+        {
+          "key": "career",
+          "name": "Career",
+          "color_hex": "#8B7085",
+          "tier": "primary"
+        },
+        {
+          "key": "personalGrowth",
+          "name": "Personal Growth",
+          "color_hex": "#C47D67",
+          "tier": "secondary"
+        },
+        {
+          "key": "familyAndFriends",
+          "name": "Family and Friends",
+          "color_hex": "#7086A7",
+          "tier": "tertiary"
+        }
+      ],
+      "ideas": [
+        {
+          "id": "i2",
+          "content": "I should practice stating my technical judgments clearly and early in meetings, rather than over-qualifying everything.",
+          "kind": "idea",
+          "status": "pending_approval"
+        }
+      ],
+      "memories": [
+        {
+          "id": "m1",
+          "content": "I found words in a work meeting that changed how I understand my own authority in technical conversations.",
+          "kind": "memory",
+          "status": "pending_approval"
+        }
+      ],
+      "reflections": [
+        {
+          "id": "r2",
+          "content": "I trust my judgment more when I state it plainly and let the conversation respond.",
+          "kind": "reflection",
+          "status": "pending_approval"
+        }
+      ]
+    },
+    {
+      "id": "e3",
+      "input_type": "text",
+      "entry_date": "2025-07-08T20:00:00.000Z",
+      "processing_status": "completed",
+      "created_at": "2025-07-08T20:00:00.000Z",
+      "content_preview": "I finally finished the painting I started three weeks ago. Finishing it taught me more than the canvases that came out beautifully ever could.",
+      "themes": [
+        {
+          "key": "funAndRecreation",
+          "name": "Fun and Recreation",
+          "color_hex": "#9A83A5",
+          "tier": "primary"
+        },
+        {
+          "key": "personalGrowth",
+          "name": "Personal Growth",
+          "color_hex": "#C47D67",
+          "tier": "secondary"
+        },
+        {
+          "key": "health",
+          "name": "Health",
+          "color_hex": "#71917E",
+          "tier": "tertiary"
+        }
+      ],
+      "ideas": [],
+      "memories": [
+        {
+          "id": "m2",
+          "content": "I completed a painting I was unsatisfied with, and discovered it taught me more than my successful works have.",
+          "kind": "memory",
+          "status": "approved"
+        }
+      ],
+      "reflections": [
+        {
+          "id": "r3",
+          "content": "Finishing imperfect work teaches me more than protecting the possibility of perfect work.",
+          "kind": "reflection",
+          "status": "pending_approval"
+        }
+      ]
+    },
+    {
+      "id": "e4",
+      "input_type": "text",
+      "entry_date": "2025-07-07T17:45:00.000Z",
+      "processing_status": "processing",
+      "created_at": "2025-07-07T17:45:00.000Z",
+      "content_preview": "Went for a long walk along the canal. I did not bring headphones. I just walked and let thoughts come and go without chasing any of them.",
+      "themes": [],
+      "ideas": [],
+      "memories": [],
+      "reflections": []
+    },
+    {
+      "id": "e5",
+      "input_type": "voice",
+      "entry_date": "2025-07-04T06:50:00.000Z",
+      "processing_status": "failed",
+      "created_at": "2025-07-04T06:50:00.000Z",
+      "content_preview": "Woke up early. The apartment was very quiet. Made tea and sat on the floor, reading old journal entries from two years ago.",
+      "themes": [],
+      "ideas": [],
+      "memories": [],
+      "reflections": [],
+      "processing_error": "Orion could not complete this reflection. Your original entry is safe."
+    }
+  ]
+}

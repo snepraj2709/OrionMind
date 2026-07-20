@@ -5,7 +5,17 @@ export {
 } from './entry-detail-screen';
 export { NewEntryScreen, type NewEntryScreenProps } from './new-entry-screen';
 export { entriesRepository, MockEntriesRepository } from './mock-repository';
+export {
+  entriesApiItemSchema,
+  entriesApiResponseSchema,
+  entriesRequestSchema,
+  type EntriesApiItem,
+  type EntriesApiRequest,
+  type EntriesApiResponse,
+} from './api-schema';
+export { entriesApiFixtures } from './fixtures';
 export { entryKeys } from './query-keys';
+export { buildEntriesApiResponse } from './response-builder';
 export type {
   ApprovalStatus,
   EntriesQuery,
@@ -19,7 +29,12 @@ export type {
   ExtractedItem,
   ExtractedItemKind,
 } from './model';
-export type { EntriesRepository } from './repository';
+export {
+  entriesListRepository,
+  HttpEntriesRepository,
+  type EntriesListRepository,
+  type EntriesRepository,
+} from './repository';
 export {
   useVoiceRecorder,
   type VoiceRecorderState,

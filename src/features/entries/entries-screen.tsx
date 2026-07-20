@@ -2,7 +2,7 @@
 
 import { PenLine } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { FilterField, PaginationControls } from '@/components/data-display';
 import { AppButton, Typography } from '@/components/design-system';
@@ -19,19 +19,21 @@ import { entryStatusPresentation } from '@/config/status';
 import { useCollectionControls } from '@/hooks';
 
 import { EntryListItem } from './entry-list-item';
-import { entriesRepository } from './mock-repository';
 import type { EntryStatusFilter } from './model';
 import { useEntriesQuery } from './queries';
-import type { EntriesRepository } from './repository';
+import {
+  entriesListRepository,
+  type EntriesListRepository,
+} from './repository';
 
 export interface EntriesScreenProps {
-  repository?: EntriesRepository;
+  repository?: EntriesListRepository;
   pendingReviewCount?: number;
 }
 
 export function EntriesScreen({
   pendingReviewCount = 0,
-  repository = entriesRepository,
+  repository = entriesListRepository,
 }: EntriesScreenProps) {
   const [status, setStatus] = useState<EntryStatusFilter>('all');
   const { clearSearch, pageIndex, pageSize, search, setPageIndex, setSearch } =
@@ -41,9 +43,33 @@ export function EntriesScreen({
     repository,
   );
 
-  const pageCount = query.data ? Math.ceil(query.data.total / pageSize) : 0;
+  const pageCount = query.data
+    ? Math.ceil(query.data.total / query.data.pageSize)
+    : 0;
+  const responsePageIndex = query.data ? query.data.page - 1 : pageIndex;
+  const displayedPageIndex = query.isPlaceholderData
+    ? pageIndex
+    : responsePageIndex;
   const hasFilters = search.trim().length > 0 || status !== 'all';
   const entryCount = query.data?.totalAll;
+
+  useEffect(() => {
+    if (
+      query.data &&
+      !query.isPlaceholderData &&
+      query.data.total > 0 &&
+      query.data.items.length === 0 &&
+      responsePageIndex >= pageCount
+    ) {
+      setPageIndex(Math.max(0, pageCount - 1));
+    }
+  }, [
+    pageCount,
+    query.data,
+    query.isPlaceholderData,
+    responsePageIndex,
+    setPageIndex,
+  ]);
 
   function clearFilters() {
     clearSearch();
@@ -151,11 +177,11 @@ export function EntriesScreen({
 
           <div className="pt-4">
             <PaginationControls
-              canNextPage={pageIndex + 1 < pageCount}
-              canPreviousPage={pageIndex > 0}
+              canNextPage={displayedPageIndex + 1 < pageCount}
+              canPreviousPage={displayedPageIndex > 0}
               onPageChange={setPageIndex}
               pageCount={pageCount}
-              pageIndex={pageIndex}
+              pageIndex={displayedPageIndex}
             />
           </div>
         </div>
