@@ -2,22 +2,22 @@
 
 Status: implementation contract for the next coding agent  
 Scope: FastAPI backend, Supabase PostgreSQL, one PostgreSQL worker, and the existing Next.js Reflection screen  
-Source documents: `docs/Reflection-Algorithm.md`, the MVP brief attached to this task, and the repository as inspected on 2026-07-21
+Source documents: `docs/Reflection-Algorithm.md`, the MVP brief attached to this task, and the repository as inspected through 2026-07-22
 
 This document specifies the smallest repository-compatible implementation of an evidence-backed, privacy-first longitudinal reflection engine. It is intentionally prescriptive: alternatives are deferred rather than left for the implementer to choose.
 
 ## Decision log
 
-| Conflict or choice                                                                   | Decision                                            | Consequence                                                                        |
-| ------------------------------------------------------------------------------------ | --------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Scheduling rules differ between the brief and `Reflection-Algorithm.md`              | Use the brief's local-6-PM entry/date rule          | Do not implement the 500-word trigger, aged-entry trigger, or weekly rebuild in P0 |
-| `self_statement` exists only in `Reflection-Algorithm.md`                            | Include it in the closed signal enum                | All other unknown signal types still fail Pydantic and database validation         |
-| Existing frontend uses a singular, active-tab fixture endpoint                       | Replace it with aggregate `GET /api/v1/reflections` | One request per range returns all three insight families; tabs become client-local |
-| Existing feedback is client-local                                                    | Persist feedback in P0                              | Add an authenticated idempotent PUT endpoint and RLS-protected feedback table      |
-| `pgvector` is proposed but absent from migrations and dependencies                   | Do not add it in P0                                 | Keep redacted-signal embeddings deferred and do near-duplicate detection locally   |
-| Existing text/voice processing is request-bound while historical imports use a queue | Use one generalized PostgreSQL job queue            | Text, voice, historical imports, retries, backfill, and synthesis share one worker |
-| Current provider uses Chat Completions                                               | Move structured work to Responses API               | Use `client.responses.parse(..., store=False)` and strict Pydantic outputs         |
-| Production KMS is absent                                                             | Treat KMS-backed key wrapping as a release blocker  | Development may reuse current key material; production must not be declared ready  |
+| Conflict or choice                                                                   | Decision                                                                                      | Consequence                                                                                                                             |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Scheduling rules differ between the brief and `Reflection-Algorithm.md`              | Use the brief's local-6-PM entry/date rule                                                    | Do not implement the 500-word trigger, aged-entry trigger, or weekly rebuild in P0                                                      |
+| `self_statement` exists only in `Reflection-Algorithm.md`                            | Include it in the closed signal enum                                                          | All other unknown signal types still fail Pydantic and database validation                                                              |
+| Existing frontend uses a singular, active-tab fixture endpoint                       | Replace it with aggregate `GET /api/v1/reflections`                                           | One request per range returns all three insight families; tabs become client-local                                                      |
+| Existing feedback is client-local                                                    | Persist feedback in P0                                                                        | Add an authenticated idempotent PUT endpoint and RLS-protected feedback table                                                           |
+| `pgvector` is proposed but absent from migrations and dependencies                   | Do not add it in P0                                                                           | Keep redacted-signal embeddings deferred and do near-duplicate detection locally                                                        |
+| Existing text/voice processing is request-bound while historical imports use a queue | Use one generalized PostgreSQL job queue                                                      | Text, voice, historical imports, retries, backfill, and synthesis share one worker                                                      |
+| Current provider uses Chat Completions                                               | Move structured work to Responses API                                                         | Use `client.responses.parse(..., store=False)` and strict Pydantic outputs                                                              |
+| Production KMS is absent                                                             | Defer KMS for the MVP and explicitly accept the residual key-management risk as of 2026-07-22 | KMS is no longer an MVP release gate; environment-held key maps remain temporary and must not be described as KMS-equivalent protection |
 
 ---
 
@@ -36,7 +36,7 @@ This document specifies the smallest repository-compatible implementation of an 
 
 - Raw journal content is stored in `public.entries.content_envelope`, never in a plaintext content column.
 - `backend/app/shared/security/encryption.py` provides AES-256-GCM envelopes with HKDF-SHA256, owner/record-bound AAD, key IDs, canonicalization, and keyed fingerprints.
-- The master encryption and fingerprint keys are currently supplied through `ENTRY_ENCRYPTION_KEYS` and `ENTRY_FINGERPRINT_KEYS`. They are application environment secrets, not KMS-wrapped data-encryption keys.
+- The master encryption and fingerprint keys are currently supplied through `ENTRY_ENCRYPTION_KEYS` and `ENTRY_FINGERPRINT_KEYS`. They are application environment secrets, not KMS-wrapped data-encryption keys. This limitation is explicitly accepted for the MVP and remains post-MVP security hardening.
 - `backend/app/modules/entries/service.py` processes text and voice entries synchronously through `_run_processing`. Historical entries are the only entry type currently accepted asynchronously.
 - `backend/app/modules/processing/provider.py` uses `client.beta.chat.completions.parse`; it retries only by moving from the configured primary model to the fallback model.
 - `backend/app/modules/processing/schemas.py` already uses strict Pydantic models (`extra="forbid"`) and exact `Literal` values. Extend this convention.
@@ -128,7 +128,7 @@ One `backend/scripts/run_processing_worker.py` process polls this table and also
 - No new journal editor, entry model, design language, or shadcn primitive behavior.
 - No feedback-based evidence inflation. User feedback is a preference/correction signal, not journal evidence.
 - No weekly full rebuild, word-count scheduling trigger, or age-based scheduling trigger in P0.
-- No production declaration until KMS-backed key wrapping exists and privacy tests pass.
+- No claim that the MVP has KMS-backed, HSM-backed, or independently auditable key protection. The constrained MVP may proceed with environment-held key maps only under the documented risk acceptance in section 18; privacy and adversarial tests remain mandatory.
 
 ---
 
@@ -1417,7 +1417,7 @@ The path-family command is the required verification command for every row in th
 8. **P0-08: Integrate the existing Reflection frontend**
    - Real HTTP repository, aggregate local tabs, states, evidence, persisted optimistic feedback.
 9. **P0-09: Backfill, observe, and release-gate**
-   - Feature flags off by default, controlled backfill, shadow evaluation, KMS blocker, full validation.
+   - Feature flags off by default, controlled backfill, shadow evaluation, explicit MVP KMS deferral, and full validation.
 
 ### P1 — after MVP evidence
 
@@ -1571,7 +1571,7 @@ Tracing spans use the same allowlist. Disable automatic capture of request/respo
 2. Deploy code with `REFLECTION_ENGINE_ENABLED=false` and `REFLECTION_SCHEDULER_ENABLED=false`.
 3. Change deployment process from `run_past_import_worker.py` to `run_processing_worker.py` while entry enqueueing remains disabled.
 4. Verify the configured project can access all three model IDs.
-5. Complete the KMS-backed key-wrapping implementation and rotation/runbook. Without it, production rollout stops here.
+5. Record the approved MVP KMS deferral and verify the environment-held encryption and fingerprint key maps are present, valid, access-restricted, backed up securely, and recoverable. This permits the constrained MVP rollout but not a claim of KMS-equivalent protection. Implement real KMS wrapping before broader production expansion, regulated use, or a security claim that requires managed-key isolation and auditability.
 
 ### Entry-processing rollout
 
@@ -1604,7 +1604,27 @@ Tracing spans use the same allowlist. Disable automatic capture of request/respo
 
 ### Largest privacy risk
 
-The current application holds master encryption keys in environment-provided JSON. Although journal ciphertext uses strong authenticated encryption, database compromise plus application-secret compromise exposes all entries, mappings, signals, and snapshots. Production requires a KMS-backed envelope-key design, key rotation, least-privilege worker access, and recovery runbook. This is a release blocker, not deferred polish.
+The current application holds master encryption and fingerprint keys in environment-provided JSON. Although journal ciphertext uses strong authenticated encryption, compromise of both the database and application environment secrets permits offline decryption of encrypted entries and derived sensitive payloads. The MVP explicitly accepts this residual risk and defers managed KMS wrapping. This decision removes KMS from the MVP release gate; it does not make environment-held keys equivalent to a managed KMS.
+
+#### What is affected by the MVP KMS deferral
+
+- **Larger compromise blast radius:** anyone who obtains both the database and the environment-held encryption keys can decrypt raw entries, PII vault mappings, redacted-text and offset payloads, signals, candidate payloads, and snapshot insight payloads. Stolen keys can be reused offline without contacting Orion.
+- **Weaker key isolation and auditability:** there is no independent KMS/HSM boundary, per-operation KMS audit trail, centrally enforced key policy, or managed revocation boundary between the running application and the root key material.
+- **More fragile rotation and recovery:** rotation relies on deploying a new active key while retaining every old key needed by existing envelopes. Removing, corrupting, or losing an old environment key makes the associated ciphertext unavailable. There is no KEK-only rewrap operation that can rotate protection without touching application key material.
+- **Environment-secret exposure matters more:** access to Railway/project secrets, build or runtime diagnostics, developer machines, backups, or incident exports must be treated as potential access to reusable decryption and fingerprint keys.
+- **Reduced security and compliance posture:** the MVP must not claim managed-key isolation, HSM protection, KMS-backed envelope encryption, or readiness for a regulated/high-assurance rollout. Real KMS integration remains required before broader production expansion or any such claim.
+- **Operational controls become release-critical:** production-like MVP environments must keep key maps out of source control and logs, restrict secret access, maintain a tested secure backup, validate active and historical key IDs at startup, and exercise key-loss recovery before enabling the cohort.
+
+#### What remains unaffected in the Reflection Engine
+
+- **Reflection behavior and quality:** deterministic and semantic quality gates, signal extraction, scoring formulas, publication thresholds, contradiction handling, evidence validation, and non-diagnostic language rules do not depend on KMS.
+- **Queue and scheduling behavior:** entry processing, synthesis jobs, retries, heartbeats, stale recovery, source-version idempotency, per-user advisory locks, the local-6-PM rule, shadow mode, and controlled backfill remain unchanged.
+- **API and feedback behavior:** aggregate GET states, the 90-day basis, immutable snapshots, evidence expansion, feedback persistence, rejection suppression, authentication, ownership checks, and frontend behavior remain unchanged.
+- **Existing cryptographic envelopes:** AES-256-GCM, HKDF-SHA256 derivation, random salts/nonces, purpose- and owner-bound AAD, key IDs, tamper detection, and uniform decryption failures continue to protect encrypted records. A database-only compromise still cannot decrypt those encrypted envelopes without the environment-held keys.
+- **Other privacy boundaries:** local Presidio redaction, stable encrypted placeholder mappings, exact offset restoration, `responses.parse(..., store=False)`, privacy-safe logs/traces, RLS/FORCE RLS, owner-bound foreign keys, and deletion cascades remain in force.
+- **Model and product integration:** Luna/Terra/Sol allocation, prompt versions, model-access preflight, evaluation gates, aggregate frontend integration, and all non-KMS verification commands remain unchanged.
+
+This exception applies only to the MVP. Real KMS-backed wrapping, least-privilege provider access, rewrap/rotation procedures, and recovery testing move to post-MVP security hardening and must be reconsidered before cohort expansion.
 
 The existing plaintext derived ideas, memories, and entry-level reflections are also a privacy risk, but changing them is outside this slice and must be tracked separately.
 
@@ -1621,7 +1641,7 @@ Text and voice endpoints currently complete extraction inside the request, while
 - `all` means all eligible evidence within the 90-day basis, not lifetime history.
 - User feedback is correction/preference context and never evidence.
 - Model availability was verified for the configured project during planning; deployment still performs a non-content preflight.
-- Local PII recognition reduces exposure but cannot guarantee perfect detection; leakage tests and KMS remain mandatory.
+- Local PII recognition reduces exposure but cannot guarantee perfect detection; leakage tests remain mandatory, while KMS is an explicitly accepted MVP deferral.
 
 ### Definition of done
 
@@ -1638,7 +1658,7 @@ Text and voice endpoints currently complete extraction inside the request, while
 - The frontend uses the real repository, handles all required states, reuses the design system, remains keyboard accessible, and has no overflow at 320px.
 - Logs/traces contain no journal text, evidence, prompts, or PII mappings.
 - Fresh install and upgrade schemas match; account deletion cascades through all new data.
-- Production KMS requirements and privacy/adversarial tests pass.
+- The MVP KMS deferral and residual risks are documented and accepted; environment-key startup validation, secret-access controls, backup/recovery checks, and privacy/adversarial tests pass.
 - Verification succeeds:
 
 ```bash
