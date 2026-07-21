@@ -1,0 +1,414 @@
+{
+  "userId": "reader-id",
+  "range": "30d",
+  "period": {
+    "entryCount": 24,
+    "totalAvailable": 24,
+    "from": "2020-04-14",
+    "to": "2020-05-09"
+  },
+  "reflectionTab": "all",
+  "data": {
+    "hiddenDriver": {
+      "statement": "You appear most energised when curiosity gives you a sense of expansion—learning how something works, connecting ideas across subjects, turning knowledge into action, and using what you understand to shape yourself or help someone else grow.",
+      "underlyingNeed": "To experience yourself as capable, distinctive, intellectually alive and actively becoming the person you believe you could be.",
+      "drivers": [
+        "Curiosity and mastery",
+        "Autonomy and distinctiveness",
+        "Meaningful connection and contribution",
+        "Creative and physical vitality"
+      ],
+      "evidenceStrength": [
+        "Learning, curiosity, connection or self-directed growth appears in all 24 entries",
+        "The same pattern appears across intellectual, social, creative and physical experiences",
+        "The pattern persists throughout the full 14 April to 9 May period"
+      ],
+      "observedEntryCount": 24,
+      "evidence": [
+        {
+          "id": "2020-04-14-hidden-1",
+          "date": "2020-04-14",
+          "interpretation": "Shows that growth is closely tied to autonomy and becoming distinct rather than simply complying with an existing path.",
+          "source": "Diary entry",
+          "text": "I am not made to fit into the world, but to stand out more so on my own terms."
+        },
+        {
+          "id": "2020-04-15-hidden-2",
+          "date": "2020-04-15",
+          "interpretation": "Curiosity becomes most energising when it can be converted into a concrete, self-directed project.",
+          "source": "Diary entry",
+          "text": "I want to make a drone in less price. I am going to learn how it works and do some manufacturing work in that."
+        },
+        {
+          "id": "2020-04-16-hidden-3",
+          "date": "2020-04-16",
+          "interpretation": "Active learning appears to create more energy than passive consumption.",
+          "source": "Diary entry",
+          "text": "I learned how reading is more energetic than watching videos."
+        },
+        {
+          "id": "2020-04-24-hidden-4",
+          "date": "2020-04-24",
+          "interpretation": "Understanding becomes meaningful when it can be shared and used to awaken curiosity in someone else.",
+          "source": "Diary entry",
+          "text": "Talking to my little brother and invoking curiosity in his mind through various natural examples of science like sunset and blue sky."
+        },
+        {
+          "id": "2020-05-01-hidden-5",
+          "date": "2020-05-01",
+          "interpretation": "The entry directly links energy with curiosity, teaching and a close relationship.",
+          "source": "Diary entry",
+          "text": "Talking to Bittu about curiosity around us really give me a lot of energy deep down inside."
+        },
+        {
+          "id": "2020-05-04-hidden-6",
+          "date": "2020-05-04",
+          "interpretation": "Learning feels more compelling when it has practical use and contributes to a visible capability.",
+          "source": "Diary entry",
+          "text": "To learn more about stock exchange market and use it in real life, and set, to build my portfolio by going through some really useful content as of by the blog of Saswat Lenka."
+        },
+        {
+          "id": "2020-05-05-hidden-7",
+          "date": "2020-05-05",
+          "interpretation": "Connecting ideas across domains is recognised as a personal strength and source of identity.",
+          "source": "Diary entry",
+          "text": "I can combine many things at a time to find a bigger pattern."
+        },
+        {
+          "id": "2020-05-09-hidden-8",
+          "date": "2020-05-09",
+          "interpretation": "Deep research and direct contact with ambitious people create sustained intellectual and social energy.",
+          "source": "Diary entry",
+          "text": "Doing research with business terminologies and connecting with various dignitaries. I researched a lot. I delved deeper and deeper."
+        }
+      ]
+    },
+    "recurringLoop": {
+      "title": "A loop that may be keeping you stuck",
+      "description": "A possible pattern across the period—offered as something to notice, not a fixed conclusion.",
+      "steps": [
+        {
+          "id": "loop-1",
+          "text": "A new subject, person or possibility creates a strong burst of energy.",
+          "entryCount": 16,
+          "evidence": [
+            {
+              "id": "2020-04-15-loop-1-1",
+              "date": "2020-04-15",
+              "interpretation": "A new possibility quickly becomes emotionally and physically activating.",
+              "source": "Diary entry",
+              "text": "I immediately want to get into a real-life business."
+            },
+            {
+              "id": "2020-04-29-loop-1-2",
+              "date": "2020-04-29",
+              "interpretation": "New intellectual frontiers repeatedly create immediate enthusiasm.",
+              "source": "Diary entry",
+              "text": "To learn about nanotechnology. To read more about singularity."
+            },
+            {
+              "id": "2020-05-09-loop-1-3",
+              "date": "2020-05-09",
+              "interpretation": "New contacts and opportunities generate momentum and excitement.",
+              "source": "Diary entry",
+              "text": "I like hustling and going through various media platforms to get a good deal."
+            }
+          ]
+        },
+        {
+          "id": "loop-2",
+          "text": "The initial interest expands into several adjacent goals, identities or projects.",
+          "entryCount": 13,
+          "evidence": [
+            {
+              "id": "2020-04-15-loop-2-1",
+              "date": "2020-04-15",
+              "interpretation": "One energising state expands into many simultaneous ambitions.",
+              "source": "Diary entry",
+              "text": "I want to tour the world. I want to read everything I could reach out to. I want to burn the Sun inside me to see the wonders of the world. I want to do cycling, skating, and also make drones."
+            },
+            {
+              "id": "2020-05-05-loop-2-2",
+              "date": "2020-05-05",
+              "interpretation": "The mind moves across many related fields rather than settling on one active direction.",
+              "source": "Diary entry",
+              "text": "CS, AI, nanobots, stock investing, singularity, economics, DNA modeling, finance."
+            },
+            {
+              "id": "2020-05-07-loop-2-3",
+              "date": "2020-05-07",
+              "interpretation": "Learning goals and outreach goals continue accumulating together.",
+              "source": "Diary entry",
+              "text": "Research more about singularity and machine learning. Connect with more leaders and entrepreneurs by sending personal requests and emails."
+            }
+          ]
+        },
+        {
+          "id": "loop-3",
+          "text": "Attention becomes fragmented across content, messages, social media and competing tasks.",
+          "entryCount": 12,
+          "evidence": [
+            {
+              "id": "2020-04-18-loop-3-1",
+              "date": "2020-04-18",
+              "interpretation": "The entry explicitly identifies distraction as an obstacle to using curiosity effectively.",
+              "source": "Diary entry",
+              "text": "increase my focus, reduce distraction, notifications, apps, unwanted people, make my position higher, be high-profile."
+            },
+            {
+              "id": "2020-05-03-loop-3-2",
+              "date": "2020-05-03",
+              "interpretation": "Fragmented attention is recognised after time moves across films, Instagram, webinar research and reading.",
+              "source": "Diary entry",
+              "text": "I lose focus. I need to be more determined."
+            },
+            {
+              "id": "2020-05-09-loop-3-3",
+              "date": "2020-05-09",
+              "interpretation": "Frequent low-value media checking directly reduces available energy.",
+              "source": "Diary entry",
+              "text": "I watched status a lot, and that decreased my energy."
+            }
+          ]
+        },
+        {
+          "id": "loop-4",
+          "text": "Sleep disruption, fatigue or slow progress reduces the ability to execute.",
+          "entryCount": 13,
+          "evidence": [
+            {
+              "id": "2020-04-20-loop-4-1",
+              "date": "2020-04-20",
+              "interpretation": "Sleep disruption is directly identified as an execution constraint.",
+              "source": "Diary entry",
+              "text": "You need to change your sleeping cycle because it drains most of your energy."
+            },
+            {
+              "id": "2020-04-22-loop-4-2",
+              "date": "2020-04-22",
+              "interpretation": "High physical intensity without pacing creates fatigue that competes with other goals.",
+              "source": "Diary entry",
+              "text": "More running or maybe unscheduled running caused leg pain and physical exhaustion."
+            },
+            {
+              "id": "2020-04-28-loop-4-3",
+              "date": "2020-04-28",
+              "interpretation": "Low physical energy interrupts learning and activity.",
+              "source": "Diary entry",
+              "text": "Less energy in my body, maybe some fever and fatigue taking its toll over me, or maybe lack of proper medicine guidance or motivation."
+            }
+          ]
+        },
+        {
+          "id": "loop-5",
+          "text": "The interruption is interpreted as insufficient discipline, lost ability or not being enough.",
+          "entryCount": 11,
+          "evidence": [
+            {
+              "id": "2020-04-23-loop-5-1",
+              "date": "2020-04-23",
+              "interpretation": "Difficulty sustaining action becomes connected to a broader loss of self-belief.",
+              "source": "Diary entry",
+              "text": "Due to constant worry, I had stopped believing on myself."
+            },
+            {
+              "id": "2020-04-29-loop-5-2",
+              "date": "2020-04-29",
+              "interpretation": "A setback in recognition expands into a much larger judgement about significance and existence.",
+              "source": "Diary entry",
+              "text": "It scares me that I have no well-known place in my college. I will die one day, and no one will talk about me or my deeds. I felt like I don't even exist."
+            },
+            {
+              "id": "2020-05-08-loop-5-3",
+              "date": "2020-05-08",
+              "interpretation": "The entry explicitly notices chronic dissatisfaction despite recognising existing capability.",
+              "source": "Diary entry",
+              "text": "I find out that I am very much perfect from day one. It's just I am never satisfied with myself."
+            }
+          ]
+        },
+        {
+          "id": "loop-6",
+          "text": "Fresh inspiration, role models, courses or outreach are used to restore momentum.",
+          "entryCount": 14,
+          "evidence": [
+            {
+              "id": "2020-04-25-loop-6-1",
+              "date": "2020-04-25",
+              "interpretation": "External content is deliberately used to recover motivation and energy.",
+              "source": "Diary entry",
+              "text": "Listen to some good speech by Raghuram Rajan sir, Oprah Winfrey interview, or any other good content."
+            },
+            {
+              "id": "2020-05-07-loop-6-2",
+              "date": "2020-05-07",
+              "interpretation": "Role models and recurring content become a strategy for restarting drive.",
+              "source": "Diary entry",
+              "text": "Listen Gary Vee every day and learn from Rachna ranade every day."
+            },
+            {
+              "id": "2020-05-09-loop-6-3",
+              "date": "2020-05-09",
+              "interpretation": "A new structured learning plan appears as the next route back into progress.",
+              "source": "Diary entry",
+              "text": "I want to do entrepreneurship course via a three-course ERP package and will start complete, reached three courses this month."
+            }
+          ]
+        }
+      ],
+      "protection": "This loop keeps possibility, hope and an expansive identity alive without forcing an immediate choice that could expose one direction to failure, boredom or ordinary slow progress.",
+      "interruption": "Before adding another topic, course or contact, turn the current curiosity into one visible output. Treat sleep, food, recovery and limited attention as execution constraints rather than evidence of weak character.",
+      "evidence": [
+        {
+          "id": "2020-05-03-loop-summary-1",
+          "date": "2020-05-03",
+          "interpretation": "The entry directly names changing goals as a threat to accumulated effort.",
+          "source": "Diary entry",
+          "text": "I need great determination to stay at one task or goal. If it keeps changing, my effort will all go in vain."
+        },
+        {
+          "id": "2020-05-04-loop-summary-2",
+          "date": "2020-05-04",
+          "interpretation": "The desired interruption is already stated: completion before further expansion.",
+          "source": "Diary entry",
+          "text": "Complete the things that I have started and not just muddle up with so many things all at a time."
+        }
+      ]
+    },
+    "innerTension": {
+      "title": "Needs you may be trying to hold at the same time",
+      "tensions": [
+        {
+          "id": "novelty-focus",
+          "leftTitle": "Exploration and possibility",
+          "leftBody": "You gain energy from new subjects, ambitious people, unfamiliar systems and connections across many fields.",
+          "rightTitle": "Focus and completion",
+          "rightBody": "You also want proof that your effort is accumulating into mastery, finished work and a clear direction.",
+          "integration": "Keep an idea list for exploration, but allow only one learning goal and one visible project to be active at a time.",
+          "dates": [
+            "2020-04-15",
+            "2020-05-03",
+            "2020-05-04",
+            "2020-05-05",
+            "2020-05-07"
+          ],
+          "evidence": [
+            {
+              "id": "2020-05-03-tension-1-1",
+              "date": "2020-05-03",
+              "interpretation": "The conflict between changing interests and cumulative progress is stated directly.",
+              "source": "Diary entry",
+              "text": "I need great determination to stay at one task or goal. If it keeps changing, my effort will all go in vain."
+            },
+            {
+              "id": "2020-05-04-tension-1-2",
+              "date": "2020-05-04",
+              "interpretation": "Completion is desired precisely because exploration has become crowded.",
+              "source": "Diary entry",
+              "text": "Complete the things that I have started and not just muddle up with so many things all at a time."
+            },
+            {
+              "id": "2020-05-05-tension-1-3",
+              "date": "2020-05-05",
+              "interpretation": "Breadth is not only a distraction; it is also experienced as a genuine cognitive strength.",
+              "source": "Diary entry",
+              "text": "I can combine many things at a time to find a bigger pattern."
+            }
+          ]
+        },
+        {
+          "id": "belonging-autonomy",
+          "leftTitle": "Recognition and belonging",
+          "leftBody": "You want to feel visible, valued, remembered and connected to people whose minds or ambitions matter to you.",
+          "rightTitle": "Autonomy and distinctiveness",
+          "rightBody": "You resist groups, roles and expectations that feel generic, shallow or disconnected from who you want to become.",
+          "integration": "Pursue belonging through communities, friendships and work you genuinely respect, rather than using attention itself as proof of worth.",
+          "dates": [
+            "2020-04-14",
+            "2020-04-21",
+            "2020-04-29",
+            "2020-05-02",
+            "2020-05-08",
+            "2020-05-09"
+          ],
+          "evidence": [
+            {
+              "id": "2020-04-14-tension-2-1",
+              "date": "2020-04-14",
+              "interpretation": "Belonging is rejected when the group does not feel personally meaningful.",
+              "source": "Diary entry",
+              "text": "I hate Leo messages because I don't belong there."
+            },
+            {
+              "id": "2020-04-21-tension-2-2",
+              "date": "2020-04-21",
+              "interpretation": "Being noticed by friends produces a strong sense of existence and value.",
+              "source": "Diary entry",
+              "text": "But today I felt valued just randomly."
+            },
+            {
+              "id": "2020-04-29-tension-2-3",
+              "date": "2020-04-29",
+              "interpretation": "Lack of recognition is experienced as a threat to identity and significance.",
+              "source": "Diary entry",
+              "text": "It scares me that I have no well-known place in my college."
+            },
+            {
+              "id": "2020-05-08-tension-2-4",
+              "date": "2020-05-08",
+              "interpretation": "The desired belonging is selective and tied to admired people rather than broad social inclusion.",
+              "source": "Diary entry",
+              "text": "I felt a deep connection to leaders and want to strengthen my connection each day with a few people."
+            }
+          ]
+        },
+        {
+          "id": "intensity-sustainability",
+          "leftTitle": "Intensity and rapid growth",
+          "leftBody": "You want to move at maximum pace, consume more knowledge, exercise strongly and transform yourself quickly.",
+          "rightTitle": "Rest and sustainable rhythm",
+          "rightBody": "Your body repeatedly asks for sleep, recovery, food, pacing and fewer competing demands.",
+          "integration": "Define a productive day by one completed priority plus protected recovery, not by how intensely every available hour was used.",
+          "dates": [
+            "2020-04-15",
+            "2020-04-17",
+            "2020-04-22",
+            "2020-04-23",
+            "2020-04-28",
+            "2020-05-09"
+          ],
+          "evidence": [
+            {
+              "id": "2020-04-15-tension-3-1",
+              "date": "2020-04-15",
+              "interpretation": "The desired state is continuous high energy rather than naturally changing energy.",
+              "source": "Diary entry",
+              "text": "I want this energy to stay with me throughout my life."
+            },
+            {
+              "id": "2020-04-17-tension-3-2",
+              "date": "2020-04-17",
+              "interpretation": "Intense engagement and disrupted sleep are followed by a full-day recovery cost.",
+              "source": "Diary entry",
+              "text": "I slept all through the day because I didn't slept yesterday."
+            },
+            {
+              "id": "2020-04-22-tension-3-3",
+              "date": "2020-04-22",
+              "interpretation": "The entry recognises that physical growth requires fuel and pacing.",
+              "source": "Diary entry",
+              "text": "Maybe I need to eat more and scheduled running on a regular one and daily scheduled."
+            },
+            {
+              "id": "2020-05-09-tension-3-4",
+              "date": "2020-05-09",
+              "interpretation": "A normal recovery event is judged morally, increasing pressure around energy management.",
+              "source": "Diary entry",
+              "text": "I slept for three hours in afternoon time, from 3 to 6 p.m. That is too bad."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -508,6 +508,25 @@ def test_loop_requires_supported_adjacent_and_closing_transitions() -> None:
         basis_end=BASE_DATE + timedelta(days=89),
         transition_support=complete,
     ) == ()
+    complete.pop(keys[-1])
+    assert "LOOP_CLOSURE_UNSUPPORTED" in validator.validate_candidate(
+        candidate,
+        user_id=USER,
+        signals={item.id: item for item in signals},
+        basis_start=BASE_DATE,
+        basis_end=BASE_DATE + timedelta(days=89),
+        transition_support=complete,
+    )
+    complete = {key: (2, 2) for key in keys}
+    complete.pop(keys[0])
+    assert "LOOP_TRANSITION_UNSUPPORTED" in validator.validate_candidate(
+        candidate,
+        user_id=USER,
+        signals={item.id: item for item in signals},
+        basis_start=BASE_DATE,
+        basis_end=BASE_DATE + timedelta(days=89),
+        transition_support=complete,
+    )
 
 
 def test_loop_construction_groups_semantically_equal_roles_across_varied_labels() -> None:
@@ -546,25 +565,6 @@ def test_loop_construction_groups_semantically_equal_roles_across_varied_labels(
 
     assert loops
     assert any(item.publication_gate_passed for item in loops)
-    complete.pop(keys[-1])
-    assert "LOOP_CLOSURE_UNSUPPORTED" in validator.validate_candidate(
-        candidate,
-        user_id=USER,
-        signals={item.id: item for item in signals},
-        basis_start=BASE_DATE,
-        basis_end=BASE_DATE + timedelta(days=89),
-        transition_support=complete,
-    )
-    complete = {key: (2, 2) for key in keys}
-    complete.pop(keys[0])
-    assert "LOOP_TRANSITION_UNSUPPORTED" in validator.validate_candidate(
-        candidate,
-        user_id=USER,
-        signals={item.id: item for item in signals},
-        basis_start=BASE_DATE,
-        basis_end=BASE_DATE + timedelta(days=89),
-        transition_support=complete,
-    )
 
 
 def test_tension_requires_both_sides_and_integration_honoring_both() -> None:

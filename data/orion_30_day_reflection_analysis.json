@@ -1,0 +1,406 @@
+{
+  "userId": "reader-id",
+  "range": "30d",
+  "period": {
+    "entryCount": 30,
+    "totalAvailable": 30,
+    "from": "2026-06-01",
+    "to": "2026-06-30"
+  },
+  "reflectionTab": "all",
+  "data": {
+    "hiddenDriver": {
+      "statement": "You appear to be driven less by busyness itself than by a need to prove that you are competent, valuable and moving forward. You feel most alive when you solve a real problem or form a clear point of view, but quickly look for recognition, usefulness or visible progress to confirm that the work—and you—count.",
+      "underlyingNeed": "To feel securely capable and valued without having to continually earn that security through availability, flawless performance or comparison.",
+      "drivers": [
+        "Mastery and meaningful problem-solving",
+        "Recognition and visible progress",
+        "Usefulness and responsibility",
+        "Security and future control"
+      ],
+      "evidenceStrength": [
+        "Appears directly or indirectly across all 30 entries",
+        "Repeated across work, career, money, health and relationships",
+        "Visible both in distress patterns and in moments of genuine energy",
+        "The pattern begins to shift when direct action replaces proving"
+      ],
+      "observedEntryCount": 30,
+      "evidence": [
+        {
+          "id": "2026-06-01-hidden-driver-1",
+          "date": "2026-06-01",
+          "interpretation": "Being relied upon provides a sense of value, even when it displaces the work that matters most.",
+          "source": "Journal entry",
+          "text": "Truth is I like being the person they come to. It makes me feel useful and also gives me an excuse if my own work is late."
+        },
+        {
+          "id": "2026-06-02-hidden-driver-2",
+          "date": "2026-06-02",
+          "interpretation": "A small amount of praise creates a strong lift, while a neutral question quickly removes it.",
+          "source": "Journal entry",
+          "text": "Vikram said good recovery and moved to the next slide, maybe six seconds total, but I replayed those words through the afternoon."
+        },
+        {
+          "id": "2026-06-10-hidden-driver-3",
+          "date": "2026-06-10",
+          "interpretation": "The clearest intrinsic energy appears during uninterrupted analytical work.",
+          "source": "Journal entry",
+          "text": "Finally got three uninterrupted hours and found the error in our conversion logic. It changes the forecast in a useful way and I felt properly awake for the first time in days."
+        },
+        {
+          "id": "2026-06-10-hidden-driver-4",
+          "date": "2026-06-10",
+          "interpretation": "Even satisfying work begins to feel incomplete when it is not witnessed.",
+          "source": "Journal entry",
+          "text": "Then a weird emptiness because nobody saw those three hours."
+        },
+        {
+          "id": "2026-06-12-hidden-driver-5",
+          "date": "2026-06-12",
+          "interpretation": "Being needed has become closely tied to feeling secure and purposeful.",
+          "source": "Journal entry",
+          "text": "If nobody needs me I become restless."
+        },
+        {
+          "id": "2026-06-24-hidden-driver-6",
+          "date": "2026-06-24",
+          "interpretation": "The entry separates genuine enjoyment of thinking from the exhausting effort of managing perception.",
+          "source": "Journal entry",
+          "text": "There are moments I enjoy, finding the error, making sense of a mess, helping someone think. Most days I am managing how I am perceived while doing the job."
+        },
+        {
+          "id": "2026-06-26-hidden-driver-7",
+          "date": "2026-06-26",
+          "interpretation": "Taking a clear position produces evidence of the strategic capability being sought.",
+          "source": "Journal entry",
+          "text": "Vikram said this is the kind of point of view he wants more from me."
+        },
+        {
+          "id": "2026-06-30-hidden-driver-8",
+          "date": "2026-06-30",
+          "interpretation": "Directly asking for criteria creates relief because uncertainty becomes actionable rather than imagined.",
+          "source": "Journal entry",
+          "text": "Strange relief. I told Ananya and she asked if September means our life waits until September."
+        }
+      ]
+    },
+    "recurringLoop": {
+      "title": "Proving your value leaves less space to build it",
+      "description": "A repeated cycle in which uncertainty about competence or progress leads to more usefulness, visibility and preparation, while the work requiring judgment, directness or vulnerability is delayed.",
+      "steps": [
+        {
+          "id": "loop-1",
+          "text": "An ambiguous message, comparison, request or correction is experienced as a possible threat to your competence or progress.",
+          "entryCount": 17,
+          "evidence": [
+            {
+              "id": "2026-06-01-loop-1-a",
+              "date": "2026-06-01",
+              "interpretation": "A neutral request is immediately translated into personal failure.",
+              "source": "Journal entry",
+              "text": "Revisit is such a harmless word but my stomach took it as you have messed up."
+            },
+            {
+              "id": "2026-06-19-loop-1-b",
+              "date": "2026-06-19",
+              "interpretation": "An ordinary scheduling message triggers anticipatory fear before its meaning is known.",
+              "source": "Journal entry",
+              "text": "I saw only can we talk and my heart started."
+            }
+          ]
+        },
+        {
+          "id": "loop-2",
+          "text": "You try to restore safety by becoming immediately useful, visible, prepared or difficult to criticise.",
+          "entryCount": 15,
+          "evidence": [
+            {
+              "id": "2026-06-01-loop-2-a",
+              "date": "2026-06-01",
+              "interpretation": "Activity and polish are used to reduce anxiety before the decisive task is addressed.",
+              "source": "Journal entry",
+              "text": "By 9:20 I had already made a new tracker, changed the deck colors and replied to four things nobody asked me to reply on."
+            },
+            {
+              "id": "2026-06-15-loop-2-b",
+              "date": "2026-06-15",
+              "interpretation": "Visible labour becomes an attempt to compensate for a small mistake.",
+              "source": "Journal entry",
+              "text": "I became extra useful for the rest of the day, answered everything fast, made a detailed risk list, stayed late. Like I could repay one wrong number with enough visible labor."
+            }
+          ]
+        },
+        {
+          "id": "loop-3",
+          "text": "The task where your judgment, desire or limits would be visible is delayed, softened or replaced with safer execution.",
+          "entryCount": 16,
+          "evidence": [
+            {
+              "id": "2026-06-03-loop-3-a",
+              "date": "2026-06-03",
+              "interpretation": "The difficult part is not complexity but exposure to evaluation.",
+              "source": "Journal entry",
+              "text": "The pricing note is not even difficult, it is just the kind of work where my thinking will be visible and somebody can say the thinking is weak."
+            },
+            {
+              "id": "2026-06-17-loop-3-b",
+              "date": "2026-06-17",
+              "interpretation": "A direct request is softened until the information actually needed is not obtained.",
+              "source": "Journal entry",
+              "text": "I said I would love to understand how growth might look over the next few cycles. So many soft words. What I meant was am I getting promoted or not."
+            },
+            {
+              "id": "2026-06-25-loop-3-c",
+              "date": "2026-06-25",
+              "interpretation": "Continued input-gathering protects against the interpersonal risk of making a decision.",
+              "source": "Journal entry",
+              "text": "If I make one decision, somebody may dislike it. If I keep gathering inputs, delay looks collaborative."
+            }
+          ]
+        },
+        {
+          "id": "loop-4",
+          "text": "Overcommitment fragments attention and transfers the cost to sleep, health, relationships and your own priorities.",
+          "entryCount": 17,
+          "evidence": [
+            {
+              "id": "2026-06-09-loop-4-a",
+              "date": "2026-06-09",
+              "interpretation": "Unstated boundaries create hidden costs that later surface as resentment and pressure.",
+              "source": "Journal entry",
+              "text": "I felt used, which is unfair because I offered more than she asked for and never told her what I needed."
+            },
+            {
+              "id": "2026-06-11-loop-4-b",
+              "date": "2026-06-11",
+              "interpretation": "Work receives flexibility that the relationship repeatedly does not receive.",
+              "source": "Journal entry",
+              "text": "She said work always gets the version of me that can adjust and she gets whatever is left."
+            },
+            {
+              "id": "2026-06-18-loop-4-c",
+              "date": "2026-06-18",
+              "interpretation": "Even health care and recovery remain subordinate to perceived availability.",
+              "source": "Journal entry",
+              "text": "Bought medicines, answered office messages from cab though Vikram wrote pick tomorrow."
+            }
+          ]
+        },
+        {
+          "id": "loop-5",
+          "text": "Fatigue, delay or a small mistake then becomes new evidence that you may be falling behind or losing control.",
+          "entryCount": 10,
+          "evidence": [
+            {
+              "id": "2026-06-15-loop-5-a",
+              "date": "2026-06-15",
+              "interpretation": "One corrected number is mentally expanded into a broader threat to competence.",
+              "source": "Journal entry",
+              "text": "I thanked him casually, corrected the message, then spent the next hour imagining Vikram forwarding the mistake somewhere."
+            },
+            {
+              "id": "2026-06-19-loop-5-b",
+              "date": "2026-06-19",
+              "interpretation": "The entry explicitly identifies how fear, lost sleep, reduced focus and delay reinforce one another.",
+              "source": "Journal entry",
+              "text": "Fear ruins sleep, less sleep ruins focus, poor focus creates delay, delay gives fear actual material. A neat little machine."
+            }
+          ]
+        },
+        {
+          "id": "loop-6",
+          "text": "You respond with more labour, comparison, research or a stricter reset system, which creates renewed effort without changing the original fear.",
+          "entryCount": 14,
+          "evidence": [
+            {
+              "id": "2026-06-07-loop-6-a",
+              "date": "2026-06-07",
+              "interpretation": "Designing a complete system provides the feeling of control without restoring energy or completing basic tasks.",
+              "source": "Journal entry",
+              "text": "I spent nearly three hours designing a week I have no energy to live."
+            },
+            {
+              "id": "2026-06-21-loop-6-b",
+              "date": "2026-06-21",
+              "interpretation": "Framework collection acts as preparation while protecting existing opinions from disagreement.",
+              "source": "Journal entry",
+              "text": "So I collect more frameworks. It feels like preparation and protects me from being tested."
+            },
+            {
+              "id": "2026-06-28-loop-6-c",
+              "date": "2026-06-28",
+              "interpretation": "The full monthly cycle is recognised directly in the journal.",
+              "source": "Journal entry",
+              "text": "Say yes, lose focus, stay late, sleep badly, make small mistake, work harder to prove I am not the mistake, cancel life, feel lonely, then build new system on Sunday. Repeat."
+            }
+          ]
+        }
+      ],
+      "protection": "This loop protects an identity of being capable, dependable and hardworking while postponing the sharper risks of rejection, disagreement, imperfect work, direct requests and visible limits.",
+      "interruption": "Before helping, polishing, researching or checking messages, complete one bounded block on the task where your judgment is visible and make the needed request directly. The entries from 29–30 June show that a small boundary, an imperfect submission and a specific question reduced uncertainty without causing the feared crisis.",
+      "evidence": [
+        {
+          "id": "2026-06-28-loop-summary",
+          "date": "2026-06-28",
+          "interpretation": "The writer independently identifies both the overwork loop and the hidden-needs loop.",
+          "source": "Journal entry",
+          "text": "Another one is wanting something but not asking. Promotion, credit, time with Ananya, even help. I make the want very polite until it is invisible, then feel nobody sees me."
+        },
+        {
+          "id": "2026-06-29-loop-interruption",
+          "date": "2026-06-29",
+          "interpretation": "A limited boundary is accepted without conflict, providing counter-evidence to the fear that saying no will damage connection.",
+          "source": "Journal entry",
+          "text": "Said I can review twenty minutes tomorrow but can't rewrite today. Felt rude. She said sure thanks and moved on."
+        },
+        {
+          "id": "2026-06-30-loop-interruption",
+          "date": "2026-06-30",
+          "interpretation": "Directness produces clearer criteria and a more workable form of uncertainty.",
+          "source": "Journal entry",
+          "text": "In the one to one I asked Vikram directly which promotion cycle we are discussing and what two outcomes he needs to see."
+        }
+      ]
+    },
+    "innerTension": {
+      "title": "Needs you may be trying to hold at the same time",
+      "tensions": [
+        {
+          "id": "visibility-depth",
+          "leftTitle": "Recognition and usefulness",
+          "leftBody": "Being needed, responsive and visibly involved helps you feel valuable and professionally secure.",
+          "rightTitle": "Depth and independent judgment",
+          "rightBody": "Your strongest energy comes from uninterrupted thinking, solving real problems and forming a point of view of your own.",
+          "integration": "Protect depth before availability, then communicate the resulting contribution directly instead of trying to make it visible through extra responsiveness.",
+          "dates": [
+            "2026-06-01",
+            "2026-06-09",
+            "2026-06-10",
+            "2026-06-12",
+            "2026-06-24",
+            "2026-06-25",
+            "2026-06-26",
+            "2026-06-29"
+          ],
+          "evidence": [
+            {
+              "id": "2026-06-10-tension-1-a",
+              "date": "2026-06-10",
+              "interpretation": "Quiet analytical work is energising, but the lack of recognition immediately creates discomfort.",
+              "source": "Journal entry",
+              "text": "Quiet work gave more energy than the whole week of being available."
+            },
+            {
+              "id": "2026-06-24-tension-1-b",
+              "date": "2026-06-24",
+              "interpretation": "The journal distinguishes the actual job from the exhausting work of controlling how the job is perceived.",
+              "source": "Journal entry",
+              "text": "Most days I am managing how I am perceived while doing the job. That second job is taking more energy than the first."
+            },
+            {
+              "id": "2026-06-26-tension-1-c",
+              "date": "2026-06-26",
+              "interpretation": "A clear recommendation creates a decision and earns the exact strategic feedback being sought.",
+              "source": "Journal entry",
+              "text": "Presented the recommendation. There were questions, one disagreement, then a decision. No disaster."
+            }
+          ]
+        },
+        {
+          "id": "growth-protection",
+          "leftTitle": "Growth and self-advocacy",
+          "leftBody": "You want promotion, strategic ownership, better options, visible credit and clearer commitments.",
+          "rightTitle": "Protection from rejection and awkwardness",
+          "rightBody": "You avoid making wants, boundaries and opinions fully visible because a direct answer could confirm rejection, disagreement or a gap.",
+          "integration": "Use direct asks, applications and provisional points of view as ways to gather reality, not as final judgments on your competence or worth.",
+          "dates": [
+            "2026-06-04",
+            "2026-06-16",
+            "2026-06-17",
+            "2026-06-22",
+            "2026-06-23",
+            "2026-06-25",
+            "2026-06-26",
+            "2026-06-30"
+          ],
+          "evidence": [
+            {
+              "id": "2026-06-04-tension-2-a",
+              "date": "2026-06-04",
+              "interpretation": "Avoiding an application preserves hope by preventing a definitive external response.",
+              "source": "Journal entry",
+              "text": "If I apply and they reject me, I will have proof that I am behind. If I don't apply I can keep believing I am underpaid but capable."
+            },
+            {
+              "id": "2026-06-22-tension-2-b",
+              "date": "2026-06-22",
+              "interpretation": "The desire for credit is real, but avoiding a brief awkward moment produces longer private resentment.",
+              "source": "Journal entry",
+              "text": "Apparently I prefer private resentment to public awkwardness."
+            },
+            {
+              "id": "2026-06-30-tension-2-c",
+              "date": "2026-06-30",
+              "interpretation": "A direct question creates specific criteria and reduces the burden of guessing.",
+              "source": "Journal entry",
+              "text": "He said September is possible if I lead the pricing decision and show the planning result. Clear enough to work with, also clear enough that the answer may still be no."
+            }
+          ]
+        },
+        {
+          "id": "future-present",
+          "leftTitle": "Achievement and future security",
+          "leftBody": "Promotion, savings, property, career options and visible progress promise safety, freedom and proof that life is moving.",
+          "rightTitle": "Presence, health and connection",
+          "rightBody": "Your body and relationships need attention that is not postponed until work becomes fully controlled.",
+          "integration": "Treat sleep, health appointments and protected relationship time as part of progress itself, rather than as rewards that begin after the next milestone.",
+          "dates": [
+            "2026-06-05",
+            "2026-06-06",
+            "2026-06-11",
+            "2026-06-12",
+            "2026-06-13",
+            "2026-06-14",
+            "2026-06-15",
+            "2026-06-18",
+            "2026-06-20",
+            "2026-06-24",
+            "2026-06-27",
+            "2026-06-29",
+            "2026-06-30"
+          ],
+          "evidence": [
+            {
+              "id": "2026-06-11-tension-3-a",
+              "date": "2026-06-11",
+              "interpretation": "The future being pursued through work is recognised as potentially undermining the relationship meant to share it.",
+              "source": "Journal entry",
+              "text": "But the future person receiving all these benefits might have nobody waiting for dinner."
+            },
+            {
+              "id": "2026-06-14-tension-3-b",
+              "date": "2026-06-14",
+              "interpretation": "Rest loses its restorative function when it must justify itself through future productivity.",
+              "source": "Journal entry",
+              "text": "Even rest has to improve Monday. Maybe this is why I don't feel rested."
+            },
+            {
+              "id": "2026-06-27-tension-3-c",
+              "date": "2026-06-27",
+              "interpretation": "Optimising work and assessment time competes directly with being present for family and noticing change at home.",
+              "source": "Journal entry",
+              "text": "Felt suddenly like home is moving without me."
+            },
+            {
+              "id": "2026-06-30-tension-3-d",
+              "date": "2026-06-30",
+              "interpretation": "Booking the trip before optimising every meeting represents a small shift toward including relationships in the definition of progress.",
+              "source": "Journal entry",
+              "text": "Booked tickets home for the second weekend of July before checking every possible meeting."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
