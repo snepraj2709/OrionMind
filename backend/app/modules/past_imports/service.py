@@ -67,10 +67,24 @@ class PastImportWorker:
             )
         return True
 
-    def recover_stale(self, *, stale_seconds: int, uow: UnitOfWorkFactory) -> int:
+    def recover_stale(
+        self,
+        *,
+        stale_seconds: int,
+        uow: UnitOfWorkFactory,
+        statement_timeout_seconds: float | None = None,
+    ) -> int:
         cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_seconds)
         with uow.for_worker() as work:
-            return self._repository.recover(work.session, cutoff)
+            return self._repository.recover(
+                work.session,
+                cutoff,
+                statement_timeout_ms=(
+                    round(statement_timeout_seconds * 1_000)
+                    if statement_timeout_seconds is not None
+                    else None
+                ),
+            )
 
     @contextmanager
     def _heartbeat(

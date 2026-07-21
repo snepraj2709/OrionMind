@@ -99,6 +99,7 @@ def app_settings() -> Settings:
             "ENABLE_API_DOCS": False,
             "CORS_ALLOW_ORIGINS": "https://app.example.test",
             "LOG_FORMAT": "text",
+            "RATE_LIMITING_ENABLED": False,
         }
     )
 

@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     DATABASE_POOL_SIZE: int = Field(default=5, ge=0, le=50)
     DATABASE_MAX_OVERFLOW: int = Field(default=5, ge=0, le=50)
     DATABASE_POOL_RECYCLE_SECONDS: int = Field(default=300, ge=30, le=3600)
+    STARTUP_READINESS_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=60)
+    PAST_IMPORT_STALE_SECONDS: int = Field(default=120, ge=30, le=3600)
+    PAST_IMPORT_POLL_SECONDS: float = Field(default=1.0, ge=0.1, le=60)
+    PAST_IMPORT_RECOVERY_INTERVAL_SECONDS: float = Field(default=60.0, ge=10, le=3600)
+    WEB_CONCURRENCY: int = Field(default=1, ge=1, le=1)
+    RATE_LIMITING_ENABLED: bool = True
     LOG_FORMAT: str = "json"
     OTEL_ENABLED: bool = False
     OTEL_SERVICE_NAME: str = "orion-backend"
@@ -161,6 +167,10 @@ class Settings(BaseSettings):
             raise ValueError("production logs must use JSON")
         if self.REFLECTION_REVIEW_THRESHOLD != 0.80:
             raise ValueError("production reflection threshold must be 0.80")
+        if self.WEB_CONCURRENCY != 1:
+            raise ValueError("in-process rate limiting requires exactly one web worker")
+        if not self.RATE_LIMITING_ENABLED:
+            raise ValueError("rate limiting must be enabled in production")
         otel_endpoint = self.OTEL_EXPORTER_OTLP_ENDPOINT.get_secret_value().strip()
         if self.OTEL_ENABLED and (
             not otel_endpoint or urlparse(otel_endpoint).scheme != "https"

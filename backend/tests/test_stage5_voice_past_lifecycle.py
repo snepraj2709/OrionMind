@@ -168,6 +168,7 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
             "WORKER_DATABASE_URL": SecretStr(sqlalchemy_url),
             "CORS_ALLOW_ORIGINS": "https://app.example.test",
             "LOG_FORMAT": "text",
+            "RATE_LIMITING_ENABLED": False,
             "REQUEST_TIMEOUT_SECONDS": 30,
         }
     )
@@ -495,6 +496,37 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
             attempt,
             "WORKER_INTERRUPTED" if attempt < 3 else "WORKER_RETRIES_EXHAUSTED",
         )
+
+    with TestClient(app) as client:
+        startup_item = client.post(
+            "/api/v1/past-entries",
+            headers={"Authorization": "Bearer one"},
+            json={
+                "entry_date": datetime.now(ZoneInfo("UTC")).date().isoformat(),
+                "content": "Past candidate for startup recovery.",
+            },
+        )
+        assert startup_item.status_code == 202
+    startup_entry_id = UUID(startup_item.json()["entry_id"])
+    with sessions.unit_of_work_factory.for_worker() as work:
+        startup_claim = app.state.past_import_worker._repository.claim(
+            work.session, "interrupted-worker"
+        )
+    assert startup_claim is not None
+    assert startup_claim.entry_id == startup_entry_id
+    with psycopg.connect(value) as connection:
+        connection.execute(
+            "UPDATE public.past_entry_imports SET heartbeat_at = pg_catalog.now() - interval '1 hour' WHERE id = %s",
+            (startup_claim.import_id,),
+        )
+        connection.commit()
+    with TestClient(app) as client:
+        assert client.get("/health").json() == {"status": "ok"}
+    with psycopg.connect(value) as connection:
+        assert connection.execute(
+            "SELECT status, attempts, last_error_code FROM public.past_entry_imports WHERE id = %s",
+            (startup_claim.import_id,),
+        ).fetchone() == ("pending", 1, "WORKER_INTERRUPTED")
 
     # Authenticated users and workers cannot bypass their narrow capabilities.
     with psycopg.connect(value) as connection:

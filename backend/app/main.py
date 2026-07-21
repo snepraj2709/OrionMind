@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import text
 
+from app.contract import assert_public_contract
 from app.modules.health.routes import router as health_router
 from app.modules.entries.repository import EntryRepository
 from app.modules.entries.service import EntryService
@@ -27,6 +30,7 @@ from app.shared.config.settings import Settings, get_settings
 from app.shared.database.session import DatabaseSessions, build_database_sessions
 from app.shared.exceptions.handlers import install_error_handlers
 from app.shared.http.middleware import install_http_middleware
+from app.shared.http.rate_limits import ProcessRateLimiter
 from app.shared.integrations.supabase_auth import (
     SupabaseAccountAuthGateway,
     SupabaseTokenVerifier,
@@ -35,6 +39,7 @@ from app.shared.integrations.supabase_auth import (
 )
 from app.shared.integrations.openai import build_openai_client
 from app.shared.observability.logging import configure_logging
+from app.shared.observability.tracing import configure_tracing
 from app.shared.security.encryption import AesGcmContentCipher, UnavailableContentCipher
 
 
@@ -124,10 +129,51 @@ def create_app(
             else UnavailableTranscriber()
         )
 
+    def check_database_readiness() -> None:
+        for engine in (sessions.application_engine, sessions.worker_engine):
+            if engine is not None:
+                with engine.connect() as connection:
+                    connection.execute(
+                        text(
+                            "SELECT pg_catalog.set_config("
+                            "'statement_timeout', :timeout, true)"
+                        ),
+                        {
+                            "timeout": str(
+                                round(
+                                    resolved_settings.STARTUP_READINESS_TIMEOUT_SECONDS
+                                    * 1_000
+                                )
+                            )
+                        },
+                    )
+                    connection.execute(text("SELECT 1"))
+
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        yield
-        sessions.dispose()
+        try:
+            await asyncio.wait_for(
+                asyncio.to_thread(check_database_readiness),
+                timeout=resolved_settings.STARTUP_READINESS_TIMEOUT_SECONDS,
+            )
+            if sessions.worker is not None:
+                await asyncio.wait_for(
+                    asyncio.to_thread(
+                        _app.state.past_import_worker.recover_stale,
+                        stale_seconds=resolved_settings.PAST_IMPORT_STALE_SECONDS,
+                        uow=sessions.unit_of_work_factory,
+                        statement_timeout_seconds=(
+                            resolved_settings.STARTUP_READINESS_TIMEOUT_SECONDS
+                        ),
+                    ),
+                    timeout=resolved_settings.STARTUP_READINESS_TIMEOUT_SECONDS,
+                )
+            yield
+        finally:
+            sessions.dispose()
+            tracer_provider = getattr(_app.state, "tracer_provider", None)
+            if tracer_provider is not None:
+                tracer_provider.shutdown()
 
     docs_enabled = (
         resolved_settings.ENVIRONMENT != "production" and resolved_settings.ENABLE_API_DOCS
@@ -162,6 +208,9 @@ def create_app(
         processing=app.state.processing_service,
     )
     app.state.transcriber = resolved_transcriber
+    app.state.rate_limiter = ProcessRateLimiter(
+        enabled=resolved_settings.RATE_LIMITING_ENABLED
+    )
     app.state.past_import_worker = PastImportWorker(
         repository=PastImportRepository(),
         provider=resolved_extraction_provider,
@@ -172,6 +221,7 @@ def create_app(
     install_error_handlers(app)
     app.include_router(api_router)
     app.include_router(health_router)
+    assert_public_contract(app)
     install_http_middleware(
         app,
         allow_origins=resolved_settings.cors_origins(),
@@ -179,4 +229,7 @@ def create_app(
         request_timeout=resolved_settings.REQUEST_TIMEOUT_SECONDS,
     )
     install_local_openapi(app)
+    app.state.tracer_provider = configure_tracing(
+        app, settings=resolved_settings, sessions=sessions
+    )
     return app

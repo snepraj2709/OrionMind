@@ -43,6 +43,7 @@ def settings(**changes) -> Settings:
         "REQUEST_TIMEOUT_SECONDS": 1,
         "MAX_REQUEST_BODY_BYTES": 1024,
         "LOG_FORMAT": "text",
+        "RATE_LIMITING_ENABLED": False,
     }
     values.update(changes)
     return Settings.model_validate(values)
@@ -318,6 +319,7 @@ def production_values() -> dict:
         "CORS_ALLOW_ORIGINS": "https://app.example.test",
         "LOG_FORMAT": "json",
         "REFLECTION_REVIEW_THRESHOLD": 0.80,
+        "RATE_LIMITING_ENABLED": True,
     }
 
 

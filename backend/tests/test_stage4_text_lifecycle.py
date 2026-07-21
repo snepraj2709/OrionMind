@@ -148,6 +148,7 @@ def test_encrypted_draft_text_replay_list_detail_and_retry_lifecycle() -> None:
             "APP_DATABASE_URL": SecretStr(sqlalchemy_url),
             "CORS_ALLOW_ORIGINS": "https://app.example.test",
             "LOG_FORMAT": "text",
+            "RATE_LIMITING_ENABLED": False,
         }
     )
     app = create_app(

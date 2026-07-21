@@ -35,4 +35,14 @@ ORION_MIGRATION_DATABASE_URL='postgresql://migration-role:secret@host/database' 
   .venv/bin/python scripts/migrate.py
 ```
 
-The committed `supabase_schema.sql` is byte-identical to the fresh-install migration at this gate.
+Run the durable historical-import worker as a separate process using the restricted worker database
+role:
+
+```bash
+.venv/bin/python scripts/run_past_import_worker.py
+```
+
+The API uses in-process rate limiting and must run as exactly one instance with one Uvicorn worker.
+Before horizontal scale, replace it with a shared Redis-compatible limiter. See
+`docs/DEPLOYMENT.md` for the controlled migration, role, worker, readiness, tracing, and scale-out
+requirements. The committed `supabase_schema.sql` is the exact ordered concatenation of all migrations.

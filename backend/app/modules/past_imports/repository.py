@@ -42,7 +42,21 @@ class PastImportRepository:
             )
         )
 
-    def recover(self, session: Session, stale_before: datetime) -> int:
+    def recover(
+        self,
+        session: Session,
+        stale_before: datetime,
+        *,
+        statement_timeout_ms: int | None = None,
+    ) -> int:
+        if statement_timeout_ms is not None:
+            session.execute(
+                text(
+                    "SELECT pg_catalog.set_config("
+                    "'statement_timeout', :timeout, true)"
+                ),
+                {"timeout": str(statement_timeout_ms)},
+            )
         return int(
             session.scalar(
                 text("SELECT public.recover_stale_past_entry_imports(:stale_before)"),

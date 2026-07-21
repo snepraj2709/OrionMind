@@ -2,15 +2,15 @@
 
 ## Stage gates
 
-| Stage                             | Status                               | Implementation evidence                                 | Review passes | Verification                                                                                                                  | Blockers                                                             |
-| --------------------------------- | ------------------------------------ | ------------------------------------------------------- | ------------: | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 0 — Reference contract            | Verified complete                    | `reference-manifest.md`, blueprint, trimmed OpenAPI     |             2 | 13 operations; sole anonymous health; 41 reachable refs; zero dangling/unreachable refs; source parity and diff hygiene pass  | None                                                                 |
-| 1 — Shared platform               | Verified complete                    | HTTP/auth/config/UoW/health platform                    |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass               | None                                                                 |
-| 2 — Database/profile/account      | Verified complete; live proof waived | Fresh schema, migration runner, profile/account feature |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | User explicitly waived unavailable live Supabase proof on 2026-07-21 |
-| 3 — Processing core               | Verified complete                    | Strict extraction, bounded provider, atomic RPCs        |             3 | 61 full tests; structured validation, fallback ceiling, source spans, threshold, rollback, stale-token and concurrency pass   | None                                                                 |
-| 4 — Drafts/text/list/detail/retry | Verified complete                    | AES-GCM drafts and complete owner text lifecycle        |             3 | 70 full tests; encryption, replay, concurrency, pagination, detail, retry, RLS and privacy proofs pass                        | None                                                                 |
-| 5 — Voice/past imports            | Locally verified                     | Streaming voice boundary and durable worker queue       |             3 | 97 full tests; genuine audio families, cleanup, replay, encryption, queue tokens, RLS/grants, heartbeat and recovery pass     | Live Supabase proof waived                                           |
-| 6 — Contract freeze/release proof | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
+| Stage                             | Status                               | Implementation evidence                                  | Review passes | Verification                                                                                                                  | Blockers                                                             |
+| --------------------------------- | ------------------------------------ | -------------------------------------------------------- | ------------: | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| 0 — Reference contract            | Verified complete                    | `reference-manifest.md`, blueprint, trimmed OpenAPI      |             2 | 13 operations; sole anonymous health; 41 reachable refs; zero dangling/unreachable refs; source parity and diff hygiene pass  | None                                                                 |
+| 1 — Shared platform               | Verified complete                    | HTTP/auth/config/UoW/health platform                     |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass               | None                                                                 |
+| 2 — Database/profile/account      | Verified complete; live proof waived | Fresh schema, migration runner, profile/account feature  |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | User explicitly waived unavailable live Supabase proof on 2026-07-21 |
+| 3 — Processing core               | Verified complete                    | Strict extraction, bounded provider, atomic RPCs         |             3 | 61 full tests; structured validation, fallback ceiling, source spans, threshold, rollback, stale-token and concurrency pass   | None                                                                 |
+| 4 — Drafts/text/list/detail/retry | Verified complete                    | AES-GCM drafts and complete owner text lifecycle         |             3 | 70 full tests; encryption, replay, concurrency, pagination, detail, retry, RLS and privacy proofs pass                        | None                                                                 |
+| 5 — Voice/past imports            | Locally verified                     | Streaming voice boundary and durable worker queue        |             3 | 97 full tests; genuine audio families, cleanup, replay, encryption, queue tokens, RLS/grants, heartbeat and recovery pass     | Live Supabase proof waived                                           |
+| 6 — Contract freeze/release proof | Locally verified; live proof waived  | Frozen artifact, limits, readiness, worker, release docs |             3 | 127 full tests; OpenAPI/route, rate, readiness/recovery, privacy, Docker build/runtime and migration parity pass              | Live two-account Supabase proof waived; deployment not authorized    |
 
 ## Stage 0 findings
 
@@ -465,9 +465,120 @@ Status: fixed
   the local disposable PostgreSQL 15 container only.
 - Final Stage 5 findings-first review: zero open actionable local findings.
 
+## Stage 6 findings
+
+### ST6-001
+
+Finding ID: ST6-001
+Severity: High
+Requirement: Local docs and generated artifacts must be the reviewed trimmed OpenAPI, with route drift
+prevented.
+Evidence: The app generated a fresh framework schema at runtime and had no assertion tying registered
+methods and paths to the selected 13-operation inventory.
+Impact: DTO or route changes could silently publish a contract different from the reviewed YAML.
+Fix: Package a semantic JSON rendering of the trimmed YAML, serve that exact artifact locally, and assert
+the exact route/method set during composition.
+Regression test: YAML/JSON semantic parity, 41-reference closure, runtime response equality, exact 13
+operations, and injected-route drift rejection.
+Status: fixed
+
+### ST6-002
+
+Finding ID: ST6-002
+Severity: High
+Requirement: Every endpoint class requires an integer `Retry-After` limit with an explicit scale-out
+constraint.
+Evidence: No limiter existed at the Stage 5 gate.
+Impact: Expensive voice, processing, import, retry, account, and read operations had no backend abuse
+boundary.
+Fix: Add owner/IP-scoped sliding-window classes before body parsing, bounded inactive-scope pruning,
+production fail-closed enablement, and a one-instance/one-worker constraint.
+Regression test: Every class limit and operation mapping, auth-before-limit ordering, voice
+limit-before-body, health IP limit, and integer retry headers.
+Status: fixed
+
+### ST6-003
+
+Finding ID: ST6-003
+Severity: High
+Requirement: Startup must check dependencies and recover stale work without running migrations.
+Evidence: Lifespan previously yielded immediately and disposed pools only at shutdown.
+Impact: The service could accept traffic with unavailable databases and leave interrupted imports
+unrecovered until an operator intervened.
+Fix: Add connect/query deadlines, application/worker `SELECT 1`, current worker-RPC stale recovery with a
+statement timeout, and fail-closed startup. `/health` remains opaque.
+Regression test: Readiness execution, bounded timeout, opaque liveness, and real PostgreSQL startup
+recovery of an interrupted queue claim.
+Status: fixed
+
+### ST6-004
+
+Finding ID: ST6-004
+Severity: High
+Requirement: Durable historical work needs an executable restricted worker lifecycle.
+Evidence: Worker claim/service code existed but the container exposed no worker process entrypoint.
+Impact: Accepted `202` imports would remain pending unless application internals were invoked manually.
+Fix: Add a signal-aware polling worker with restricted UoWs, periodic recovery, safe event-only logs, and
+deployment topology documentation.
+Regression test: Worker module compile/import, queue claim/heartbeat/completion/recovery integration, and
+container packaging proof.
+Status: fixed
+
+### ST6-005
+
+Finding ID: ST6-005
+Severity: High
+Requirement: The image must not receive local secrets and must prove code validity before switching to
+the non-root runtime user.
+Evidence: The first release Docker context had no `.dockerignore`; a runtime compile probe also showed
+that `/app` is intentionally non-writable after `USER orion`.
+Impact: A local `.env` could enter the Docker build context, and compilation was not an explicit image
+build gate.
+Fix: Exclude local env/test/cache/input files from the context and compile application, scripts, and
+server during image build before selecting UID 10001.
+Regression test: Clean Docker build, non-root API runtime, FFprobe presence, health 200, and canonical
+404s for docs, metrics, and legacy Auth paths.
+Status: fixed
+
+## Stage 6 verification evidence
+
+- Full non-live plus PostgreSQL 15 disposable suite: 127 passed; one expected pinned-Starlette warning.
+- Python 3.11 compile/import and `git diff --check`: passed.
+- Trimmed YAML and packaged JSON are semantically equal: 13 operations, 41 unique reachable local
+  references, zero dangling references, and no unrelated path.
+- Runtime/frozen OpenAPI equality, exact route assertion, sole anonymous health, and absent docs in
+  production mode pass.
+- All endpoint classes return integer `Retry-After`; auth precedes limiting and limiting precedes body
+  parsing. In-process limits are locked to one API instance/worker and Redis-compatible shared limiting
+  is documented as the prerequisite for scale-out.
+- Database connection/query readiness and worker recovery are bounded. Startup runs no migration.
+- Optional OTLP tracing instruments FastAPI and SQLAlchemy only when explicitly enabled; no public
+  metrics route exists and privacy scans remain clean.
+- Docker image `orion-backend:stage6` builds with FFmpeg/FFprobe, runs as UID 10001 with one Uvicorn
+  worker, returns exact health, and returns canonical 404 for OpenAPI, metrics, and legacy Auth paths.
+- Controlled advisory-locked migration and separate API/worker deployment commands are documented.
+- Reference recheck remains `1a993c3438460dcdf5d0680a272e43c6c09e34e3` with a clean worktree.
+- User explicitly waived live proof on 2026-07-21. Two-account Supabase API/direct-RLS, live Auth
+  deletion/cascade, and live cross-user ciphertext/decryption evidence remain pending; deployment was
+  not attempted.
+- Final Stage 6 and whole-project findings-first review: zero open actionable local findings.
+
 ## Final route evidence
 
 Populated during Stage 6.
 
-| Method | Path | Auth proof | Schema proof | Service proof | DB/RLS proof | Negative proof | Status |
-| ------ | ---- | ---------- | ------------ | ------------- | ------------ | -------------- | ------ |
+| Method | Path                               | Auth proof                     | Schema proof                           | Service proof                         | DB/RLS proof                        | Negative proof                         | Status                              |
+| ------ | ---------------------------------- | ------------------------------ | -------------------------------------- | ------------------------------------- | ----------------------------------- | -------------------------------------- | ----------------------------------- |
+| GET    | `/health`                          | Sole anonymous operation       | `HealthResponse` frozen/runtime parity | Fixed controller result               | No dependency read                  | Opaque body; IP rate limit             | Locally verified                    |
+| GET    | `/api/v1/profile`                  | Verified bearer UUID           | `Profile` strict DTO                   | Profile read service                  | Owner UoW + forced RLS              | Missing/other owner denied             | Locally verified                    |
+| PATCH  | `/api/v1/profile`                  | Verified bearer UUID           | `ProfileUpdate` strict/partial         | Canonical validation/update           | Owner RPC/UoW + forced RLS          | Null/extra/invalid timezone            | Locally verified                    |
+| DELETE | `/api/v1/account`                  | Bearer + same-user fresh proof | Exact deletion request                 | Idempotent Auth deletion              | Auth-root cascade                   | Other/invalid proof; retryable failure | Locally verified; live Auth pending |
+| GET    | `/api/v1/entries`                  | Verified bearer UUID           | Bounded `EntryPage`                    | Decrypt/map without AI                | Owner select + forced RLS           | Stable pagination; no foreign rows     | Locally verified                    |
+| GET    | `/api/v1/entry/draft`              | Verified bearer UUID           | Nullable strict draft response         | Owner decrypt                         | Active-owner RLS                    | Corrupt/foreign draft safe             | Locally verified                    |
+| PUT    | `/api/v1/entry/draft`              | Auth before JSON               | Exact content-only DTO                 | Canonical encrypt/fingerprint         | Atomic owner draft RPC              | Blank clear; extra/owner fields denied | Locally verified                    |
+| DELETE | `/api/v1/entry/draft`              | Verified bearer UUID           | Fixed nullable response                | Active draft discard                  | Owner discard RPC                   | Submitted/foreign rows unchanged       | Locally verified                    |
+| POST   | `/api/v1/entry`                    | Auth before JSON               | Exact text DTO                         | Draft replay + processing             | Atomic draft-submit/extraction RPCs | Mismatch 409; header/IDs denied        | Locally verified                    |
+| POST   | `/api/v1/past-entries`             | Auth before JSON               | Exact date/content + 202               | Encrypt/fingerprint/queue only        | Atomic owner queue RPC              | Range/duplicate/extra denied           | Locally verified                    |
+| POST   | `/api/v1/entries/voice`            | Auth/limit/replay before body  | Frozen MIME/query/header contract      | Stream, validate, transcribe, process | Atomic action/entry RPC + RLS       | Mismatch/limits/cancel cleanup         | Locally verified                    |
+| GET    | `/api/v1/entries/{entry_id}`       | Verified bearer UUID           | Strict `EntryDetail`                   | Owner decrypt + view mapping          | Owner tables + forced RLS           | Foreign/missing 404 before decrypt     | Locally verified                    |
+| POST   | `/api/v1/entries/{entry_id}/retry` | Verified bearer UUID           | Strict `EntryDetail`                   | Stored-source retry                   | Current-token claim/extraction RPC  | Nonfailed/concurrent/foreign rejected  | Locally verified                    |

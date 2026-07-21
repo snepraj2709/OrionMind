@@ -13,8 +13,12 @@ COPY requirements.txt ./
 RUN pip install --requirement requirements.txt
 
 COPY app ./app
+COPY docs/contracts ./docs/contracts
+COPY migrations ./migrations
+COPY scripts ./scripts
 COPY server.py ./
 
+RUN python -m compileall -q app scripts server.py
 RUN useradd --create-home --uid 10001 orion
 USER orion
 

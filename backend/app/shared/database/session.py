@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from sqlalchemy import Engine, create_engine
@@ -36,6 +37,10 @@ def _build_engine(url: str, settings: Settings) -> Engine | None:
         pool_size=settings.DATABASE_POOL_SIZE,
         max_overflow=settings.DATABASE_MAX_OVERFLOW,
         pool_recycle=settings.DATABASE_POOL_RECYCLE_SECONDS,
+        pool_timeout=settings.STARTUP_READINESS_TIMEOUT_SECONDS,
+        connect_args={
+            "connect_timeout": max(1, math.ceil(settings.STARTUP_READINESS_TIMEOUT_SECONDS))
+        },
     )
 
 

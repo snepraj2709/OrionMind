@@ -13,6 +13,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.shared.exceptions.handlers import error_response
+from app.shared.http.rate_limits import ProcessRateLimiter, request_class
 
 
 logger = logging.getLogger("orion.http")
@@ -113,11 +114,31 @@ class HttpBoundaryMiddleware:
 
         started_at = time.monotonic()
         try:
-            operation = self.app(scope, limited_receive, send_with_request_id)
-            if scope["path"] in self.timeout_exempt_paths:
-                await operation
+            health_response = None
+            if scope["path"] == "/health" and scope["method"] == "GET":
+                classification = request_class(request)
+                application_state = getattr(scope.get("app"), "state", None)
+                limiter = getattr(application_state, "rate_limiter", None)
+                if classification is not None and isinstance(limiter, ProcessRateLimiter):
+                    rule, rate_scope = classification
+                    retry_after = limiter.check(rule, rate_scope)
+                    if retry_after is not None:
+                        health_response = error_response(
+                            request,
+                            status_code=429,
+                            error_code="RATE_LIMITED",
+                            message="Too many requests. Try again later.",
+                            details={"retry_after_seconds": retry_after},
+                            headers={"Retry-After": str(retry_after)},
+                        )
+            if health_response is not None:
+                await health_response(scope, limited_receive, send_with_request_id)
             else:
-                await asyncio.wait_for(operation, timeout=self.request_timeout)
+                operation = self.app(scope, limited_receive, send_with_request_id)
+                if scope["path"] in self.timeout_exempt_paths:
+                    await operation
+                else:
+                    await asyncio.wait_for(operation, timeout=self.request_timeout)
         except RequestBodyTooLarge:
             if not response_started:
                 await self._payload_too_large(request)(scope, receive, send_with_request_id)
