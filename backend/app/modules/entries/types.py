@@ -97,3 +97,23 @@ class EntryOperation:
     entry: EntryData
     plaintext: str
     status_code: int
+
+
+@dataclass(frozen=True, slots=True)
+class PastEntryAcceptedData:
+    entry_id: UUID
+    entry_date: date
+
+
+@dataclass(frozen=True, slots=True)
+class VoiceClaim:
+    outcome: str
+    claim_token: UUID | None = None
+    entry_id: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class VoicePreparation:
+    effective_date: date
+    claim_token: UUID | None
+    replay: EntryOperation | None

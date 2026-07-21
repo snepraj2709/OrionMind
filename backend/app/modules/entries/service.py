@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -11,6 +11,8 @@ from app.modules.entries.types import (
     EntryOperation,
     EntryPageData,
     EntrySummaryData,
+    PastEntryAcceptedData,
+    VoicePreparation,
 )
 from app.modules.processing.provider import ProviderUnavailableError
 from app.modules.processing.service import ProcessingService
@@ -216,6 +218,132 @@ class EntryService:
         )
         return self.get_detail(user_id=user_id, entry_id=entry_id, uow=uow)
 
+    def prepare_voice(
+        self,
+        *,
+        user_id: UUID,
+        idempotency_key: str,
+        requested_date: date | None,
+        uow: UnitOfWorkFactory,
+    ) -> VoicePreparation:
+        if idempotency_key != idempotency_key.strip() or not 1 <= len(idempotency_key) <= 128:
+            raise DomainError(422, "VALIDATION_ERROR", "The request is invalid.")
+        with uow.for_user(user_id) as work:
+            timezone = self._repository.profile_timezone(work.session, user_id)
+            today = datetime.now(ZoneInfo(timezone)).date()
+            effective_date = requested_date or today
+            if effective_date > today:
+                raise DomainError(422, "VALIDATION_ERROR", "The request is invalid.")
+            claim_token = uuid4()
+            claim = self._repository.claim_voice_action(
+                work.session,
+                user_id=user_id,
+                idempotency_key=idempotency_key,
+                effective_date=effective_date,
+                claim_token=claim_token,
+            )
+        if claim.outcome == "date_conflict":
+            raise DomainError(409, "INVALID_STATE", "The idempotency key conflicts with this action.")
+        if claim.outcome == "in_progress":
+            raise DomainError(409, "INVALID_STATE", "The voice action is already in progress.")
+        if claim.outcome == "replay":
+            assert claim.entry_id is not None
+            replay = self.get_detail(user_id=user_id, entry_id=claim.entry_id, uow=uow)
+            return VoicePreparation(effective_date, None, replay)
+        return VoicePreparation(effective_date, claim.claim_token, None)
+
+    def abandon_voice(
+        self, *, user_id: UUID, idempotency_key: str, claim_token: UUID, uow: UnitOfWorkFactory
+    ) -> None:
+        with uow.for_user(user_id) as work:
+            self._repository.release_voice_action(
+                work.session,
+                user_id=user_id,
+                idempotency_key=idempotency_key,
+                claim_token=claim_token,
+            )
+
+    def create_voice(
+        self,
+        *,
+        user_id: UUID,
+        idempotency_key: str,
+        effective_date: date,
+        claim_token: UUID,
+        transcript: str,
+        uow: UnitOfWorkFactory,
+    ) -> EntryOperation:
+        canonical = self._cipher.canonicalize(transcript)
+        entry_id, processing_token = uuid4(), uuid4()
+        envelope = self._cipher.encrypt(canonical, user_id=user_id, record_id=entry_id)
+        with uow.for_user(user_id) as work:
+            config_id = self._repository.fixed_config_id(work.session)
+            self._repository.create_voice(
+                work.session,
+                user_id=user_id,
+                entry_id=entry_id,
+                envelope=envelope,
+                entry_date=effective_date,
+                config_id=config_id,
+                idempotency_key=idempotency_key,
+                processing_token=processing_token,
+                claim_token=claim_token,
+            )
+        self._run_processing(
+            user_id=user_id,
+            entry_id=entry_id,
+            token=processing_token,
+            config_id=config_id,
+            content=canonical,
+            uow=uow,
+        )
+        detail = self.get_detail(user_id=user_id, entry_id=entry_id, uow=uow)
+        return EntryOperation(detail.entry, detail.plaintext, 201)
+
+    def create_past(
+        self,
+        *,
+        user_id: UUID,
+        entry_date: date,
+        content: str,
+        uow: UnitOfWorkFactory,
+    ) -> PastEntryAcceptedData:
+        try:
+            canonical = self._cipher.canonicalize(content)
+        except Exception as exc:
+            raise DomainError(422, "VALIDATION_ERROR", "The request is invalid.") from exc
+        with uow.for_user(user_id) as work:
+            timezone = self._repository.profile_timezone(work.session, user_id)
+            today = datetime.now(ZoneInfo(timezone)).date()
+            earliest = _shift_ten_years(today)
+            if entry_date < earliest or entry_date > today:
+                raise DomainError(422, "VALIDATION_ERROR", "The request is invalid.")
+            config_id = self._repository.fixed_config_id(work.session)
+            entry_id = uuid4()
+            envelope = self._cipher.encrypt(canonical, user_id=user_id, record_id=entry_id)
+            key_id, fingerprint = self._cipher.past_fingerprint(
+                canonical, user_id=user_id, entry_date=entry_date.isoformat()
+            )
+            try:
+                return self._repository.queue_past(
+                    work.session,
+                    user_id=user_id,
+                    entry_id=entry_id,
+                    envelope=envelope,
+                    entry_date=entry_date,
+                    config_id=config_id,
+                    fingerprint_key_id=key_id,
+                    fingerprint=fingerprint,
+                )
+            except Exception as exc:
+                if getattr(exc, "orig", exc).__class__.__name__ == "UniqueViolation":
+                    raise DomainError(
+                        409,
+                        "PAST_ENTRY_DUPLICATE",
+                        "This historical entry has already been imported.",
+                    ) from exc
+                raise
+
     def _run_processing(
         self,
         *,
@@ -275,3 +403,10 @@ def _blank_draft(content: str) -> bool:
         "NFC", content.replace("\r\n", "\n").replace("\r", "\n")
     )
     return normalized.strip("\t\n\v\f\r ") == ""
+
+
+def _shift_ten_years(value: date) -> date:
+    try:
+        return value.replace(year=value.year - 10)
+    except ValueError:
+        return value.replace(year=value.year - 10, day=28)

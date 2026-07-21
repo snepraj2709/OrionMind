@@ -24,6 +24,18 @@ class TextEntryCreate(StrictDTO):
     content: str = Field(min_length=1, max_length=200_000)
 
 
+class PastEntryCreate(StrictDTO):
+    entry_date: date
+    content: str = Field(min_length=1, max_length=200_000)
+
+
+class PastEntryAccepted(StrictDTO):
+    entry_id: UUID
+    entry_date: date
+    processing_status: Literal["pending"] = "pending"
+    status_url: str
+
+
 class EntrySummaryTheme(StrictDTO):
     key: str
     name: str

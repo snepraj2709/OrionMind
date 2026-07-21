@@ -12,9 +12,11 @@ from app.modules.entries.types import (
     ClassificationData,
     DraftData,
     EntryData,
+    PastEntryAcceptedData,
     ReflectionData,
     SubmissionClaim,
     ThemeData,
+    VoiceClaim,
 )
 
 
@@ -279,6 +281,111 @@ class EntryRepository:
             text("SELECT public.claim_failed_entry_for_owner(:user_id, :entry_id)"),
             {"user_id": user_id, "entry_id": entry_id},
         )
+
+    def create_voice(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        entry_id: UUID,
+        envelope: dict,
+        entry_date: date,
+        config_id: UUID,
+        idempotency_key: str,
+        processing_token: UUID,
+        claim_token: UUID,
+    ) -> None:
+        session.execute(
+            text(
+                "SELECT public.create_voice_entry_for_owner("
+                ":user_id, :entry_id, CAST(:envelope AS jsonb), :entry_date, :config_id, "
+                ":idempotency_key, :processing_token, :claim_token)"
+            ),
+            {
+                "user_id": user_id,
+                "entry_id": entry_id,
+                "envelope": json.dumps(envelope),
+                "entry_date": entry_date,
+                "config_id": config_id,
+                "idempotency_key": idempotency_key,
+                "processing_token": processing_token,
+                "claim_token": claim_token,
+            },
+        )
+
+    def claim_voice_action(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        idempotency_key: str,
+        effective_date: date,
+        claim_token: UUID,
+    ) -> VoiceClaim:
+        result = session.scalar(
+            text(
+                "SELECT public.claim_voice_action_for_owner("
+                ":user_id, :idempotency_key, :effective_date, :claim_token)"
+            ),
+            {
+                "user_id": user_id,
+                "idempotency_key": idempotency_key,
+                "effective_date": effective_date,
+                "claim_token": claim_token,
+            },
+        )
+        return VoiceClaim(
+            outcome=str(result["outcome"]),
+            claim_token=UUID(str(result["claim_token"])) if result.get("claim_token") else None,
+            entry_id=UUID(str(result["entry_id"])) if result.get("entry_id") else None,
+        )
+
+    def release_voice_action(
+        self, session: Session, *, user_id: UUID, idempotency_key: str, claim_token: UUID
+    ) -> bool:
+        return bool(
+            session.scalar(
+                text(
+                    "SELECT public.release_voice_action_for_owner("
+                    ":user_id, :idempotency_key, :claim_token)"
+                ),
+                {
+                    "user_id": user_id,
+                    "idempotency_key": idempotency_key,
+                    "claim_token": claim_token,
+                },
+            )
+        )
+
+    def queue_past(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        entry_id: UUID,
+        envelope: dict,
+        entry_date: date,
+        config_id: UUID,
+        fingerprint_key_id: str,
+        fingerprint: str,
+    ) -> PastEntryAcceptedData:
+        session.execute(
+            text(
+                "SELECT public.queue_past_entry_for_owner("
+                ":user_id, :entry_id, CAST(:envelope AS jsonb), :entry_date, :config_id, "
+                ":key_id, :fingerprint)"
+            ),
+            {
+                "user_id": user_id,
+                "entry_id": entry_id,
+                "envelope": json.dumps(envelope),
+                "entry_date": entry_date,
+                "config_id": config_id,
+                "key_id": fingerprint_key_id,
+                "fingerprint": fingerprint,
+            },
+        )
+        return PastEntryAcceptedData(entry_id=entry_id, entry_date=entry_date)
 
 
 def _entry(row) -> EntryData:

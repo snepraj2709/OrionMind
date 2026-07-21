@@ -9,7 +9,7 @@
 | 2 — Database/profile/account      | Verified complete; live proof waived | Fresh schema, migration runner, profile/account feature |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | User explicitly waived unavailable live Supabase proof on 2026-07-21 |
 | 3 — Processing core               | Verified complete                    | Strict extraction, bounded provider, atomic RPCs        |             3 | 61 full tests; structured validation, fallback ceiling, source spans, threshold, rollback, stale-token and concurrency pass   | None                                                                 |
 | 4 — Drafts/text/list/detail/retry | Verified complete                    | AES-GCM drafts and complete owner text lifecycle        |             3 | 70 full tests; encryption, replay, concurrency, pagination, detail, retry, RLS and privacy proofs pass                        | None                                                                 |
-| 5 — Voice/past imports            | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
+| 5 — Voice/past imports            | Locally verified                     | Streaming voice boundary and durable worker queue       |             3 | 97 full tests; genuine audio families, cleanup, replay, encryption, queue tokens, RLS/grants, heartbeat and recovery pass     | Live Supabase proof waived                                           |
 | 6 — Contract freeze/release proof | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
 
 ## Stage 0 findings
@@ -383,6 +383,87 @@ Status: fixed
   one provider call; stale/current processing-token database proofs remain green.
 - Runtime inventory is exactly the Stage 4 eleven operations; no review/library/theme/journey routes.
 - Final Stage 4 findings-first review: zero open actionable findings.
+
+## Stage 5 findings
+
+### ST5-001
+
+Finding ID: ST5-001
+Severity: High
+Requirement: Voice parsing must remain incremental and bounded while owning exactly one temporary file.
+Evidence: The initial signature check read the complete upload into memory, and multipart overhead had
+no independent ceiling after exempting voice from the general 1 MiB limit.
+Impact: A valid 25 MiB upload caused a second full-memory copy, while oversized headers or framing could
+bypass the file-byte counter.
+Fix: Read only the 16-byte signature and enforce a 64 KiB maximum multipart overhead in addition to the
+exact incremental 25 MiB audio limit.
+Regression test: Exact/over byte boundaries, malformed multipart, cancellation, and idempotent cleanup.
+Status: fixed
+
+### ST5-002
+
+Finding ID: ST5-002
+Severity: High
+Requirement: Durable queue claims and completion must be current-token-only, recoverable, and idempotent.
+Evidence: The first worker execution reproduced an ambiguous PL/pgSQL output-column reference, and a
+lost completion response could not be replayed after the active processing token was cleared.
+Impact: Workers could not claim queued imports, and successful work might be retried unnecessarily after
+an ambiguous response.
+Fix: Qualify queue/entry columns, persist a completion token, accept exact-token completion replay, add
+active heartbeats, and retain the three-attempt stale-recovery state machine.
+Regression test: Claim, heartbeat, wrong-token rejection, exact completion replay, interruption recovery,
+attempt exhaustion, worker-only RPCs, and denied worker table access on PostgreSQL 15.
+Status: fixed
+
+### ST5-003
+
+Finding ID: ST5-003
+Severity: High
+Requirement: Audio duration enforcement must resist forged or absent container metadata.
+Evidence: The first validation pass trusted FFprobe's container duration and used FFmpeg only as a
+decode-success check.
+Impact: A container reporting a short duration could carry more than 20 minutes of decodable audio.
+Fix: Measure decoded output time through owned FFmpeg progress, require positive decoded duration, and
+enforce the limit against both reported and decoded durations.
+Regression test: Exact/over duration, forged-short metadata, missing metadata with positive decode,
+missing audio streams, and genuine WAV/MP3/M4A/WebM/OGG containers.
+Status: fixed
+
+### ST5-004
+
+Finding ID: ST5-004
+Severity: Medium
+Requirement: Voice retains its own bounded upload/provider lifecycle and must not block the async server.
+Evidence: The general 30-second request timeout still wrapped voice, unlike the selected reference, and
+synchronous preparation/processing ran directly inside the async controller.
+Impact: Slow valid uploads could be cancelled by the wrong deadline and synchronous database/provider
+work could block unrelated requests.
+Fix: Exempt only the exact voice path from the general deadline, preserve route-owned subprocess/provider
+bounds, and offload synchronous service calls to the thread pool.
+Regression test: Non-voice timeout remains canonical, voice reaches route-owned validation, cancellation
+abandons the action claim, and replay consumes zero ASGI body events.
+Status: fixed
+
+## Stage 5 verification evidence
+
+- Full non-live plus PostgreSQL 15 disposable suite: 97 passed; one expected pinned-Starlette warning.
+- Runtime inventory is exactly all 13 selected operations; health remains the sole anonymous operation.
+- Genuine WAV, MP3/MPEG, MP4/M4A, WebM, and OGG files pass declared/signature/decode validation;
+  mismatches, unsupported, empty, truncated, header-only, duplicate, undeclared, and incomplete inputs fail.
+- Exact 25 MiB and 20-minute boundaries, forged/missing duration, FFmpeg/FFprobe timeout ownership,
+  disconnect/cancellation, persistence/provider failures, and temporary-file cleanup pass.
+- Voice idempotency proves one 201, same-action 200 replay before any ASGI body event, date conflict 409,
+  new-key new recording, encrypted transcript-only storage, and retry without retranscription.
+- Past import proves strict schema, owner-local inclusive ten-year range, leap-safe shift, pre-account dates,
+  owner/date/content fingerprint scope, duplicate 409, atomic entry/work creation, and zero request-time AI.
+- Worker proof covers narrow claim tokens, ID, attempts, active heartbeat, wrong/stale-token rejection,
+  exact-token idempotent completion, automatic past-import candidate approval provenance, stale recovery,
+  attempt exhaustion, two-user isolation, and denied browser/worker capability escalation.
+- Source/log/storage scan found no journal text, transcript, raw audio, client filename, token, provider
+  payload, encryption envelope, or secret logging.
+- User explicitly waived unavailable live Supabase proof on 2026-07-21; all Stage 5 database proof used
+  the local disposable PostgreSQL 15 container only.
+- Final Stage 5 findings-first review: zero open actionable local findings.
 
 ## Final route evidence
 

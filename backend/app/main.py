@@ -8,11 +8,18 @@ from fastapi import FastAPI
 from app.modules.health.routes import router as health_router
 from app.modules.entries.repository import EntryRepository
 from app.modules.entries.service import EntryService
+from app.modules.entries.audio import (
+    TRANSCRIPTION_TIMEOUT_SECONDS,
+    OpenAITranscriber,
+    UnavailableTranscriber,
+)
 from app.modules.profile.repository import ProfileRepository
 from app.modules.profile.service import ProfileService
 from app.modules.processing.provider import OpenAIExtractionProvider, UnavailableExtractionProvider
 from app.modules.processing.repository import ProcessingRepository
 from app.modules.processing.service import ProcessingService
+from app.modules.past_imports.repository import PastImportRepository
+from app.modules.past_imports.service import PastImportWorker
 from app.openapi_contract import install_local_openapi
 from app.router import router as api_router
 from app.shared.auth.service import AuthenticationService
@@ -94,6 +101,7 @@ def create_app(
     account_auth=None,
     extraction_provider=None,
     content_cipher=None,
+    transcriber=None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     configure_logging(json_logs=resolved_settings.LOG_FORMAT == "json")
@@ -104,6 +112,17 @@ def create_app(
         resolved_settings
     )
     resolved_content_cipher = content_cipher or _build_content_cipher(resolved_settings)
+    resolved_transcriber = transcriber
+    if resolved_transcriber is None:
+        api_key = resolved_settings.OPENAI_API_KEY.get_secret_value().strip()
+        resolved_transcriber = (
+            OpenAITranscriber(
+                build_openai_client(api_key),
+                timeout=TRANSCRIPTION_TIMEOUT_SECONDS,
+            )
+            if api_key
+            else UnavailableTranscriber()
+        )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -141,6 +160,13 @@ def create_app(
         repository=EntryRepository(),
         cipher=resolved_content_cipher,
         processing=app.state.processing_service,
+    )
+    app.state.transcriber = resolved_transcriber
+    app.state.past_import_worker = PastImportWorker(
+        repository=PastImportRepository(),
+        provider=resolved_extraction_provider,
+        cipher=resolved_content_cipher,
+        reflection_threshold=resolved_settings.REFLECTION_REVIEW_THRESHOLD,
     )
 
     install_error_handlers(app)

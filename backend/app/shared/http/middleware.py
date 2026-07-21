@@ -32,12 +32,14 @@ class HttpBoundaryMiddleware:
         body_limit: int,
         request_timeout: float,
         body_limit_exempt_paths: Sequence[str],
+        timeout_exempt_paths: Sequence[str],
     ) -> None:
         self.app = app
         self.allow_origins = frozenset(allow_origins)
         self.body_limit = body_limit
         self.request_timeout = request_timeout
         self.body_limit_exempt_paths = frozenset(body_limit_exempt_paths)
+        self.timeout_exempt_paths = frozenset(timeout_exempt_paths)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -111,10 +113,11 @@ class HttpBoundaryMiddleware:
 
         started_at = time.monotonic()
         try:
-            await asyncio.wait_for(
-                self.app(scope, limited_receive, send_with_request_id),
-                timeout=self.request_timeout,
-            )
+            operation = self.app(scope, limited_receive, send_with_request_id)
+            if scope["path"] in self.timeout_exempt_paths:
+                await operation
+            else:
+                await asyncio.wait_for(operation, timeout=self.request_timeout)
         except RequestBodyTooLarge:
             if not response_started:
                 await self._payload_too_large(request)(scope, receive, send_with_request_id)
@@ -154,6 +157,7 @@ def install_http_middleware(
     body_limit: int,
     request_timeout: float,
     body_limit_exempt_paths: Sequence[str] = ("/api/v1/entries/voice",),
+    timeout_exempt_paths: Sequence[str] = ("/api/v1/entries/voice",),
 ) -> None:
     app.add_middleware(
         CORSMiddleware,
@@ -174,4 +178,5 @@ def install_http_middleware(
         body_limit=body_limit,
         request_timeout=request_timeout,
         body_limit_exempt_paths=body_limit_exempt_paths,
+        timeout_exempt_paths=timeout_exempt_paths,
     )

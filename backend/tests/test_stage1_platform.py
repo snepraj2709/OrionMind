@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 import pytest
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
@@ -81,10 +81,6 @@ def app_with_test_routes(*, verifier=None, app_settings=None):
     async def upload_probe(audio: UploadFile = File(...)):
         return {"size": len(await audio.read())}
 
-    @router.post("/entries/voice")
-    async def voice_limit_probe(request: Request):
-        return {"size": len(await request.body())}
-
     @router.get("/retry")
     async def retry_probe():
         raise DomainError(
@@ -117,7 +113,7 @@ def assert_error(response, status: int, code: str) -> dict:
     return body
 
 
-def test_health_is_exact_and_only_stage_four_operations_are_registered() -> None:
+def test_health_is_exact_and_only_frozen_operations_are_registered() -> None:
     app = create_app(
         settings=settings(), database_sessions=empty_sessions(), token_verifier=ValidVerifier()
     )
@@ -140,6 +136,8 @@ def test_health_is_exact_and_only_stage_four_operations_are_registered() -> None
         ("DELETE", "/api/v1/entry/draft"),
         ("POST", "/api/v1/entry"),
         ("GET", "/api/v1/entries"),
+        ("POST", "/api/v1/past-entries"),
+        ("POST", "/api/v1/entries/voice"),
         ("GET", "/api/v1/entries/{entry_id}"),
         ("POST", "/api/v1/entries/{entry_id}/retry"),
         ("GET", "/health"),
@@ -300,8 +298,7 @@ def test_body_limit_and_timeout_are_canonical() -> None:
     assert_error(oversized, 413, "PAYLOAD_TOO_LARGE")
     assert_error(timed_out, 503, "REQUEST_TIMEOUT")
     assert timed_out.headers["retry-after"] == "1"
-    assert voice_owned_limit.status_code == 200
-    assert voice_owned_limit.json() == {"size": 2048}
+    assert_error(voice_owned_limit, 422, "VALIDATION_ERROR")
 
 
 def production_values() -> dict:

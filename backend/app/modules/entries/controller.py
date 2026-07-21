@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import date
 from uuid import UUID
 
 from fastapi import Depends, Query, Request, Response
@@ -9,7 +11,15 @@ from app.modules.entries.schemas import (
     EntryDraftResponse,
     EntryDraftUpdate,
     EntryPage,
+    PastEntryAccepted,
+    PastEntryCreate,
     TextEntryCreate,
+)
+from app.modules.entries.audio import (
+    parse_audio_upload,
+    remove_audio,
+    validate_decodable_audio,
+    validate_signature,
 )
 from app.modules.entries.service import EntryService
 from app.modules.entries.views import draft_response, entry_detail_response, entry_page_response
@@ -122,3 +132,96 @@ def retry_entry(
             uow=auth.unit_of_work_factory,
         )
     )
+
+
+def create_past_entry(
+    payload: PastEntryCreate,
+    response: Response,
+    auth: AuthContext = Depends(get_auth_context),
+    service: EntryService = Depends(get_entry_service),
+) -> PastEntryAccepted:
+    accepted = service.create_past(
+        user_id=auth.user_id,
+        entry_date=payload.entry_date,
+        content=payload.content,
+        uow=auth.unit_of_work_factory,
+    )
+    status_url = f"/api/v1/entries/{accepted.entry_id}"
+    response.headers["Location"] = status_url
+    response.headers["Cache-Control"] = "private, no-store"
+    return PastEntryAccepted(
+        entry_id=accepted.entry_id,
+        entry_date=accepted.entry_date,
+        status_url=status_url,
+    )
+
+
+async def create_voice_entry(
+    request: Request,
+    response: Response,
+    entry_date: date | None = Query(default=None),
+    auth: AuthContext = Depends(get_auth_context),
+    service: EntryService = Depends(get_entry_service),
+) -> EntryDetail:
+    idempotency_key = request.headers.get("Idempotency-Key")
+    if idempotency_key is None:
+        raise DomainError(422, "VALIDATION_ERROR", "The request is invalid.")
+    preparation = await asyncio.to_thread(
+        service.prepare_voice,
+        user_id=auth.user_id,
+        idempotency_key=idempotency_key,
+        requested_date=entry_date,
+        uow=auth.unit_of_work_factory,
+    )
+    if preparation.replay is not None:
+        response.status_code = 200
+        return entry_detail_response(preparation.replay)
+    assert preparation.claim_token is not None
+    parsed = None
+    try:
+        parsed = await parse_audio_upload(request)
+        validate_signature(parsed.path, parsed.mime_type)
+        await validate_decodable_audio(parsed.path)
+        transcriber = getattr(request.app.state, "transcriber", None)
+        if transcriber is None or not hasattr(transcriber, "transcribe"):
+            raise RuntimeError("transcriber is not configured")
+        transcript = await transcriber.transcribe(parsed.path, parsed.mime_type)
+        if not isinstance(transcript, str) or not transcript.strip():
+            raise DomainError(415, "UNSUPPORTED_AUDIO_FORMAT", "The audio format is not supported.")
+        operation = await asyncio.to_thread(
+            service.create_voice,
+            user_id=auth.user_id,
+            idempotency_key=idempotency_key,
+            effective_date=preparation.effective_date,
+            claim_token=preparation.claim_token,
+            transcript=transcript,
+            uow=auth.unit_of_work_factory,
+        )
+        response.status_code = operation.status_code
+        return entry_detail_response(operation)
+    except DomainError:
+        await asyncio.to_thread(
+            service.abandon_voice,
+            user_id=auth.user_id,
+            idempotency_key=idempotency_key,
+            claim_token=preparation.claim_token,
+            uow=auth.unit_of_work_factory,
+        )
+        raise
+    except BaseException as exc:
+        await asyncio.to_thread(
+            service.abandon_voice,
+            user_id=auth.user_id,
+            idempotency_key=idempotency_key,
+            claim_token=preparation.claim_token,
+            uow=auth.unit_of_work_factory,
+        )
+        if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+            raise
+        raise DomainError(
+            502,
+            "PROVIDER_UNAVAILABLE",
+            "Could not complete this request right now.",
+        ) from exc
+    finally:
+        remove_audio(parsed.path if parsed is not None else None)

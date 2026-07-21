@@ -126,9 +126,10 @@ def test_fresh_install_migration_ledger_rls_constraints_and_cascades() -> None:
                     "extracted_memories",
                     "reflections",
                     "past_entry_imports",
+                    "voice_entry_actions",
                 ],
             ),
-        ).fetchone() == (9,)
+        ).fetchone() == (10,)
         assert connection.execute(
             "SELECT rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolinherit, rolbypassrls "
             "FROM pg_catalog.pg_roles WHERE rolname = 'orion_worker'"
