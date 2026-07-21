@@ -280,7 +280,7 @@ Reflections uses the authenticated `GET /api/v1/reflection` screen-data contract
 
 The simulated handler derives those payloads from one typed fixture module. This is a temporary transport-compatible boundary: Review-approved reflection evidence is not merged into the production Reflections query until persistent backend storage owns both features.
 
-Client API URLs resolve through `src/config/api.ts`. `NEXT_PUBLIC_API_BASE_URL` is empty for same-origin mock routes and may be set to a real backend origin without changing feature components. The shared request includes session credentials; a cross-origin deployment therefore requires credentialed CORS and a backend-compatible cookie session, or a future auth-provider token hook at the shared client boundary.
+Client API URLs resolve through `src/config/api.ts`. `NEXT_PUBLIC_API_BASE_URL` is empty for same-origin mock routes and may be set to a real backend origin without changing feature components. The shared API client reads the current Supabase session, attaches its access token as a bearer credential, and restricts authenticated requests to the configured origin under `/api/v1`. A cross-origin backend must explicitly allow the frontend origin, credentials, and the `Authorization` header.
 
 ### TanStack Query
 

@@ -3,7 +3,6 @@ import {
   CheckCircle2,
   FileText,
   Home,
-  KeyRound,
   LogIn,
   type LucideIcon,
   Palette,
@@ -22,7 +21,6 @@ export type RouteKey =
   | 'home'
   | 'login'
   | 'signup'
-  | 'forgotPassword'
   | 'entries'
   | 'newEntry'
   | 'entryDetail'
@@ -39,6 +37,7 @@ export interface RouteDefinition {
   authentication: AuthenticationRequirement;
   showInSidebar: boolean;
   icon: LucideIcon;
+  safeQueryKeys: readonly string[];
   navigationParent?: RouteKey;
 }
 
@@ -50,6 +49,7 @@ export const routes = {
     authentication: 'optional',
     showInSidebar: false,
     icon: Home,
+    safeQueryKeys: [],
   },
   login: {
     path: '/login',
@@ -58,6 +58,7 @@ export const routes = {
     authentication: 'anonymous-only',
     showInSidebar: false,
     icon: LogIn,
+    safeQueryKeys: ['returnTo', 'state', 'mode'],
   },
   signup: {
     path: '/signup',
@@ -66,14 +67,7 @@ export const routes = {
     authentication: 'anonymous-only',
     showInSidebar: false,
     icon: UserPlus,
-  },
-  forgotPassword: {
-    path: '/forgot-password',
-    label: 'Forgot password',
-    visibility: 'public',
-    authentication: 'optional',
-    showInSidebar: false,
-    icon: KeyRound,
+    safeQueryKeys: ['state'],
   },
   entries: {
     path: '/entries',
@@ -82,6 +76,7 @@ export const routes = {
     authentication: 'required',
     showInSidebar: true,
     icon: BookOpenText,
+    safeQueryKeys: ['page', 'page_size', 'search', 'processing_status'],
   },
   newEntry: {
     path: '/entries/new',
@@ -90,6 +85,7 @@ export const routes = {
     authentication: 'required',
     showInSidebar: true,
     icon: PenLine,
+    safeQueryKeys: [],
   },
   entryDetail: {
     path: '/entries/[entryId]',
@@ -98,6 +94,7 @@ export const routes = {
     authentication: 'required',
     showInSidebar: false,
     icon: FileText,
+    safeQueryKeys: [],
     navigationParent: 'entries',
   },
   approvals: {
@@ -107,6 +104,7 @@ export const routes = {
     authentication: 'required',
     showInSidebar: true,
     icon: CheckCircle2,
+    safeQueryKeys: [],
   },
   reflections: {
     path: '/reflections',
@@ -115,6 +113,7 @@ export const routes = {
     authentication: 'required',
     showInSidebar: true,
     icon: Sparkles,
+    safeQueryKeys: ['type', 'range'],
   },
   journey: {
     path: '/journey',
@@ -123,6 +122,7 @@ export const routes = {
     authentication: 'required',
     showInSidebar: true,
     icon: Waypoints,
+    safeQueryKeys: ['range'],
   },
   profile: {
     path: '/profile',
@@ -131,6 +131,7 @@ export const routes = {
     authentication: 'required',
     showInSidebar: true,
     icon: UserRound,
+    safeQueryKeys: [],
   },
   designSystem: {
     path: '/dev/design-system',
@@ -139,6 +140,7 @@ export const routes = {
     authentication: 'optional',
     showInSidebar: false,
     icon: Palette,
+    safeQueryKeys: [],
   },
 } as const satisfies Record<RouteKey, RouteDefinition>;
 
@@ -194,22 +196,50 @@ export function safeRedirectPath(
   requestedPath: string | null | undefined,
   fallback: string = routes.entries.path,
 ) {
-  if (!requestedPath?.startsWith('/') || requestedPath.startsWith('//')) {
+  if (
+    !requestedPath?.startsWith('/') ||
+    requestedPath.startsWith('//') ||
+    requestedPath.includes('\\') ||
+    [...requestedPath].some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint < 32 || codePoint === 127;
+    })
+  ) {
     return fallback;
   }
 
   try {
     const base = 'https://orion.local';
     const target = new URL(requestedPath, base);
-    return target.origin === base
-      ? `${target.pathname}${target.search}`
-      : fallback;
+    if (target.origin !== base || target.hash) return fallback;
+    const decodedPath = decodeURIComponent(target.pathname);
+    if (decodedPath.includes('\\')) return fallback;
+
+    const route = findRouteByPathname(target.pathname)?.[1];
+    if (!route || route.authentication !== 'required') return fallback;
+
+    const allowedKeys = new Set<string>(route.safeQueryKeys);
+    const safeSearch = new URLSearchParams();
+    for (const [key, value] of target.searchParams) {
+      const safeValue =
+        value.length <= 200 &&
+        [...value].every((character) => {
+          const codePoint = character.codePointAt(0) ?? 0;
+          return codePoint >= 32 && codePoint !== 127;
+        });
+      if (allowedKeys.has(key) && safeValue && !safeSearch.has(key)) {
+        safeSearch.set(key, value);
+      }
+    }
+
+    const query = safeSearch.toString();
+    return `${target.pathname}${query ? `?${query}` : ''}`;
   } catch {
     return fallback;
   }
 }
 
-export function pathWithRedirect(
+export function pathWithReturnTo(
   path: string,
   requestedPath: string | null | undefined,
 ) {
@@ -219,6 +249,18 @@ export function pathWithRedirect(
   if (!redirectTo) return path;
 
   const target = new URL(path, 'https://orion.local');
-  target.searchParams.set('redirect', redirectTo);
+  target.searchParams.set('returnTo', redirectTo);
   return `${target.pathname}${target.search}`;
+}
+
+export function createLoginRedirect(pathname: string, search = '') {
+  const returnTo = safeRedirectPath(
+    `${pathname}${search}`,
+    routes.entries.path,
+  );
+  return pathWithReturnTo(routes.login.path, returnTo);
+}
+
+export function resolvePostAuthPath(requestedPath: string | null | undefined) {
+  return safeRedirectPath(requestedPath, routes.entries.path);
 }

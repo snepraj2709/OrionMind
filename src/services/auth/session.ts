@@ -91,7 +91,7 @@ export async function requireUser(requestedPath?: string) {
   const loginUrl = new URL(routes.login.path, 'https://orion.local');
   if (destination) {
     loginUrl.searchParams.set(
-      'redirect',
+      'returnTo',
       safeRedirectPath(destination, routes.entries.path),
     );
   }

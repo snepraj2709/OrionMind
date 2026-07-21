@@ -5,7 +5,7 @@ import type { Route } from 'next';
 import { type ReactNode, useEffect } from 'react';
 
 import { PageLoader } from '@/components/feedback';
-import { routes } from '@/config/routes';
+import { createLoginRedirect } from '@/config/routes';
 
 import { useAuth } from './use-auth';
 
@@ -15,15 +15,19 @@ export interface ProtectedRouteProps {
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const router = useRouter();
-  const { isAuthenticated, isInitialized } = useAuth();
+  const { status } = useAuth();
 
   useEffect(() => {
-    if (isInitialized && !isAuthenticated) {
-      router.replace(routes.login.path as Route);
+    if (status === 'anonymous' || status === 'unconfigured') {
+      const destination = createLoginRedirect(
+        window.location.pathname,
+        window.location.search,
+      );
+      router.replace(destination as Route);
     }
-  }, [isAuthenticated, isInitialized, router]);
+  }, [router, status]);
 
-  if (!isInitialized || !isAuthenticated) {
+  if (status !== 'authenticated') {
     return <PageLoader label="Restoring your session" />;
   }
 

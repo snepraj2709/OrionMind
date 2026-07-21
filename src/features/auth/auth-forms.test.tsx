@@ -4,119 +4,184 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AuthContextValue } from './auth-provider';
-import { AuthRoutePrompt } from './auth-route-prompt';
+import { LoginScreen } from './login-screen';
 import { SignInForm } from './sign-in-form';
 import { SignUpForm } from './sign-up-form';
+import { SignupScreen } from './signup-screen';
 
-const authMocks = vi.hoisted(() => ({
-  useAuth: vi.fn(),
+const mocks = vi.hoisted(() => ({ replace: vi.fn(), useAuth: vi.fn() }));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mocks.replace }),
 }));
 
-vi.mock('./use-auth', () => ({
-  useAuth: authMocks.useAuth,
-}));
+vi.mock('./use-auth', () => ({ useAuth: mocks.useAuth }));
 
-function renderWithAuth(children: ReactNode) {
-  const value: AuthContextValue = {
+function authValue(
+  overrides: Partial<AuthContextValue> = {},
+): AuthContextValue {
+  return {
+    status: 'anonymous',
+    session: null,
     user: null,
+    flow: 'default',
     isAuthenticated: false,
     isInitialized: true,
     isPending: false,
+    isRequiredRecoveryActive: false,
+    setFlow: vi.fn(),
     signIn: vi.fn(),
     signUp: vi.fn(),
-    signOut: vi.fn().mockResolvedValue(undefined),
+    requestPasswordReset: vi.fn(),
+    updatePassword: vi.fn(),
+    signOut: vi.fn(),
     updateUser: vi.fn(),
-  };
-
-  authMocks.useAuth.mockReturnValue(value);
-
-  return {
-    ...render(children),
-    value,
+    apiFetch: vi.fn(),
+    ...overrides,
   };
 }
 
+function renderWithAuth(children: ReactNode, overrides = {}) {
+  const value = authValue(overrides);
+  mocks.useAuth.mockReturnValue(value);
+  return { ...render(children), value };
+}
+
 describe('authentication forms', () => {
-  it('uses the approved login copy and preserves the recovery destination', () => {
-    renderWithAuth(
-      <>
-        <SignInForm redirectTo="/entries/new" />
-        <AuthRoutePrompt
-          actionLabel="Register"
-          href="/signup"
-          prompt="No account yet?"
-        />
-      </>,
-    );
+  it('submits accessible email/password login through Supabase ownership', async () => {
+    const signIn = vi.fn().mockResolvedValue({
+      ok: true,
+      user: { id: 'user-1', email: 'reader@example.com', name: 'Reader' },
+    });
+    renderWithAuth(<SignInForm onForgotPassword={vi.fn()} />, { signIn });
 
-    expect(screen.getByLabelText('Email *')).toHaveAttribute(
-      'placeholder',
-      'you@example.com',
-    );
-    expect(screen.getByLabelText('Password *')).not.toHaveAttribute(
-      'placeholder',
-    );
-    expect(
+    const email = screen.getByLabelText('Email *');
+    const password = screen.getByLabelText('Password *');
+    expect(email).toHaveAttribute('type', 'email');
+    expect(email).toHaveAttribute('autocomplete', 'email');
+    expect(email).toBeRequired();
+    expect(password).toHaveAttribute('type', 'password');
+    expect(password).toHaveAttribute('autocomplete', 'current-password');
+    expect(password).toBeRequired();
+
+    await userEvent.type(email, 'reader@example.com');
+    await userEvent.type(password, 'secure-password');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(signIn).toHaveBeenCalledWith({
+      email: 'reader@example.com',
+      password: 'secure-password',
+    });
+  });
+
+  it('disables login submission while pending', () => {
+    renderWithAuth(<SignInForm />, { isPending: true });
+    expect(screen.getByRole('button', { name: 'Signing in' })).toBeDisabled();
+  });
+
+  it('opens forgot-password as a login state', async () => {
+    const setFlow = vi.fn();
+    renderWithAuth(<LoginScreen />, { setFlow });
+    await userEvent.click(
       screen.getByRole('link', { name: 'Forgot password?' }),
-    ).toHaveAttribute('href', '/forgot-password?redirect=%2Fentries%2Fnew');
-
-    expect(screen.getByRole('button', { name: 'Sign in' })).toBeEnabled();
-    expect(screen.getByRole('link', { name: 'Register' })).toHaveAttribute(
-      'href',
-      '/signup',
     );
-    expect(screen.getByText('No account yet?')).toBeVisible();
+    expect(setFlow).toHaveBeenCalledWith('forgot_password');
   });
 
-  it('retains Full name and screenshot-aligned signup placeholders', () => {
-    renderWithAuth(<SignUpForm />);
-
-    expect(screen.getByLabelText('Full name *')).toHaveAttribute(
-      'placeholder',
-      'Your name',
-    );
-    expect(screen.getByLabelText('Email *')).toHaveAttribute(
-      'placeholder',
-      'you@example.com',
-    );
-    expect(screen.getByLabelText('Password *')).not.toHaveAttribute(
-      'placeholder',
-    );
-    expect(screen.getByText('Use at least 8 characters.')).toBeVisible();
-    expect(
-      screen.getByRole('button', { name: 'Create account' }),
-    ).toBeEnabled();
-  });
-
-  it('replaces signup with a check-your-email confirmation', async () => {
-    const { value } = renderWithAuth(<SignUpForm />);
-    vi.mocked(value.signUp).mockResolvedValue({
+  it('submits signup with only email and a valid new password', async () => {
+    const signUp = vi.fn().mockResolvedValue({
       ok: true,
       email: 'reader@example.com',
+      session: null,
     });
+    renderWithAuth(<SignUpForm />, { signUp });
 
-    await userEvent.type(screen.getByLabelText('Full name *'), 'Ada Reader');
+    expect(screen.queryByLabelText(/Full name/)).not.toBeInTheDocument();
+    const email = screen.getByLabelText('Email *');
+    const password = screen.getByLabelText('Password *');
+    expect(email).toHaveAttribute('type', 'email');
+    expect(password).toHaveAttribute('autocomplete', 'new-password');
+    expect(password).toHaveAttribute('type', 'password');
+
+    await userEvent.type(email, 'reader@example.com');
+    await userEvent.type(password, 'secure-password');
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Create account' }),
+    );
+    expect(signUp).toHaveBeenCalledWith({
+      email: 'reader@example.com',
+      password: 'secure-password',
+    });
+  });
+
+  it('rejects signup passwords shorter than eight characters', async () => {
+    const signUp = vi.fn();
+    renderWithAuth(<SignUpForm />, { signUp });
     await userEvent.type(
       screen.getByLabelText('Email *'),
       'reader@example.com',
     );
-    await userEvent.type(
-      screen.getByLabelText('Password *'),
-      'secure-password',
-    );
+    await userEvent.type(screen.getByLabelText('Password *'), 'short');
     await userEvent.click(
       screen.getByRole('button', { name: 'Create account' }),
     );
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Check your email',
+    expect(
+      await screen.findByText('Password must contain at least 8 characters.'),
+    ).toBeVisible();
+    expect(signUp).not.toHaveBeenCalled();
+  });
+
+  it('shows the generic confirmation-email state without revealing registration status', () => {
+    renderWithAuth(<SignupScreen />, { flow: 'confirmation_email_sent' });
+    expect(
+      screen.getByRole('heading', { name: 'Confirm your email' }),
+    ).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Open the newest confirmation link',
     );
-    expect(screen.getByRole('status')).toHaveTextContent('reader@example.com');
-    expect(value.signUp).toHaveBeenCalledWith({
-      name: 'Ada Reader',
-      email: 'reader@example.com',
-      password: 'secure-password',
+    expect(screen.getByRole('status')).not.toHaveTextContent('@');
+  });
+
+  it('requests recovery on login and updates matching new passwords', async () => {
+    const requestPasswordReset = vi.fn().mockResolvedValue({ ok: true });
+    const first = renderWithAuth(<LoginScreen />, {
+      flow: 'forgot_password',
+      requestPasswordReset,
     });
-    expect(screen.queryByLabelText('Password *')).not.toBeInTheDocument();
+    await userEvent.type(
+      screen.getByLabelText('Email *'),
+      'reader@example.com',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Send recovery email' }),
+    );
+    expect(requestPasswordReset).toHaveBeenCalledWith({
+      email: 'reader@example.com',
+    });
+    first.unmount();
+
+    const updatePassword = vi.fn().mockResolvedValue({ ok: true });
+    renderWithAuth(<LoginScreen />, {
+      flow: 'set_new_password',
+      status: 'authenticated',
+      isAuthenticated: true,
+      isRequiredRecoveryActive: true,
+      updatePassword,
+    });
+    await userEvent.type(
+      screen.getByLabelText('New password *'),
+      'new-password',
+    );
+    await userEvent.type(
+      screen.getByLabelText('Confirm new password *'),
+      'new-password',
+    );
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Update password' }),
+    );
+    expect(updatePassword).toHaveBeenCalledWith({
+      password: 'new-password',
+      confirmation: 'new-password',
+    });
   });
 });

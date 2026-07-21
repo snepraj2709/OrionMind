@@ -10,16 +10,19 @@ import { FormField } from '@/components/forms/form-field';
 import { SubmitButton } from '@/components/forms/submit-button';
 import { TextInput } from '@/components/forms/text-input';
 import { AppLink } from '@/components/navigation';
-import { pathWithRedirect, routes } from '@/config/routes';
 import { signInSchema, type SignInInput } from '@/services/auth/schemas';
 
 import { useAuth } from './use-auth';
 
 export interface SignInFormProps {
-  redirectTo?: string;
+  onForgotPassword?: () => void;
+  recoveryHref?: string;
 }
 
-export function SignInForm({ redirectTo }: SignInFormProps) {
+export function SignInForm({
+  onForgotPassword,
+  recoveryHref = '/login?mode=forgot',
+}: SignInFormProps) {
   const { isPending, signIn } = useAuth();
   const [formError, setFormError] = useState<string>();
   const {
@@ -32,6 +35,7 @@ export function SignInForm({ redirectTo }: SignInFormProps) {
   });
 
   const onSubmit = handleSubmit(async (values) => {
+    if (isPending) return;
     setFormError(undefined);
     const result = await signIn(values);
     if (!result.ok) setFormError(result.error.message);
@@ -50,6 +54,8 @@ export function SignInForm({ redirectTo }: SignInFormProps) {
           autoComplete="email"
           inputMode="email"
           placeholder="you@example.com"
+          required
+          type="email"
           {...register('email')}
         />
       </FormField>
@@ -61,6 +67,7 @@ export function SignInForm({ redirectTo }: SignInFormProps) {
       >
         <TextInput
           autoComplete="current-password"
+          required
           type="password"
           {...register('password')}
         />
@@ -68,9 +75,8 @@ export function SignInForm({ redirectTo }: SignInFormProps) {
       <div className="flex justify-end">
         <AppLink
           className="type-body-small"
-          href={
-            pathWithRedirect(routes.forgotPassword.path, redirectTo) as Route
-          }
+          href={recoveryHref as Route}
+          onClick={onForgotPassword}
         >
           Forgot password?
         </AppLink>

@@ -1,17 +1,40 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+interface BrowserClientOptions {
+  auth: {
+    autoRefreshToken: boolean;
+    detectSessionInUrl: (
+      url: URL,
+      parameters: Record<string, string>,
+    ) => boolean;
+    persistSession: boolean;
+    storage: Storage;
+  };
+}
+
 const supabaseMocks = vi.hoisted(() => ({
-  createClient: vi.fn(() => ({ auth: {} })),
+  createClient: vi.fn(
+    (_url: string, _key: string, _options: BrowserClientOptions) => {
+      void _url;
+      void _key;
+      void _options;
+      return { auth: {} };
+    },
+  ),
 }));
 
 vi.mock('@supabase/supabase-js', () => ({
   createClient: supabaseMocks.createClient,
 }));
 
-import { createSupabaseBrowserClient } from './browser-client';
+import {
+  createSupabaseBrowserClient,
+  resolveSupabaseBrowserClient,
+} from './browser-client';
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   supabaseMocks.createClient.mockClear();
 });
 
@@ -30,11 +53,45 @@ describe('createSupabaseBrowserClient', () => {
       {
         auth: {
           autoRefreshToken: true,
-          detectSessionInUrl: true,
+          detectSessionInUrl: expect.any(Function),
           persistSession: true,
           storage,
         },
       },
     );
+
+    const options = supabaseMocks.createClient.mock.calls[0]?.[2];
+    const detectSessionInUrl = options?.auth?.detectSessionInUrl;
+    expect(detectSessionInUrl).toBeTypeOf('function');
+    if (typeof detectSessionInUrl !== 'function') return;
+
+    expect(
+      detectSessionInUrl(new URL('https://orion.test/login'), {
+        access_token: 'private',
+        refresh_token: 'private',
+        type: 'signup',
+      }),
+    ).toBe(false);
+    expect(
+      detectSessionInUrl(new URL('https://orion.test/signup'), {
+        access_token: 'private',
+        refresh_token: 'private',
+        type: 'signup',
+      }),
+    ).toBe(true);
+    expect(
+      detectSessionInUrl(new URL('https://orion.test/profile'), {
+        access_token: 'private',
+        refresh_token: 'private',
+        type: 'recovery',
+      }),
+    ).toBe(false);
+  });
+
+  it('does not construct a browser client during server rendering', () => {
+    vi.stubGlobal('window', undefined);
+
+    expect(resolveSupabaseBrowserClient(undefined)).toBeNull();
+    expect(supabaseMocks.createClient).not.toHaveBeenCalled();
   });
 });

@@ -49,12 +49,14 @@ test('keeps the landing-page top bar in normal document flow', async ({
   await expect(banner).toHaveCSS('position', 'static');
 });
 
-test('allows forgot-password public route access', async ({ page }) => {
-  await page.goto(routes.forgotPassword.path);
+test('keeps password recovery on the public login route', async ({ page }) => {
+  await page.goto(routes.login.path);
+  await page.getByRole('link', { name: 'Forgot password?' }).click();
 
   await expect(
-    page.getByRole('heading', { name: routes.forgotPassword.label }),
+    page.getByRole('heading', { name: 'Reset your password' }),
   ).toBeVisible();
+  await expect(page).toHaveURL(`${routes.login.path}?mode=forgot`);
 });
 
 test('loads the mobile landing route without runtime errors or overflow', async ({
@@ -108,7 +110,8 @@ test('uses the document as the only landing-page vertical scroller', async ({
             style.visibility !== 'hidden' &&
             rect.width > 0 &&
             rect.height > 0 &&
-            ['auto', 'scroll'].includes(style.overflowY)
+            ['auto', 'scroll'].includes(style.overflowY) &&
+            element.scrollHeight > element.clientHeight + 1
           );
         })
         .map((element) => ({
@@ -153,7 +156,7 @@ test('keeps wheel input authoritative after section navigation', async ({
 test('redirects protected routes to login', async ({ page }) => {
   await page.goto(routes.entries.path);
 
-  await expect(page).toHaveURL(routes.login.path);
+  await expect(page).toHaveURL(`${routes.login.path}?returnTo=%2Fentries`);
 });
 
 test('logs in and redirects authenticated users away from login', async ({
@@ -175,13 +178,13 @@ test('logs in and redirects authenticated users away from login', async ({
 test('shows email confirmation after signup', async ({ page }) => {
   await installMockSupabaseAuth(page);
   await page.goto(routes.signup.path);
-  await page.getByLabel('Full name').fill('Orion Reader');
   await page.getByLabel('Email').fill(testCredentials.email);
   await page.getByLabel('Password').fill(testCredentials.password);
   await page.getByRole('button', { name: 'Create account' }).click();
 
-  await expect(page.getByRole('status')).toContainText('Check your email');
-  await expect(page.getByRole('status')).toContainText(testCredentials.email);
+  await expect(page.getByRole('status')).toContainText(
+    'Open the newest confirmation link',
+  );
   await expect(page).toHaveURL(routes.signup.path);
 });
 
@@ -189,14 +192,18 @@ test('logs out from the protected shell', async ({ page }) => {
   await logIn(page);
   await page.getByRole('button', { name: 'Log out' }).click();
 
-  await expect(page).toHaveURL(routes.login.path);
+  await expect(page).toHaveURL(`${routes.login.path}?returnTo=%2Fentries`);
   await page.goto(routes.entries.path);
-  await expect(page).toHaveURL(routes.login.path);
+  await expect(page).toHaveURL(`${routes.login.path}?returnTo=%2Fentries`);
 });
 
-test('always sends a successful login to entries', async ({ page }) => {
+test('returns a successful login to the protected destination', async ({
+  page,
+}) => {
   await page.goto(routes.newEntry.path);
-  await expect(page).toHaveURL(routes.login.path);
+  await expect(page).toHaveURL(
+    `${routes.login.path}?returnTo=%2Fentries%2Fnew`,
+  );
 
   await installMockSupabaseAuth(page);
 
@@ -204,9 +211,9 @@ test('always sends a successful login to entries', async ({ page }) => {
   await page.getByLabel('Password').fill(testCredentials.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
-  await expect(page).toHaveURL(routes.entries.path);
+  await expect(page).toHaveURL(routes.newEntry.path);
   await expect(
-    page.getByRole('heading', { name: routes.entries.label }),
+    page.getByRole('heading', { name: routes.newEntry.label }),
   ).toBeVisible();
 });
 

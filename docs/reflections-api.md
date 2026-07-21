@@ -35,7 +35,7 @@ The current Reflections screen intentionally requests only its active tab. Its T
 
 The shared API request includes browser session credentials and never sends a body with `GET`. The current contract explicitly requires `userId` as a query parameter, but the endpoint still derives the authenticated user from the signed session and rejects a mismatched ID. The query parameter is not trusted as authorization.
 
-For a cross-origin backend, that backend must allow the frontend origin with credentialed CORS and use a compatible secure cookie session. If it instead requires a bearer token, the shared API client will need to receive that token from the future authentication provider; Reflection components and schemas will not change.
+For a cross-origin backend, that backend must allow the frontend origin with credentialed CORS and the `Authorization` header. The shared API client reads the current Supabase session and supplies its access token as a bearer credential; Reflection components and schemas do not own authentication details.
 
 ## Temporary fixture boundary
 

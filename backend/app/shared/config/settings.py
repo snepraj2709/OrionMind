@@ -42,7 +42,10 @@ class Settings(BaseSettings):
     ENTRY_FINGERPRINT_KEYS: SecretStr = SecretStr("{}")
     REFLECTION_REVIEW_THRESHOLD: float = 0.80
 
-    CORS_ALLOW_ORIGINS: str = "http://localhost:8080,http://localhost:5173"
+    CORS_ALLOW_ORIGINS: str = (
+        "http://localhost:3000,http://127.0.0.1:3000,"
+        "http://127.0.0.1:3100,http://localhost:8080,http://localhost:5173"
+    )
     REQUEST_TIMEOUT_SECONDS: float = Field(default=30.0, gt=0, le=300)
     MAX_REQUEST_BODY_BYTES: int = Field(default=1_048_576, ge=1024, le=10_485_760)
     DATABASE_POOL_SIZE: int = Field(default=5, ge=0, le=50)

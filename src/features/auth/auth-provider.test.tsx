@@ -1,78 +1,42 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { StrictMode, useState } from 'react';
+import { hydrateRoot } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import { createFakeSupabase, makeSession } from '@/test/fake-supabase';
 
 import { AuthProvider } from './auth-provider';
-import { AuthRouteGuard } from './auth-route-guard';
-import { ProtectedRoute } from './protected-route';
 import { useAuth } from './use-auth';
 
-const mocks = vi.hoisted(() => {
-  const replace = vi.fn();
-  return {
-    getSession: vi.fn(),
-    onAuthStateChange: vi.fn(),
-    replace,
-    router: { replace },
-    signInWithPassword: vi.fn(),
-    signOut: vi.fn(),
-    signUp: vi.fn(),
-    unsubscribe: vi.fn(),
-  };
-});
+const navigationMocks = vi.hoisted(() => ({ replace: vi.fn() }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => mocks.router,
+  useRouter: () => ({ replace: navigationMocks.replace }),
 }));
-
-vi.mock('@/services/supabase', () => ({
-  getSupabaseBrowserClient: () => ({
-    auth: {
-      getSession: mocks.getSession,
-      onAuthStateChange: mocks.onAuthStateChange,
-      signInWithPassword: mocks.signInWithPassword,
-      signOut: mocks.signOut,
-      signUp: mocks.signUp,
-    },
-  }),
-}));
-
-const supabaseUser = {
-  id: 'user-1',
-  email: 'reader@example.com',
-  user_metadata: { full_name: 'Ada Reader' },
-};
-
-const secondSupabaseUser = {
-  id: 'user-2',
-  email: 'second@example.com',
-  user_metadata: { full_name: 'Second Reader' },
-};
-
-type AuthStateChangeHandler = (
-  event: string,
-  session: { user: typeof supabaseUser } | null,
-) => void;
-
-let authStateChangeHandler: AuthStateChangeHandler | undefined;
 
 function AuthHarness() {
   const auth = useAuth();
-  const [signupResult, setSignupResult] = useState('');
+  const [result, setResult] = useState('');
 
   return (
     <>
-      <output data-testid="initialized">{String(auth.isInitialized)}</output>
+      <output data-testid="status">{auth.status}</output>
+      <output data-testid="flow">{auth.flow}</output>
       <output data-testid="user-name">{auth.user?.name ?? 'none'}</output>
-      <output data-testid="signup-result">{signupResult}</output>
+      <output data-testid="result">{result}</output>
       <button
         onClick={() =>
-          void auth.signIn({
-            email: 'reader@example.com',
-            password: 'secure-password',
-          })
+          void auth
+            .signIn({
+              email: 'reader@example.com',
+              password: 'secure-password',
+            })
+            .then((value) =>
+              setResult(value.ok ? value.user.email : value.error.message),
+            )
         }
         type="button"
       >
@@ -82,12 +46,11 @@ function AuthHarness() {
         onClick={() =>
           void auth
             .signUp({
-              name: 'Ada Reader',
               email: 'reader@example.com',
               password: 'secure-password',
             })
-            .then((result) =>
-              setSignupResult(result.ok ? result.email : result.error.message),
+            .then((value) =>
+              setResult(value.ok ? value.email : value.error.message),
             )
         }
         type="button"
@@ -97,215 +60,306 @@ function AuthHarness() {
       <button onClick={() => void auth.signOut()} type="button">
         Sign out test
       </button>
+      <button
+        onClick={() =>
+          void auth
+            .apiFetch('/api/v1/profile')
+            .catch((error: Error) => setResult(error.name))
+        }
+        type="button"
+      >
+        API test
+      </button>
     </>
   );
 }
 
-function renderProvider(queryClient = new QueryClient()) {
+function renderProvider(
+  client: Parameters<typeof AuthProvider>[0]['client'],
+  options: { queryClient?: QueryClient; strict?: boolean } = {},
+) {
+  const queryClient = options.queryClient ?? new QueryClient();
+  const content = (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider client={client}>
+        <AuthHarness />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
   return {
     queryClient,
-    ...render(
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
+    ...render(options.strict ? <StrictMode>{content}</StrictMode> : content),
+  };
+}
+
+afterEach(() => {
+  window.history.replaceState({}, '', '/');
+  vi.unstubAllGlobals();
+});
+
+describe('AuthProvider session ownership', () => {
+  it('fails safely when public Supabase configuration is missing', () => {
+    renderProvider(null);
+    expect(screen.getByTestId('status')).toHaveTextContent('unconfigured');
+    expect(screen.getByTestId('user-name')).toHaveTextContent('none');
+  });
+
+  it('hydrates safely when public Supabase configuration is missing', async () => {
+    const browserWindow = window;
+    vi.stubGlobal('window', undefined);
+    const serverMarkup = renderToString(
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider client={null}>
           <AuthHarness />
         </AuthProvider>
       </QueryClientProvider>,
-    ),
-  };
-}
+    );
+    vi.stubGlobal('window', browserWindow);
 
-function renderAuthRouteProvider(queryClient = new QueryClient()) {
-  return {
-    queryClient,
-    ...render(
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <AuthRouteGuard>
-            <AuthHarness />
-          </AuthRouteGuard>
+    const container = document.createElement('div');
+    container.innerHTML = serverMarkup;
+    document.body.append(container);
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    const root = hydrateRoot(
+      container,
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider client={null}>
+          <AuthHarness />
         </AuthProvider>
       </QueryClientProvider>,
-    ),
-  };
-}
+    );
 
-function renderProtectedProvider(queryClient = new QueryClient()) {
-  return {
-    queryClient,
-    ...render(
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <ProtectedRoute>
-            <AuthHarness />
-          </ProtectedRoute>
-        </AuthProvider>
-      </QueryClientProvider>,
-    ),
-  };
-}
+    await act(async () => undefined);
 
-beforeEach(() => {
-  mocks.getSession.mockResolvedValue({
-    data: { session: null },
-    error: null,
-  });
-  authStateChangeHandler = undefined;
-  mocks.onAuthStateChange.mockImplementation((handler) => {
-    authStateChangeHandler = handler as AuthStateChangeHandler;
-    return { data: { subscription: { unsubscribe: mocks.unsubscribe } } };
-  });
-  mocks.signInWithPassword.mockResolvedValue({
-    data: { user: supabaseUser, session: {} },
-    error: null,
-  });
-  mocks.signUp.mockResolvedValue({ data: { user: supabaseUser }, error: null });
-  mocks.signOut.mockResolvedValue({ error: null });
-});
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="status"]')).toHaveTextContent(
+      'unconfigured',
+    );
 
-describe('AuthProvider', () => {
-  it('restores the current session and subscribes to auth changes', async () => {
-    mocks.getSession.mockResolvedValueOnce({
-      data: { session: { user: supabaseUser } },
-      error: null,
-    });
-
-    const { unmount } = renderProvider();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('initialized')).toHaveTextContent('true');
-      expect(screen.getByTestId('user-name')).toHaveTextContent('Ada Reader');
-    });
-    expect(mocks.getSession).toHaveBeenCalledOnce();
-    expect(mocks.onAuthStateChange).toHaveBeenCalledOnce();
-
-    unmount();
-    expect(mocks.unsubscribe).toHaveBeenCalledOnce();
+    root.unmount();
+    container.remove();
+    consoleError.mockRestore();
   });
 
-  it('uses password sign-in and lets the auth route guard redirect once', async () => {
-    mocks.signInWithPassword.mockImplementationOnce(async () => {
-      authStateChangeHandler?.('SIGNED_IN', { user: supabaseUser });
-      return { data: { user: supabaseUser, session: {} }, error: null };
-    });
+  it('ignores browser mock-user flags when Supabase has no session', async () => {
+    window.localStorage.setItem('orion:user', 'mock-user');
+    window.sessionStorage.setItem('authenticated', 'true');
+    const fake = createFakeSupabase(null);
 
-    renderAuthRouteProvider();
-    await screen.findByText('true');
+    renderProvider(fake.client);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('anonymous'),
+    );
+    expect(screen.getByTestId('user-name')).toHaveTextContent('none');
+  });
+
+  it('restores the initial session exactly once under React StrictMode', async () => {
+    const fake = createFakeSupabase(makeSession());
+    renderProvider(fake.client, { strict: true });
+
+    expect(await screen.findByTestId('status')).toHaveTextContent(
+      'authenticated',
+    );
+    expect(fake.getSession).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('user-name')).toHaveTextContent('user a');
+  });
+
+  it('uses exact password login and signup redirect SDK calls', async () => {
+    const fake = createFakeSupabase(makeSession());
+    renderProvider(fake.client);
+    await screen.findByText('authenticated');
 
     await userEvent.click(screen.getByRole('button', { name: 'Sign in test' }));
+    expect(fake.signInWithPassword).toHaveBeenCalledWith({
+      email: 'reader@example.com',
+      password: 'secure-password',
+    });
 
-    await waitFor(() => {
-      expect(mocks.signInWithPassword).toHaveBeenCalledWith({
-        email: 'reader@example.com',
-        password: 'secure-password',
-      });
-      expect(mocks.replace).toHaveBeenCalledTimes(1);
-      expect(mocks.replace).toHaveBeenCalledWith('/entries');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign up test' }));
+    expect(fake.signUp).toHaveBeenCalledWith({
+      email: 'reader@example.com',
+      password: 'secure-password',
+      options: { emailRedirectTo: `${window.location.origin}/signup` },
     });
   });
 
-  it('maps the signed-in user without owning navigation', async () => {
-    renderProvider();
-    await screen.findByText('true');
-
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in test' }));
-
-    await waitFor(() => {
-      expect(mocks.signInWithPassword).toHaveBeenCalledWith({
-        email: 'reader@example.com',
-        password: 'secure-password',
-      });
-      expect(screen.getByTestId('user-name')).toHaveTextContent('Ada Reader');
-    });
-    expect(mocks.replace).not.toHaveBeenCalled();
-  });
-
-  it('sends signup metadata and returns a confirmation result', async () => {
-    renderProvider();
-    await screen.findByText('true');
+  it('supports confirmation-required signup without assuming a session', async () => {
+    const fake = createFakeSupabase(null);
+    renderProvider(fake.client);
+    await screen.findByText('anonymous');
 
     await userEvent.click(screen.getByRole('button', { name: 'Sign up test' }));
 
-    await waitFor(() => {
-      expect(mocks.signUp).toHaveBeenCalledWith({
-        email: 'reader@example.com',
-        password: 'secure-password',
-        options: {
-          data: { full_name: 'Ada Reader' },
-          emailRedirectTo: `${window.location.origin}/signup`,
-        },
-      });
-      expect(screen.getByTestId('signup-result')).toHaveTextContent(
-        'reader@example.com',
-      );
-    });
-    expect(mocks.replace).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('flow')).toHaveTextContent(
+      'confirmation_email_sent',
+    );
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
   });
 
-  it('signs out, clears user-scoped query data, and lets the guard redirect once', async () => {
+  it('clears query and user storage on logout and account switching', async () => {
     const queryClient = new QueryClient();
-    queryClient.setQueryData(['entries'], { items: [] });
-    mocks.getSession.mockResolvedValueOnce({
-      data: { session: { user: supabaseUser } },
-      error: null,
-    });
-    mocks.signOut.mockImplementationOnce(async () => {
-      authStateChangeHandler?.('SIGNED_OUT', null);
-      return { error: null };
-    });
+    queryClient.setQueryData(['entries'], { owner: 'user-a' });
+    window.localStorage.setItem('orion:user:entries', 'private');
+    window.localStorage.setItem('unrelated', 'preserved');
+    const fake = createFakeSupabase(makeSession());
+    renderProvider(fake.client, { queryClient });
+    await screen.findByText('authenticated');
+    expect(fake.onAuthStateChange).toHaveBeenCalledOnce();
 
-    renderProtectedProvider(queryClient);
-    await screen.findByText('Ada Reader');
+    act(() => fake.emit('SIGNED_IN', makeSession('user-b')));
+    await waitFor(() =>
+      expect(screen.getByTestId('user-name')).toHaveTextContent('user b'),
+    );
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    expect(window.localStorage.getItem('orion:user:entries')).toBeNull();
+    expect(window.localStorage.getItem('unrelated')).toBe('preserved');
 
+    queryClient.setQueryData(['entries'], { owner: 'user-b' });
     await userEvent.click(
       screen.getByRole('button', { name: 'Sign out test' }),
     );
-
-    await waitFor(() => {
-      expect(mocks.signOut).toHaveBeenCalledOnce();
-      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
-      expect(mocks.replace).toHaveBeenCalledTimes(1);
-      expect(mocks.replace).toHaveBeenCalledWith('/login');
-    });
-  });
-
-  it('preserves cache for same-user refresh and clears it on account change', async () => {
-    const queryClient = new QueryClient();
-    queryClient.setQueryData(['entries', 'list'], { owner: 'user-1' });
-    mocks.getSession.mockResolvedValueOnce({
-      data: { session: { user: supabaseUser } },
-      error: null,
-    });
-    renderProvider(queryClient);
-    await screen.findByText('Ada Reader');
-
-    act(() => {
-      authStateChangeHandler?.('TOKEN_REFRESHED', { user: supabaseUser });
-    });
-    expect(queryClient.getQueryData(['entries', 'list'])).toEqual({
-      owner: 'user-1',
-    });
-
-    act(() => {
-      authStateChangeHandler?.('SIGNED_IN', {
-        user: secondSupabaseUser,
-      });
-    });
-
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('anonymous'),
+    );
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
-    expect(screen.getByTestId('user-name')).toHaveTextContent('Second Reader');
+    expect(fake.signOut).toHaveBeenCalledOnce();
   });
 
-  it('handles session restoration rejection without leaking cached data', async () => {
+  it('preserves same-user query state during TOKEN_REFRESHED', async () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['entries'], { owner: 'user-a' });
+    const fake = createFakeSupabase(makeSession());
+    renderProvider(fake.client, { queryClient });
+    await screen.findByText('authenticated');
+
+    act(() => fake.emit('TOKEN_REFRESHED', makeSession()));
+
+    expect(queryClient.getQueryData(['entries'])).toEqual({ owner: 'user-a' });
+  });
+
+  it('fails closed and clears cache when restoration rejects', async () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(['entries'], { owner: 'unknown' });
-    mocks.getSession.mockRejectedValueOnce(new Error('storage unavailable'));
+    const fake = createFakeSupabase(
+      null,
+      Promise.reject(new Error('private storage failure')),
+    );
+    renderProvider(fake.client, { queryClient });
 
-    renderProvider(queryClient);
+    expect(await screen.findByTestId('status')).toHaveTextContent('anonymous');
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+  });
 
-    await waitFor(() => {
-      expect(screen.getByTestId('initialized')).toHaveTextContent('true');
-      expect(screen.getByTestId('user-name')).toHaveTextContent('none');
-      expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+  it('validates and scrubs token-hash confirmation once under StrictMode', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/signup?token_hash=secret-hash&type=signup&error_description=private',
+    );
+    const fake = createFakeSupabase(makeSession());
+    renderProvider(fake.client, { strict: true });
+
+    expect(await screen.findByTestId('flow')).toHaveTextContent(
+      'confirmation_success',
+    );
+    expect(fake.verifyOtp).toHaveBeenCalledOnce();
+    expect(fake.verifyOtp).toHaveBeenCalledWith({
+      token_hash: 'secret-hash',
+      type: 'signup',
     });
+    expect(window.location.search).toBe('');
+    expect(window.location.hash).toBe('');
+  });
+
+  it('initializes and scrubs an automatic PKCE confirmation once', async () => {
+    window.history.replaceState({}, '', '/signup?code=one-time-code');
+    const fake = createFakeSupabase(makeSession());
+
+    renderProvider(fake.client, { strict: true });
+
+    expect(await screen.findByTestId('flow')).toHaveTextContent(
+      'confirmation_success',
+    );
+    expect(fake.initialize).toHaveBeenCalledOnce();
+    expect(window.location.search).toBe('');
+  });
+
+  it('fails closed when callback credentials arrive on the wrong auth route', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/login?token_hash=secret-hash&type=signup&error_description=private',
+    );
+    const fake = createFakeSupabase(makeSession());
+
+    renderProvider(fake.client);
+
+    expect(await screen.findByTestId('flow')).toHaveTextContent(
+      'expired_or_invalid_link',
+    );
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
+    expect(fake.verifyOtp).not.toHaveBeenCalled();
+    expect(fake.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(window.location.search).toBe('');
+
+    act(() => fake.emit('SIGNED_IN', makeSession()));
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('anonymous'),
+    );
+  });
+
+  it('maps provider failures without rendering or logging raw details', async () => {
+    const fake = createFakeSupabase(makeSession());
+    fake.signInWithPassword.mockResolvedValueOnce({
+      data: { session: null, user: null },
+      error: Object.assign(new Error('access-token raw provider detail'), {
+        status: 500,
+      }),
+    });
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    renderProvider(fake.client);
+    await screen.findByText('authenticated');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in test' }));
+
+    expect(await screen.findByTestId('result')).toHaveTextContent(
+      'Sign in is temporarily unavailable.',
+    );
+    expect(document.body).not.toHaveTextContent('access-token');
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('clears local state and redirects safely after a terminal API 401', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response(null, { status: 401 })),
+    );
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(['profile'], { owner: 'user-a' });
+    window.localStorage.setItem('orion:user:profile', 'private');
+    window.history.replaceState({}, '', '/profile');
+    const fake = createFakeSupabase(makeSession());
+    renderProvider(fake.client, { queryClient });
+    await screen.findByText('authenticated');
+
+    await userEvent.click(screen.getByRole('button', { name: 'API test' }));
+
+    expect(await screen.findByTestId('result')).toHaveTextContent(
+      'SessionExpiredError',
+    );
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
+    expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+    expect(window.localStorage.getItem('orion:user:profile')).toBeNull();
+    expect(fake.refreshSession).toHaveBeenCalledOnce();
+    expect(fake.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(navigationMocks.replace).toHaveBeenCalledWith(
+      '/login?returnTo=%2Fprofile&state=session_expired',
+    );
   });
 });

@@ -1,3 +1,5 @@
+import { apiRequest, type ApiRequest } from '@/services/api-client';
+
 import type {
   JourneyEntry,
   JourneyRange,
@@ -15,10 +17,7 @@ export interface JourneyRepository {
 }
 
 export class HttpJourneyRepository implements JourneyRepository {
-  constructor(
-    private readonly request: typeof fetch = (input, init) =>
-      fetch(input, init),
-  ) {}
+  constructor(private readonly request: ApiRequest = apiRequest) {}
 
   private async getJson<T>(path: string): Promise<T> {
     const response = await this.request(path);

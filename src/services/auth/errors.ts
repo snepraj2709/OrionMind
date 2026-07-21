@@ -1,6 +1,8 @@
 import type { AuthError } from '@supabase/supabase-js';
 
-type AuthOperation = 'sign-in' | 'sign-up';
+import type { AuthActionError } from './types';
+
+type AuthOperation = 'sign-in' | 'sign-up' | 'recovery' | 'password-update';
 
 const networkErrorNames = new Set([
   'AuthRetryableFetchError',
@@ -16,7 +18,10 @@ function isAuthError(error: unknown): error is AuthError {
   );
 }
 
-export function safeAuthErrorMessage(error: unknown, operation: AuthOperation) {
+export function safeAuthActionError(
+  error: unknown,
+  operation: AuthOperation,
+): AuthActionError {
   const code =
     error instanceof Error && 'code' in error && typeof error.code === 'string'
       ? error.code
@@ -24,25 +29,44 @@ export function safeAuthErrorMessage(error: unknown, operation: AuthOperation) {
   const status = isAuthError(error) ? error.status : undefined;
 
   if (status === 429 || code?.includes('rate_limit')) {
-    return 'Too many attempts. Wait a moment and try again.';
+    return {
+      kind: 'rate_limited',
+      message: 'Too many attempts. Wait a moment and try again.',
+    };
   }
 
   if (operation === 'sign-in' && code === 'invalid_credentials') {
-    return 'Email or password is incorrect.';
+    return { kind: 'validation', message: 'Email or password is incorrect.' };
   }
 
   if (operation === 'sign-up' && code === 'weak_password') {
-    return 'Password does not meet the account requirements.';
+    return {
+      kind: 'validation',
+      message: 'Password does not meet the account requirements.',
+    };
   }
 
   if (
     error instanceof TypeError ||
     (error instanceof Error && networkErrorNames.has(error.name))
   ) {
-    return 'Unable to connect. Check your connection and try again.';
+    return {
+      kind: 'offline',
+      message: 'Unable to connect. Check your connection and try again.',
+    };
   }
 
-  return operation === 'sign-in'
-    ? 'Sign in is temporarily unavailable.'
-    : 'Account creation is temporarily unavailable.';
+  const message =
+    operation === 'sign-in'
+      ? 'Sign in is temporarily unavailable.'
+      : operation === 'sign-up'
+        ? 'Account creation is temporarily unavailable.'
+        : operation === 'recovery'
+          ? 'Password recovery is temporarily unavailable.'
+          : 'Password update is temporarily unavailable.';
+  return { kind: 'provider_error', message };
+}
+
+export function safeAuthErrorMessage(error: unknown, operation: AuthOperation) {
+  return safeAuthActionError(error, operation).message;
 }
