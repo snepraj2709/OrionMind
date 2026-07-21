@@ -17,8 +17,6 @@ export async function GET(request: Request) {
   const validation = entriesRequestSchema.safeParse({
     page: searchParams.get('page'),
     page_size: searchParams.get('page_size'),
-    search: searchParams.get('search') ?? undefined,
-    processing_status: searchParams.get('processing_status') ?? undefined,
   });
   if (!validation.success) {
     return errorResponse('Invalid entries request', 400);

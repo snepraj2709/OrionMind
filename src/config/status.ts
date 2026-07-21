@@ -2,6 +2,11 @@ export type StatusTone =
   'neutral' | 'processing' | 'success' | 'warning' | 'error';
 
 export const entryStatusPresentation = {
+  pending: {
+    label: 'Queued',
+    filterLabel: 'Queued',
+    tone: 'processing',
+  },
   completed: { label: 'Complete', filterLabel: 'Complete', tone: 'success' },
   processing: {
     label: 'Processing',

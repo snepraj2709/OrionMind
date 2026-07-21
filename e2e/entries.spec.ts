@@ -51,7 +51,7 @@ test('routes from the entries list to a stable detail URL', async ({
   );
 });
 
-test('submits search explicitly and uses fixed minimal pagination', async ({
+test('shows only backend-supported fixed pagination controls', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
@@ -60,24 +60,10 @@ test('submits search explicitly and uses fixed minimal pagination', async ({
     page.getByRole('link', { name: /10 Jul/ }).first(),
   ).toBeVisible();
 
-  const search = page.getByRole('searchbox', { name: 'Search entries' });
-  await search.fill('canal');
-  await expect(page.getByRole('link', { name: /10 Jul/ })).toBeVisible();
-  await page.getByRole('button', { name: 'Search' }).click();
-  await expect(page.getByRole('link', { name: /7 Jul/ })).toBeVisible();
-  await expect(page.getByRole('link', { name: /10 Jul/ })).toHaveCount(0);
-  await search.clear();
-  await search.press('Enter');
-
-  await page.getByRole('combobox', { name: 'Status' }).click();
-  await page.getByRole('option', { name: 'Processing', exact: true }).click();
-  await expect(page.getByRole('link', { name: /7 Jul/ })).toBeVisible();
-  await expect(page.getByRole('link', { name: /10 Jul/ })).toHaveCount(0);
-
-  await page.getByRole('combobox', { name: 'Status' }).click();
-  await page.getByRole('option', { name: 'All entries' }).click();
-  await expect(page.getByRole('link', { name: /10 Jul/ })).toBeVisible();
-
+  await expect(
+    page.getByRole('searchbox', { name: 'Search entries' }),
+  ).toHaveCount(0);
+  await expect(page.getByRole('combobox', { name: 'Status' })).toHaveCount(0);
   await expect(
     page.getByRole('combobox', { name: 'Rows per page' }),
   ).toHaveCount(0);

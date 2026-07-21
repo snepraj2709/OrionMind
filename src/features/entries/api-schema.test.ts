@@ -12,14 +12,10 @@ describe('Entries API schemas', () => {
       entriesRequestSchema.parse({
         page: '1',
         page_size: '20',
-        processing_status: 'completed',
-        search: 'morning',
       }),
     ).toEqual({
       page: 1,
       page_size: 20,
-      processing_status: 'completed',
-      search: 'morning',
     });
 
     expect(
@@ -28,7 +24,6 @@ describe('Entries API schemas', () => {
         page: 1,
         page_size: 20,
         total: entriesApiFixtures.length,
-        total_all: entriesApiFixtures.length,
       }).items,
     ).toHaveLength(5);
   });
@@ -46,7 +41,6 @@ describe('Entries API schemas', () => {
         page: 1,
         page_size: 20,
         total: 1,
-        total_all: 1,
       }).success,
     ).toBe(false);
   });

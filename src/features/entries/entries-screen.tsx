@@ -4,22 +4,14 @@ import { PenLine } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { FilterField, PaginationControls } from '@/components/data-display';
-import { AppButton, Typography } from '@/components/design-system';
-import {
-  DataViewStatus,
-  EmptyState,
-  NoResultsState,
-} from '@/components/feedback';
-import { SearchControl } from '@/components/forms';
+import { PaginationControls } from '@/components/data-display';
+import { AppButton } from '@/components/design-system';
+import { DataViewStatus, EmptyState } from '@/components/feedback';
 import { PageHeader, PageShell } from '@/components/layout';
 import { routes } from '@/config/routes';
 import { dataViewMessages } from '@/config/messages';
-import { entryStatusPresentation } from '@/config/status';
-import { useCollectionControls } from '@/hooks';
 
 import { EntryListItem } from './entry-list-item';
-import type { EntryStatusFilter } from './model';
 import { useEntriesQuery } from './queries';
 import {
   entriesListRepository,
@@ -35,11 +27,10 @@ export function EntriesScreen({
   pendingReviewCount = 0,
   repository = entriesListRepository,
 }: EntriesScreenProps) {
-  const [status, setStatus] = useState<EntryStatusFilter>('all');
-  const { clearSearch, pageIndex, pageSize, search, setPageIndex, setSearch } =
-    useCollectionControls();
+  const [pageIndex, setPageIndex] = useState(0);
+  const pageSize = 10;
   const { query, viewStatus } = useEntriesQuery(
-    { pageIndex, pageSize, search, status },
+    { pageIndex, pageSize },
     repository,
   );
 
@@ -50,8 +41,7 @@ export function EntriesScreen({
   const displayedPageIndex = query.isPlaceholderData
     ? pageIndex
     : responsePageIndex;
-  const hasFilters = search.trim().length > 0 || status !== 'all';
-  const entryCount = query.data?.totalAll;
+  const entryCount = query.data?.total;
 
   useEffect(() => {
     if (
@@ -61,7 +51,11 @@ export function EntriesScreen({
       query.data.items.length === 0 &&
       responsePageIndex >= pageCount
     ) {
-      setPageIndex(Math.max(0, pageCount - 1));
+      const timer = window.setTimeout(
+        () => setPageIndex(Math.max(0, pageCount - 1)),
+        0,
+      );
+      return () => window.clearTimeout(timer);
     }
   }, [
     pageCount,
@@ -70,11 +64,6 @@ export function EntriesScreen({
     responsePageIndex,
     setPageIndex,
   ]);
-
-  function clearFilters() {
-    clearSearch();
-    setStatus('all');
-  }
 
   return (
     <PageShell className="space-y-6">
@@ -101,41 +90,6 @@ export function EntriesScreen({
         title={routes.entries.label}
       />
 
-      <SearchControl
-        className="pb-3"
-        filters={
-          <FilterField
-            id="entry-status"
-            label="Status"
-            onValueChange={(value) => {
-              setStatus(value as EntryStatusFilter);
-              setPageIndex(0);
-            }}
-            options={[
-              { label: 'All entries', value: 'all' },
-              {
-                label: entryStatusPresentation.completed.filterLabel,
-                value: 'completed',
-              },
-              {
-                label: entryStatusPresentation.processing.filterLabel,
-                value: 'processing',
-              },
-              {
-                label: entryStatusPresentation.failed.filterLabel,
-                value: 'failed',
-              },
-            ]}
-            value={status}
-          />
-        }
-        inputClassName="bg-background"
-        label="Search entries"
-        onSearch={setSearch}
-        placeholder="Search your writing"
-        value={search}
-      />
-
       <DataViewStatus
         initialError={dataViewMessages.entries.initial}
         onRetry={() => void query.refetch()}
@@ -145,7 +99,7 @@ export function EntriesScreen({
         status={viewStatus}
       />
 
-      {query.data?.totalAll === 0 ? (
+      {query.data?.total === 0 ? (
         <EmptyState
           action={
             <AppButton asChild>
@@ -154,16 +108,6 @@ export function EntriesScreen({
           }
           description="Start with a thought, a moment, or a question you want to return to."
           title="Your journal is ready"
-        />
-      ) : null}
-
-      {query.data && query.data.totalAll > 0 && query.data.total === 0 ? (
-        <NoResultsState
-          action={
-            <AppButton onClick={clearFilters} variant="secondary">
-              Clear filters
-            </AppButton>
-          }
         />
       ) : null}
 
@@ -185,12 +129,6 @@ export function EntriesScreen({
             />
           </div>
         </div>
-      ) : null}
-
-      {hasFilters ? (
-        <Typography className="sr-only" variant="bodySmall">
-          Entry filters are active.
-        </Typography>
       ) : null}
     </PageShell>
   );

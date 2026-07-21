@@ -41,12 +41,22 @@ function createRepository(
   return {
     createTextEntry: vi.fn(),
     createVoiceEntry: vi.fn(),
+    getTextDraft: vi.fn().mockResolvedValue({ content: null, updatedAt: null }),
+    saveTextDraft: vi.fn().mockImplementation(async (content: string) => ({
+      content,
+      updatedAt: '2026-07-21T10:00:00Z',
+    })),
+    discardTextDraft: vi.fn().mockResolvedValue({
+      content: null,
+      updatedAt: null,
+    }),
     decideExtractedItem: vi.fn().mockResolvedValue(completedEntry),
     getEntry: vi.fn().mockResolvedValue(completedEntry),
     listEntries: vi.fn().mockResolvedValue({
       items: [],
       total: 0,
-      totalAll: 0,
+      page: 1,
+      pageSize: 10,
     }),
     retryEntry: vi
       .fn()

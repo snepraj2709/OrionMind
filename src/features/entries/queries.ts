@@ -12,8 +12,9 @@ import { getDataViewStatus } from '@/lib/query-state';
 import { entriesRepository } from './mock-repository';
 import type { EntriesQuery } from './model';
 import { entryKeys } from './query-keys';
-import { entriesListRepository } from './repository';
+import { entryComposerRepository, entriesListRepository } from './repository';
 import type {
+  EntryComposerRepository,
   EntriesListRepository,
   CreateEntryInput,
   EntriesRepository,
@@ -62,8 +63,8 @@ export function useEntryQuery(
 }
 
 export function useCreateEntryMutation(
-  repository: EntriesRepository = entriesRepository,
-  onSuccess?: () => void | Promise<void>,
+  repository: EntryComposerRepository = entryComposerRepository,
+  onSuccess?: (input: CreateEntryInput) => void | Promise<void>,
 ) {
   const queryClient = useQueryClient();
 
@@ -71,10 +72,16 @@ export function useCreateEntryMutation(
     mutationFn: (input: CreateEntryInput) =>
       input.mode === 'text'
         ? repository.createTextEntry({ content: input.content ?? '' })
-        : repository.createVoiceEntry(input.voice ?? new Blob()),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: entryKeys.lists });
-      await onSuccess?.();
+        : repository.createVoiceEntry({
+            idempotencyKey: input.idempotencyKey ?? '',
+            recording: input.voice ?? new Blob(),
+          }),
+    onSuccess: async (_entry, input) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: entryKeys.lists }),
+        queryClient.invalidateQueries({ queryKey: entryKeys.draft }),
+      ]);
+      await onSuccess?.(input);
     },
   });
 }

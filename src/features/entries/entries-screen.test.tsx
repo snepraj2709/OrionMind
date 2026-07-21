@@ -17,11 +17,10 @@ const completedEntry: EntrySummary = {
   themes: ['personalGrowth'],
 };
 
-function result(items: EntrySummary[], totalAll = items.length): EntriesResult {
+function result(items: EntrySummary[], total = items.length): EntriesResult {
   return {
     items,
-    total: items.length,
-    totalAll,
+    total,
     page: 1,
     pageSize: 10,
   };
@@ -60,11 +59,12 @@ describe('EntriesScreen', () => {
     expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
   });
 
-  it('renders successful, processing, and failed entries', async () => {
+  it('renders successful, queued, processing, and failed entries', async () => {
     const repository = repositoryWithList(
       vi.fn().mockResolvedValue(
         result([
           completedEntry,
+          { ...completedEntry, id: 'entry-pending', status: 'pending' },
           {
             ...completedEntry,
             id: 'entry-2',
@@ -78,7 +78,10 @@ describe('EntriesScreen', () => {
 
     renderEntries(repository);
 
-    expect(await screen.findAllByText(completedEntry.content)).toHaveLength(3);
+    expect(await screen.findAllByText(completedEntry.content)).toHaveLength(4);
+    expect(
+      screen.getByText('Queued', { selector: '[data-slot="badge"]' }),
+    ).toBeVisible();
     expect(
       screen.getByText('Processing', { selector: '[data-slot="badge"]' }),
     ).toBeVisible();
@@ -87,9 +90,9 @@ describe('EntriesScreen', () => {
         selector: '[data-slot="badge"]',
       }),
     ).toBeVisible();
-    expect(screen.getAllByRole('link', { name: /10 Jul/ })).toHaveLength(3);
+    expect(screen.getAllByRole('link', { name: /10 Jul/ })).toHaveLength(4);
     expect(screen.getByText('Voice')).toBeVisible();
-    expect(screen.getAllByText('Personal Growth')).toHaveLength(3);
+    expect(screen.getAllByText('Personal Growth')).toHaveLength(4);
     expect(screen.getAllByText(completedEntry.content)[0]).toHaveClass(
       'line-clamp-2',
     );
@@ -116,34 +119,18 @@ describe('EntriesScreen', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('keeps status filtering and resets the query to the first page', async () => {
-    const processingEntry = {
-      ...completedEntry,
-      id: 'entry-processing',
-      status: 'processing' as const,
-    };
-    const listEntries = vi.fn<EntriesListRepository['listEntries']>(
-      async (query) =>
-        query.status === 'processing'
-          ? result([processingEntry], 2)
-          : result([completedEntry, processingEntry], 2),
+  it('does not show unsupported search or status filters', async () => {
+    renderEntries(
+      repositoryWithList(vi.fn().mockResolvedValue(result([completedEntry]))),
     );
-    const user = userEvent.setup();
 
-    renderEntries(repositoryWithList(listEntries));
-    await screen.findByLabelText('2 entries, 0 awaiting review');
-    await user.click(screen.getByRole('combobox', { name: 'Status' }));
-    await user.click(screen.getByRole('option', { name: 'Processing' }));
-
-    await waitFor(() =>
-      expect(listEntries).toHaveBeenLastCalledWith(
-        expect.objectContaining({ pageIndex: 0, status: 'processing' }),
-      ),
-    );
+    await screen.findByText(completedEntry.content);
     expect(
-      screen.getByText('Processing', { selector: '[data-slot="badge"]' }),
-    ).toBeVisible();
-    expect(screen.getAllByRole('link', { name: /10 Jul/ })).toHaveLength(1);
+      screen.queryByRole('searchbox', { name: 'Search entries' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: 'Status' }),
+    ).not.toBeInTheDocument();
   });
 
   it('renders an empty journal with a direct action', async () => {
@@ -159,27 +146,6 @@ describe('EntriesScreen', () => {
     ).toHaveAttribute('href', '/entries/new');
   });
 
-  it('distinguishes filtered-empty results from an empty journal', async () => {
-    const repository = repositoryWithList(
-      vi.fn(async (query) =>
-        query.search ? result([], 1) : result([completedEntry]),
-      ),
-    );
-    const user = userEvent.setup();
-
-    renderEntries(repository);
-    await screen.findByText(completedEntry.content);
-    await user.type(
-      screen.getByRole('searchbox', { name: 'Search entries' }),
-      'missing',
-    );
-    expect(screen.queryByText('No matching results')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Search' }));
-
-    expect(await screen.findByText('No matching results')).toBeVisible();
-    expect(screen.queryByText('Your journal is ready')).not.toBeInTheDocument();
-  });
-
   it('keeps API pagination aligned and requests each selected page once', async () => {
     const secondPageEntry = {
       ...completedEntry,
@@ -192,7 +158,6 @@ describe('EntriesScreen', () => {
         page: query.pageIndex + 1,
         pageSize: 10,
         total: 11,
-        totalAll: 11,
       }),
     );
     const user = userEvent.setup();
@@ -220,7 +185,6 @@ describe('EntriesScreen', () => {
             page: 2,
             pageSize: 10,
             total: 5,
-            totalAll: 5,
           };
         }
 
@@ -229,7 +193,6 @@ describe('EntriesScreen', () => {
           page: 1,
           pageSize: 10,
           total: secondPageRequested ? 5 : 11,
-          totalAll: secondPageRequested ? 5 : 11,
         };
       },
     );

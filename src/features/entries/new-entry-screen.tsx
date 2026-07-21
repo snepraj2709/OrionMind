@@ -1,9 +1,17 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mic, Pause, PenLine, Play, RotateCcw, Square } from 'lucide-react';
+import {
+  Mic,
+  Pause,
+  PenLine,
+  Play,
+  RotateCcw,
+  Square,
+  Trash2,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
@@ -25,9 +33,16 @@ import { PageHeader, PageShell } from '@/components/layout';
 import { Breadcrumbs, SegmentedControl } from '@/components/navigation';
 import { routes } from '@/config/routes';
 
-import { entriesRepository } from './mock-repository';
 import { useCreateEntryMutation } from './queries';
-import type { EntriesRepository } from './repository';
+import {
+  entryComposerRepository,
+  EntryRequestError,
+  type EntryComposerRepository,
+} from './repository';
+import {
+  canonicalizeDraftContent,
+  useTextEntryDraft,
+} from './use-text-entry-draft';
 import { useUnsavedEntryWarning } from './use-unsaved-entry-warning';
 import { useVoiceRecorder } from './use-voice-recorder';
 
@@ -49,39 +64,91 @@ function formatDuration(seconds: number) {
 }
 
 export interface NewEntryScreenProps {
-  repository?: EntriesRepository;
+  repository?: EntryComposerRepository;
 }
 
 export function NewEntryScreen({
-  repository = entriesRepository,
+  repository = entryComposerRepository,
 }: NewEntryScreenProps) {
   const router = useRouter();
   const [mode, setMode] = useState<EntryMode>('text');
+  const [isPreparingTextSubmit, setIsPreparingTextSubmit] = useState(false);
   const voice = useVoiceRecorder();
+  const voiceSubmissionRef = useRef<
+    | {
+        key: string;
+        recording: Blob;
+      }
+    | undefined
+  >(undefined);
   const form = useForm<TextEntryValues>({
     resolver: zodResolver(textEntrySchema),
     defaultValues: { content: '' },
   });
   const content = useWatch({ control: form.control, name: 'content' });
+  const restoreDraft = useCallback(
+    (draftContent: string) => form.reset({ content: draftContent }),
+    [form],
+  );
+  const draft = useTextEntryDraft({
+    content,
+    onRestore: restoreDraft,
+    repository,
+  });
 
-  const createEntry = useCreateEntryMutation(repository, () => {
-    form.reset();
-    voice.reset();
+  const createEntry = useCreateEntryMutation(repository, (input) => {
+    if (input.mode === 'text') {
+      draft.markSubmitted();
+      form.reset();
+    } else {
+      voice.reset();
+      voiceSubmissionRef.current = undefined;
+    }
     router.push(routes.entries.path);
   });
 
   const hasUnsavedChanges =
-    content.trim().length > 0 ||
+    draft.hasUnsavedChanges ||
     ['recording', 'paused', 'ready'].includes(voice.state);
   useUnsavedEntryWarning(hasUnsavedChanges && !createEntry.isSuccess);
 
-  function submitText(values: TextEntryValues) {
-    createEntry.mutate({ mode: 'text', content: values.content });
+  async function submitText(values: TextEntryValues) {
+    setIsPreparingTextSubmit(true);
+    try {
+      const canonicalContent = await draft.flush(values.content);
+      await createEntry.mutateAsync({
+        mode: 'text',
+        content: canonicalContent,
+      });
+    } catch {
+      // Draft and creation state retain safe, user-facing failure details.
+    } finally {
+      setIsPreparingTextSubmit(false);
+    }
   }
 
   function submitVoice() {
     if (voice.recording) {
-      createEntry.mutate({ mode: 'voice', voice: voice.recording });
+      if (voiceSubmissionRef.current?.recording !== voice.recording) {
+        voiceSubmissionRef.current = {
+          key: crypto.randomUUID(),
+          recording: voice.recording,
+        };
+      }
+      createEntry.mutate({
+        mode: 'voice',
+        idempotencyKey: voiceSubmissionRef.current.key,
+        voice: voice.recording,
+      });
+    }
+  }
+
+  async function discardDraft() {
+    if (!window.confirm('Discard this saved draft?')) return;
+    try {
+      await draft.discard();
+    } catch {
+      // The draft remains visible and the hook exposes the retryable error.
     }
   }
 
@@ -93,8 +160,27 @@ export function NewEntryScreen({
 
   function startRecording() {
     createEntry.reset();
+    voiceSubmissionRef.current = undefined;
     void voice.start();
   }
+
+  function resetRecording() {
+    voiceSubmissionRef.current = undefined;
+    voice.reset();
+  }
+
+  const textBusy =
+    isPreparingTextSubmit || createEntry.isPending || draft.isDiscarding;
+  const textUnavailable =
+    draft.isRestorePending || draft.isRestoreError || !draft.initialized;
+  const voiceError =
+    createEntry.error instanceof EntryRequestError &&
+    createEntry.error.status === 413
+      ? 'The recording is too large. Record a shorter entry and try again.'
+      : createEntry.error instanceof EntryRequestError &&
+          createEntry.error.status === 415
+        ? 'This recording format is not supported. Record again using your browser’s default format.'
+        : 'The voice entry could not be added. Your recording is still here—try again when you are ready.';
 
   return (
     <PageShell className="space-y-8">
@@ -147,26 +233,95 @@ export function NewEntryScreen({
           >
             <TextArea
               className="field-sizing-fixed resize-y"
-              disabled={createEntry.isPending}
+              disabled={textBusy || textUnavailable}
               placeholder="Begin wherever you are…"
               rows={14}
               {...form.register('content')}
             />
           </FormField>
+          {draft.isRestorePending ? (
+            <SectionLoader label="Restoring saved draft" />
+          ) : null}
+          {draft.isRestoreError ? (
+            <InlineError
+              action={
+                <AppButton
+                  onClick={draft.retryRestore}
+                  size="compact"
+                  variant="outline"
+                >
+                  Retry
+                </AppButton>
+              }
+            >
+              Your saved draft could not be restored.
+            </InlineError>
+          ) : null}
+          {draft.saveStatus === 'error' ? (
+            <InlineError
+              action={
+                <AppButton
+                  onClick={() => {
+                    void draft.flush(content).catch(() => undefined);
+                  }}
+                  size="compact"
+                  variant="outline"
+                >
+                  Retry
+                </AppButton>
+              }
+            >
+              Your draft could not be synchronized. Your writing is still here.
+            </InlineError>
+          ) : null}
+          {draft.saveStatus === 'saving' && !isPreparingTextSubmit ? (
+            <Typography
+              className="text-muted-foreground"
+              role="status"
+              variant="bodySmall"
+            >
+              Saving draft…
+            </Typography>
+          ) : null}
+          {draft.saveStatus === 'saved' && !isPreparingTextSubmit ? (
+            <Typography
+              className="text-muted-foreground"
+              role="status"
+              variant="bodySmall"
+            >
+              Draft saved
+            </Typography>
+          ) : null}
           {createEntry.isError ? (
             <FormError>
               Your entry could not be added. Retry after sometime.
             </FormError>
           ) : null}
-          {createEntry.isPending ? (
+          {isPreparingTextSubmit || createEntry.isPending ? (
             <ProcessingState description="Saving your words and preparing them for reflection." />
           ) : null}
-          <SubmitButton
-            loading={createEntry.isPending}
-            loadingLabel="Adding entry"
-          >
-            Add
-          </SubmitButton>
+          <div className="flex flex-wrap gap-3">
+            <SubmitButton
+              disabled={textUnavailable || draft.isDiscarding}
+              loading={isPreparingTextSubmit || createEntry.isPending}
+              loadingLabel="Adding entry"
+            >
+              Add
+            </SubmitButton>
+            {canonicalizeDraftContent(content) || draft.hasServerDraft ? (
+              <AppButton
+                disabled={textBusy || textUnavailable}
+                leftIcon={<Trash2 aria-hidden="true" />}
+                loading={draft.isDiscarding}
+                loadingLabel="Discarding draft"
+                onClick={() => void discardDraft()}
+                type="button"
+                variant="rejectOutline"
+              >
+                Discard draft
+              </AppButton>
+            ) : null}
+          </div>
         </form>
       ) : (
         <div className="text-measure-wide space-y-6">
@@ -222,7 +377,7 @@ export function NewEntryScreen({
             {voice.state === 'failed' || createEntry.isError ? (
               <InlineError>
                 {createEntry.isError
-                  ? 'The voice entry could not be added. Your recording is still here—try again when you are ready.'
+                  ? voiceError
                   : 'The recording could not be prepared. Your journal has not been changed.'}
               </InlineError>
             ) : null}
@@ -279,7 +434,7 @@ export function NewEntryScreen({
                   <AppButton
                     disabled={createEntry.isPending}
                     leftIcon={<RotateCcw aria-hidden="true" />}
-                    onClick={voice.reset}
+                    onClick={resetRecording}
                     variant="secondary"
                   >
                     Record again

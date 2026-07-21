@@ -9,9 +9,13 @@ export {
   entriesApiItemSchema,
   entriesApiResponseSchema,
   entriesRequestSchema,
+  entryDraftApiResponseSchema,
+  createdEntryApiResponseSchema,
   type EntriesApiItem,
   type EntriesApiRequest,
   type EntriesApiResponse,
+  type EntryDraftApiResponse,
+  type CreatedEntryApiResponse,
 } from './api-schema';
 export { entriesApiFixtures } from './fixtures';
 export { entryKeys } from './query-keys';
@@ -21,20 +25,28 @@ export type {
   EntriesQuery,
   EntriesResult,
   CreateTextEntryInput,
+  CreateVoiceEntryInput,
+  EntryDraft,
   EntryInputType,
   EntryDetail,
   EntryStatus,
-  EntryStatusFilter,
   EntrySummary,
   ExtractedItem,
   ExtractedItemKind,
 } from './model';
 export {
   entriesListRepository,
+  entryComposerRepository,
+  EntryRequestError,
   HttpEntriesRepository,
   type EntriesListRepository,
   type EntriesRepository,
+  type EntryComposerRepository,
 } from './repository';
+export {
+  canonicalizeDraftContent,
+  useTextEntryDraft,
+} from './use-text-entry-draft';
 export {
   useVoiceRecorder,
   type VoiceRecorderState,

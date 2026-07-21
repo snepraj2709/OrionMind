@@ -7,6 +7,8 @@ import { simulateLatency } from '@/services/mock-delay';
 import type {
   ApprovalStatus,
   CreateTextEntryInput,
+  CreateVoiceEntryInput,
+  EntryDraft,
   EntryDetail,
   EntriesQuery,
   EntriesResult,
@@ -16,6 +18,7 @@ import type {
 import type { EntriesRepository } from './repository';
 
 export class MockEntriesRepository implements EntriesRepository {
+  private draft: EntryDraft = { content: null, updatedAt: null };
   private readonly store: MockOrionStore | undefined;
 
   constructor(
@@ -28,24 +31,33 @@ export class MockEntriesRepository implements EntriesRepository {
 
   async listEntries(query: EntriesQuery): Promise<EntriesResult> {
     await simulateLatency(this.delay);
-    const normalizedSearch = query.search.trim().toLocaleLowerCase();
-    const matching = this.entries.filter((entry) => {
-      const matchesSearch =
-        normalizedSearch.length === 0 ||
-        entry.content.toLocaleLowerCase().includes(normalizedSearch);
-      const matchesStatus =
-        query.status === 'all' || entry.status === query.status;
-      return matchesSearch && matchesStatus;
-    });
     const start = query.pageIndex * query.pageSize;
 
     return {
-      items: matching.slice(start, start + query.pageSize),
-      total: matching.length,
-      totalAll: this.entries.length,
+      items: this.entries.slice(start, start + query.pageSize),
+      total: this.entries.length,
       page: query.pageIndex + 1,
       pageSize: query.pageSize,
     };
+  }
+
+  async getTextDraft(): Promise<EntryDraft> {
+    await simulateLatency(this.delay);
+    return this.draft;
+  }
+
+  async saveTextDraft(content: string): Promise<EntryDraft> {
+    await simulateLatency(this.delay);
+    this.draft = content.trim()
+      ? { content, updatedAt: new Date().toISOString() }
+      : { content: null, updatedAt: null };
+    return this.draft;
+  }
+
+  async discardTextDraft(): Promise<EntryDraft> {
+    await simulateLatency(this.delay);
+    this.draft = { content: null, updatedAt: null };
+    return this.draft;
   }
 
   async getEntry(entryId: string): Promise<EntryDetail | null> {
@@ -70,7 +82,9 @@ export class MockEntriesRepository implements EntriesRepository {
     return entry;
   }
 
-  async createVoiceEntry(recording: Blob): Promise<EntrySummary> {
+  async createVoiceEntry({
+    recording,
+  }: CreateVoiceEntryInput): Promise<EntrySummary> {
     await simulateLatency(this.delay);
     if (recording.size === 0) throw new Error('The recording is empty.');
 
