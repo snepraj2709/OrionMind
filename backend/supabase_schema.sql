@@ -6432,8 +6432,8 @@ AS $function$
         pg_catalog.count(queued.id)::bigint AS queue_depth,
         COALESCE(
             pg_catalog.floor(
-                pg_catalog.extract(
-                    epoch FROM pg_catalog.now() - pg_catalog.min(queued.created_at)
+                pg_catalog.date_part(
+                    'epoch', pg_catalog.now() - pg_catalog.min(queued.created_at)
                 )
             )::bigint,
             0
