@@ -22,6 +22,7 @@ _EVENTS = frozenset(
     {
         "entry_analysis_attempt",
         "entry_analysis_materialized",
+        "entry_analysis_validation_failed",
         "processing_job_finished",
         "processing_recovery_complete",
         "processing_recovery_failed",
@@ -104,10 +105,15 @@ _ENUM_FIELDS: dict[str, frozenset[str]] = {
     "throttle_reason": frozenset(
         {"NONE", "QUEUE_DEPTH", "OLDEST_PENDING_AGE"}
     ),
+    "validation_stage": frozenset(
+        {"source_offsets", "quality", "legacy_extraction", "signals"}
+    ),
 }
 _INTEGER_FIELDS = frozenset(
     {
         "attempt",
+        "cached_input_tokens",
+        "cache_write_input_tokens",
         "candidate_count",
         "checked",
         "duration_ms",
@@ -119,6 +125,7 @@ _INTEGER_FIELDS = frozenset(
         "planned_count",
         "queue_depth",
         "recovered",
+        "reasoning_output_tokens",
         "signal_count",
         "stale_recoveries",
         "status_code",
@@ -132,6 +139,9 @@ _TOKEN_FIELDS = frozenset(
     {
         "model_id",
         "prompt_version",
+        "service_tier",
+        "validation_code",
+        "validation_path",
     }
 )
 

@@ -304,8 +304,12 @@ class ReflectionTelemetry:
         status: str,
         duration_ms: int,
         input_tokens: int,
+        cached_input_tokens: int,
+        cache_write_input_tokens: int,
         output_tokens: int,
+        reasoning_output_tokens: int,
         retry_class: str,
+        service_tier: str,
     ) -> None:
         _require(status, frozenset({"success", "invalid", "failed"}), "model status")
         _require(
@@ -313,13 +317,28 @@ class ReflectionTelemetry:
             frozenset({"none", "retryable", "terminal"}),
             "retry class",
         )
-        if min(duration_ms, input_tokens, output_tokens) < 0:
+        if min(
+            duration_ms,
+            input_tokens,
+            cached_input_tokens,
+            cache_write_input_tokens,
+            output_tokens,
+            reasoning_output_tokens,
+        ) < 0:
             raise ValueError("model attempt measurement is invalid")
         span.set_attribute("orion.model.status", status)
         span.set_attribute("orion.model.duration_ms", duration_ms)
         span.set_attribute("orion.model.input_tokens", input_tokens)
+        span.set_attribute("orion.model.cached_input_tokens", cached_input_tokens)
+        span.set_attribute(
+            "orion.model.cache_write_input_tokens", cache_write_input_tokens
+        )
         span.set_attribute("orion.model.output_tokens", output_tokens)
+        span.set_attribute(
+            "orion.model.reasoning_output_tokens", reasoning_output_tokens
+        )
         span.set_attribute("orion.model.retry_class", retry_class)
+        span.set_attribute("orion.model.service_tier", service_tier)
 
     def _queue_depth_callback(self, _options: Any) -> list[Observation]:
         with self._queue_lock:
@@ -336,14 +355,37 @@ class ReflectionTelemetry:
             ]
 
 
-def token_counts(response: Any) -> tuple[int, int]:
+@dataclass(frozen=True, slots=True)
+class ModelTokenUsage:
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    cache_write_input_tokens: int = 0
+    output_tokens: int = 0
+    reasoning_output_tokens: int = 0
+
+
+def token_usage(response: Any) -> ModelTokenUsage:
     usage = getattr(response, "usage", None)
     if usage is None:
-        return 0, 0
-    return (
-        _nonnegative_usage(getattr(usage, "input_tokens", 0)),
-        _nonnegative_usage(getattr(usage, "output_tokens", 0)),
+        return ModelTokenUsage()
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+    return ModelTokenUsage(
+        input_tokens=_nonnegative_usage(getattr(usage, "input_tokens", 0)),
+        cached_input_tokens=_usage_detail(input_details, "cached_tokens"),
+        cache_write_input_tokens=_usage_detail(
+            input_details, "cache_write_tokens"
+        ),
+        output_tokens=_nonnegative_usage(getattr(usage, "output_tokens", 0)),
+        reasoning_output_tokens=_usage_detail(output_details, "reasoning_tokens"),
     )
+
+
+def token_counts(response: Any) -> tuple[int, int]:
+    """Return aggregate token counts for compatibility with older callers."""
+
+    usage = token_usage(response)
+    return usage.input_tokens, usage.output_tokens
 
 
 def configure_reflection_telemetry(
@@ -368,6 +410,12 @@ def _nonnegative_usage(value: Any) -> int:
         if isinstance(value, int) and not isinstance(value, bool) and value >= 0
         else 0
     )
+
+
+def _usage_detail(details: Any, name: str) -> int:
+    if isinstance(details, dict):
+        return _nonnegative_usage(details.get(name, 0))
+    return _nonnegative_usage(getattr(details, name, 0))
 
 
 def _require(value: str, allowed: frozenset[str], label: str) -> None:

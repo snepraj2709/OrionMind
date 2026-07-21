@@ -18,7 +18,11 @@ from app.modules.reflection_engine.schemas import (
     ReflectionSynthesisOutput,
 )
 from app.shared.observability.logging import safe_log
-from app.shared.observability.reflection import ReflectionTelemetry, token_counts
+from app.shared.observability.reflection import (
+    ModelTokenUsage,
+    ReflectionTelemetry,
+    token_usage,
+)
 
 
 logger = logging.getLogger("orion.reflection.provider")
@@ -133,8 +137,8 @@ class OpenAIReflectionProvider:
     ):
         client = self._client.with_options(max_retries=0, timeout=self._timeout)
         started = time.monotonic()
-        input_tokens = 0
-        output_tokens = 0
+        usage = ModelTokenUsage()
+        service_tier = "unknown"
         model_role = "synthesis" if role == "synthesis" else "critic"
         with self._telemetry.model_span(
             role=model_role,
@@ -151,7 +155,10 @@ class OpenAIReflectionProvider:
                     truncation="disabled",
                     safety_identifier=safety_identifier,
                 )
-                input_tokens, output_tokens = token_counts(response)
+                usage = token_usage(response)
+                service_tier = str(
+                    getattr(response, "service_tier", None) or "unknown"
+                )
                 if getattr(response, "status", None) == "incomplete":
                     raise ReflectionProviderResponseError(
                         f"reflection {role} response is incomplete"
@@ -174,9 +181,9 @@ class OpenAIReflectionProvider:
                     prompt_version=prompt_version,
                     status="invalid",
                     started=started,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
+                    usage=usage,
                     retry_class="terminal",
+                    service_tier=service_tier,
                 )
                 if isinstance(exc, ValidationError):
                     raise ReflectionProviderResponseError(
@@ -191,9 +198,9 @@ class OpenAIReflectionProvider:
                     prompt_version=prompt_version,
                     status="failed",
                     started=started,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
+                    usage=usage,
                     retry_class="retryable" if _retryable(exc) else "terminal",
+                    service_tier=service_tier,
                 )
                 raise ReflectionProviderUnavailableError(
                     f"structured reflection {role} failed"
@@ -205,9 +212,9 @@ class OpenAIReflectionProvider:
                 prompt_version=prompt_version,
                 status="success",
                 started=started,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
+                usage=usage,
                 retry_class="none",
+                service_tier=service_tier,
             )
         return result
 
@@ -220,18 +227,22 @@ class OpenAIReflectionProvider:
         prompt_version: str,
         status: str,
         started: float,
-        input_tokens: int,
-        output_tokens: int,
+        usage: ModelTokenUsage,
         retry_class: str,
+        service_tier: str,
     ) -> None:
         duration_ms = round((time.monotonic() - started) * 1000)
         self._telemetry.finish_model_span(
             span,
             status=status,
             duration_ms=duration_ms,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=usage.input_tokens,
+            cached_input_tokens=usage.cached_input_tokens,
+            cache_write_input_tokens=usage.cache_write_input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_output_tokens=usage.reasoning_output_tokens,
             retry_class=retry_class,
+            service_tier=service_tier,
         )
         safe_log(
             logger,
@@ -241,7 +252,11 @@ class OpenAIReflectionProvider:
             prompt_version=prompt_version,
             status=status,
             duration_ms=duration_ms,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=usage.input_tokens,
+            cached_input_tokens=usage.cached_input_tokens,
+            cache_write_input_tokens=usage.cache_write_input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_output_tokens=usage.reasoning_output_tokens,
             retry_class=retry_class,
+            service_tier=service_tier,
         )

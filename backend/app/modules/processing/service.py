@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import unicodedata
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -46,7 +47,9 @@ PROVIDER_MAX_UTF8_BYTES = 200_000
 
 
 class AnalysisValidationError(ValueError):
-    pass
+    def __init__(self, stage: str) -> None:
+        self.stage = stage
+        super().__init__("combined entry analysis is invalid")
 
 
 class PrivacyValidationError(ValueError):
@@ -139,11 +142,20 @@ class ProcessingService:
             )
             model_id = self._model_id
         try:
-            _validate_model_offsets(model_result, redacted_text=provider_text)
+            model_result = _bind_model_offsets(
+                model_result,
+                redacted_text=provider_text,
+            )
+        except ValueError as exc:
+            raise AnalysisValidationError("source_offsets") from exc
+        try:
             final_quality = finalize_quality(
                 model_result.quality,
                 deterministic=deterministic.features,
             )
+        except ValueError as exc:
+            raise AnalysisValidationError("quality") from exc
+        try:
             extraction = materialize_extraction(
                 model_result.legacy,
                 content=provider_text,
@@ -152,6 +164,9 @@ class ProcessingService:
                 original_content=content,
                 offset_map=protected.offset_map,
             )
+        except ValueError as exc:
+            raise AnalysisValidationError("legacy_extraction") from exc
+        try:
             signals = (
                 _materialize_signals(
                     model_result,
@@ -166,7 +181,7 @@ class ProcessingService:
                 else ()
             )
         except ValueError as exc:
-            raise AnalysisValidationError("combined entry analysis is invalid") from exc
+            raise AnalysisValidationError("signals") from exc
         analysis: dict[str, object] = {
             "id": str(analysis_id),
             "entry_kind": model_result.quality.entry_kind,
@@ -321,14 +336,115 @@ def materialize_extraction(
     )
 
 
-def _validate_model_offsets(result: ModelEntryAnalysis, *, redacted_text: str) -> None:
+def _bind_model_offsets(
+    result: ModelEntryAnalysis,
+    *,
+    redacted_text: str,
+) -> ModelEntryAnalysis:
+    occupied: list[tuple[int, int]] = []
+    bound = []
     for signal in result.signals:
-        if (
-            signal.source_end > len(redacted_text)
-            or redacted_text[signal.source_start : signal.source_end]
-            != signal.source_quote
-        ):
+        spans = _source_quote_spans(redacted_text, signal.source_quote)
+        available = [
+            (start, end)
+            for start, end in spans
+            if all(
+                end <= used_start
+                or start >= used_end
+                for used_start, used_end in occupied
+            )
+        ]
+        # Overlap is a model-quality issue, not an evidence-integrity issue. If
+        # two otherwise valid atomic signals cite intersecting source text,
+        # retain both exact source spans rather than discarding the whole entry.
+        if not available:
+            available = spans
+        if not available:
             raise ValueError("redacted source quote mismatch")
+        start, end = min(
+            available,
+            key=lambda candidate: (
+                abs(candidate[0] - signal.source_start),
+                candidate[0],
+                candidate[1],
+            ),
+        )
+        occupied.append((start, end))
+        bound.append(
+            signal.model_copy(
+                update={
+                    "source_quote": redacted_text[start:end],
+                    "source_start": start,
+                    "source_end": end,
+                }
+            )
+        )
+    bound.sort(key=lambda signal: (signal.source_start, signal.source_end))
+    return result.model_copy(update={"signals": bound})
+
+
+_QUOTE_EQUIVALENTS = str.maketrans(
+    {
+        "\u2018": "'",
+        "\u2019": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2013": "-",
+        "\u2014": "-",
+        "\u2212": "-",
+    }
+)
+
+
+def _locator_text(value: str) -> tuple[str, list[tuple[int, int]]]:
+    characters: list[str] = []
+    source_spans: list[tuple[int, int]] = []
+    for index, source_character in enumerate(value):
+        if source_character.isspace():
+            if characters and characters[-1] != " ":
+                characters.append(" ")
+                source_spans.append((index, index + 1))
+            elif characters:
+                start, _ = source_spans[-1]
+                source_spans[-1] = (start, index + 1)
+            continue
+        normalized = unicodedata.normalize("NFKC", source_character)
+        normalized = normalized.translate(_QUOTE_EQUIVALENTS).casefold()
+        for character in normalized:
+            characters.append(character)
+            source_spans.append((index, index + 1))
+    if characters and characters[-1] == " ":
+        characters.pop()
+        source_spans.pop()
+    return "".join(characters), source_spans
+
+
+def _source_quote_spans(source: str, quote: str) -> list[tuple[int, int]]:
+    exact: list[tuple[int, int]] = []
+    cursor = 0
+    while True:
+        start = source.find(quote, cursor)
+        if start < 0:
+            break
+        exact.append((start, start + len(quote)))
+        cursor = start + 1
+    if exact:
+        return exact
+
+    normalized_source, source_map = _locator_text(source)
+    normalized_quote, _ = _locator_text(quote)
+    if not normalized_quote:
+        return []
+    normalized: list[tuple[int, int]] = []
+    cursor = 0
+    while True:
+        start = normalized_source.find(normalized_quote, cursor)
+        if start < 0:
+            break
+        final = start + len(normalized_quote) - 1
+        normalized.append((source_map[start][0], source_map[final][1]))
+        cursor = start + 1
+    return normalized
 
 
 def _materialize_signals(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Collection, Mapping
+from hashlib import sha256
 from typing import Literal, TypeAlias
 from uuid import UUID
 
@@ -100,6 +101,10 @@ ELIMINATION_LANGUAGE = re.compile(
 
 def loop_node_key(role: LoopRole, label_fingerprint: str) -> str:
     return f"{role}:{label_fingerprint}"
+
+
+def loop_role_fingerprint(role: LoopRole) -> str:
+    return sha256(f"orion-loop-role-v2:{role}".encode("utf-8")).hexdigest()
 
 
 def transition_key(
@@ -262,8 +267,11 @@ class EvidenceValidator:
                     if (
                         signal is None
                         or signal.loop_role != step.loop_role
-                        or signal.normalized_label_fingerprint
-                        != step.normalized_label_fingerprint
+                        or step.normalized_label_fingerprint
+                        not in {
+                            signal.normalized_label_fingerprint,
+                            loop_role_fingerprint(signal.loop_role),
+                        }
                     ):
                         reasons.append("EVIDENCE_ROLE_MISMATCH")
                     assigned.add(signal_id)

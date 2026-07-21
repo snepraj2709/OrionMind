@@ -31,6 +31,7 @@ from app.modules.reflection_engine.schemas import (
 from app.modules.reflection_engine.service import (
     ReflectionEngineService,
     _critic_allows_publication,
+    _select_synthesis_candidates,
     _select_snapshot_candidates,
     critic_required,
 )
@@ -655,6 +656,27 @@ def test_snapshot_selection_supports_zero_one_and_multiple_inner_tensions() -> N
     assert _select_snapshot_candidates([]) == []
     assert _select_snapshot_candidates([first]) == [first]
     assert _select_snapshot_candidates([first, second]) == [second, first]
+
+
+def test_terra_input_is_bounded_to_reviewable_candidate_capacity() -> None:
+    hidden = [hidden_candidate(score=0.95 - index / 100) for index in range(16)]
+    tensions = [
+        tension_candidate(key=str(index), score=0.95 - index / 100)
+        for index in range(9)
+    ]
+
+    selected = _select_synthesis_candidates([*reversed(hidden), *reversed(tensions)])
+
+    selected_hidden = [item for item in selected if item.pattern_type == "hidden_driver"]
+    selected_tensions = [item for item in selected if item.pattern_type == "inner_tension"]
+    assert len(selected_hidden) == 15
+    assert len(selected_tensions) == 8
+    assert [item.score for item in selected_hidden] == pytest.approx(
+        [0.95 - index / 100 for index in range(15)]
+    )
+    assert [item.score for item in selected_tensions] == pytest.approx(
+        [0.95 - index / 100 for index in range(8)]
+    )
 
 
 def test_contradiction_boundary_invokes_sol_once_after_local_validation() -> None:

@@ -337,6 +337,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0010_reflections_api.sql",
         "0011_reflection_rollout.sql",
         "0012_reflection_observability.sql",
+        "0013_reflections_api_snapshot_id.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -1736,6 +1737,43 @@ def test_reflection_api_read_rpc_is_authenticated_owner_checked_and_bounded() ->
         assert payload["evidence"] == []
         connection.rollback()
 
+        snapshot_id = uuid4()
+        insight_id = uuid4()
+        admin(connection)
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count) "
+            "VALUES (%s, %s, 1, 1, '2026-07-20', '2026-07-20', 1, 0, 1, 20)",
+            (snapshot_id, USER_ONE),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_snapshot_insights "
+            "(id, user_id, snapshot_id, pattern_type, ordinal, status, reason_code) "
+            "VALUES (%s, %s, %s, 'hidden_driver', 0, "
+            "'insufficient_evidence', 'DRIVER_NOT_REPEATED')",
+            (insight_id, USER_ONE, snapshot_id),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, last_snapshot_source_version, "
+            "last_successful_snapshot_id) VALUES (%s, 1, 1, %s) "
+            "ON CONFLICT (user_id) DO UPDATE SET "
+            "last_snapshot_source_version = EXCLUDED.last_snapshot_source_version, "
+            "last_successful_snapshot_id = EXCLUDED.last_successful_snapshot_id",
+            (USER_ONE, snapshot_id),
+        )
+        connection.commit()
+
+        owner(connection, USER_ONE)
+        payload = connection.execute(
+            "SELECT public.get_reflections_for_owner(%s, 12)", (USER_ONE,)
+        ).fetchone()[0]
+        assert payload["snapshot"]["id"] == str(snapshot_id)
+        assert payload["insights"][0]["id"] == str(insight_id)
+        connection.rollback()
+
         owner(connection, USER_TWO)
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             connection.execute(
@@ -1748,8 +1786,6 @@ def test_reflection_api_read_rpc_is_authenticated_owner_checked_and_bounded() ->
             connection.execute(
                 "SELECT public.get_reflections_for_owner(%s, 13)", (USER_ONE,)
             )
-
-
 def test_observability_rpcs_are_worker_only_and_report_scheduler_and_queue_counts() -> None:
     value = database_url()
     bootstrap(value, USER_ONE)

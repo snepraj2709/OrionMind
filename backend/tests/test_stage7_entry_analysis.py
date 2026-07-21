@@ -18,7 +18,8 @@ from app.main import create_app
 from app.modules.jobs.repository import JobRepository
 from app.modules.processing.redaction import DetectedEntity, PiiRedactor
 from app.modules.processing.repository import StaleAnalysisClaimError
-from app.modules.processing.schemas import ModelEntryAnalysis
+from app.modules.processing.schemas import ModelEntryAnalysis, ModelThemeClassification
+from app.modules.processing.service import _bind_model_offsets
 from app.shared.config import Settings
 from app.shared.database.session import build_database_sessions
 from app.shared.security.encryption import AesGcmContentCipher
@@ -170,6 +171,115 @@ class Provider:
                 },
             }
         )
+
+
+def test_model_signal_offsets_are_bound_to_exact_verbatim_quote() -> None:
+    content = "The exact quote belongs here."
+    result = Provider().analyze(
+        redacted_text=content,
+        themes=(),
+        deterministic_features=object(),
+        entry_date=date(2026, 6, 1),
+        safety_identifier="a" * 64,
+    )
+    result.signals[0].source_start = 7
+    result.signals[0].source_end = 8
+
+    bound = _bind_model_offsets(result, redacted_text=content)
+
+    assert bound.signals[0].source_start == 0
+    assert bound.signals[0].source_end == len(content)
+
+
+def test_model_signal_binding_rejects_non_verbatim_quote() -> None:
+    content = "The exact quote belongs here."
+    result = Provider().analyze(
+        redacted_text=content,
+        themes=(),
+        deterministic_features=object(),
+        entry_date=date(2026, 6, 1),
+        safety_identifier="a" * 64,
+    )
+    result.signals[0].source_quote = "A quote that is not present."
+
+    with pytest.raises(ValueError, match="source quote mismatch"):
+        _bind_model_offsets(result, redacted_text=content)
+
+
+def test_model_signal_binding_recovers_exact_source_from_safe_normalization() -> None:
+    content = "I said, \u201cThis is exact.\u201d\nThen I paused."
+    result = Provider().analyze(
+        redacted_text=content,
+        themes=(),
+        deterministic_features=object(),
+        entry_date=date(2026, 6, 1),
+        safety_identifier="a" * 64,
+    )
+    result.signals[0].source_quote = 'I said, "This is exact." Then I paused.'
+
+    bound = _bind_model_offsets(result, redacted_text=content)
+
+    assert bound.signals[0].source_quote == content
+    assert bound.signals[0].source_start == 0
+    assert bound.signals[0].source_end == len(content)
+
+
+def test_model_signal_binding_preserves_exact_overlapping_evidence() -> None:
+    content = "I felt tired and disappointed."
+    result = Provider().analyze(
+        redacted_text=content,
+        themes=(),
+        deterministic_features=object(),
+        entry_date=date(2026, 6, 1),
+        safety_identifier="a" * 64,
+    )
+    result.signals.append(
+        result.signals[0].model_copy(
+            update={
+                "signal_type": "emotion",
+                "normalized_label": "disappointed",
+                "source_quote": "tired and disappointed",
+            }
+        )
+    )
+    result.signals[0].source_quote = content
+
+    bound = _bind_model_offsets(result, redacted_text=content)
+
+    assert [signal.source_quote for signal in bound.signals] == [
+        content,
+        "tired and disappointed",
+    ]
+
+
+def test_model_theme_shape_is_normalized_without_changing_semantic_choices() -> None:
+    classification = ModelThemeClassification.model_validate(
+        {
+            "mode": None,
+            "themes": [
+                {
+                    "key": "career",
+                    "tier": "tertiary",
+                    "evidence_segment_id": "segment_0002",
+                },
+                {
+                    "key": "personal_growth",
+                    "tier": "primary",
+                    "evidence_segment_id": "segment_0004",
+                },
+            ],
+        }
+    )
+
+    assert classification.mode == "dominant"
+    assert [theme.key for theme in classification.themes] == [
+        "career",
+        "personal_growth",
+    ]
+    assert [theme.tier for theme in classification.themes] == [
+        "primary",
+        "secondary",
+    ]
 
 
 def application(value: str, provider: Provider, *, person: str | None = None):

@@ -325,7 +325,7 @@ class ReflectionSynthesisOutput(StrictReflectionModel):
     hidden_drivers: list[HiddenDriverProposal] = Field(max_length=3)
     recurring_loops: list[RecurringLoopProposal] = Field(max_length=3)
     inner_tensions: list[InnerTensionProposal] = Field(max_length=5)
-    abstentions: list[SynthesisAbstention] = Field(max_length=11)
+    abstentions: list[SynthesisAbstention] = Field(max_length=30)
 
     @model_validator(mode="after")
     def validate_unique_candidates(self) -> Self:

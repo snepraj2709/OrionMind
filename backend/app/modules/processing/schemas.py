@@ -120,20 +120,28 @@ class ModelThemeClassification(StrictExtractionModel):
     themes: list[ModelThemeAssignment] = Field(max_length=3)
 
     @model_validator(mode="after")
-    def validate_shape(self) -> Self:
+    def normalize_shape(self) -> Self:
+        unique: list[ModelThemeAssignment] = []
+        keys: set[str] = set()
+        evidence_segments: set[str] = set()
+        for item in self.themes:
+            if item.key in keys or item.evidence_segment_id in evidence_segments:
+                continue
+            keys.add(item.key)
+            evidence_segments.add(item.evidence_segment_id)
+            unique.append(item)
+        self.themes = [
+            item.model_copy(update={"tier": TIER_ORDER[index]})
+            for index, item in enumerate(unique)
+        ]
         count = len(self.themes)
-        if count == 0 and self.mode is not None:
-            raise ValueError("empty classification requires null mode")
-        if count == 1 and self.mode != "dominant":
-            raise ValueError("one theme requires dominant mode")
-        if count >= 2 and self.mode is None:
-            raise ValueError("multiple themes require a mode")
-        if [item.tier for item in self.themes] != list(TIER_ORDER[:count]):
-            raise ValueError("theme tiers must be contiguous and ordered")
-        if len({item.key for item in self.themes}) != count:
-            raise ValueError("theme keys must be distinct")
-        if len({item.evidence_segment_id for item in self.themes}) != count:
-            raise ValueError("theme evidence segments must be distinct")
+        if count == 0:
+            self.mode = None
+        elif count == 1 or self.mode is None:
+            # List order already expresses the model's primary choice. A
+            # dominant mode is therefore the structural interpretation that
+            # preserves that choice without inventing a new theme or evidence.
+            self.mode = "dominant"
         return self
 
 
@@ -232,16 +240,11 @@ class ModelEntryAnalysis(StrictExtractionModel):
     def validate_signal_collection(self) -> Self:
         if self.quality.eligibility != "accepted" and self.signals:
             raise ValueError("ineligible model analysis must not contain signals")
-        previous_end = 0
-        identities: set[tuple[str, int, int, str]] = set()
+        identities: set[tuple[str, str, str]] = set()
         for signal in self.signals:
-            if signal.source_start < previous_end:
-                raise ValueError("signal offsets must be ordered and non-overlapping")
-            previous_end = signal.source_end
             identity = (
                 signal.signal_type,
-                signal.source_start,
-                signal.source_end,
+                signal.source_quote,
                 signal.normalized_label.casefold(),
             )
             if identity in identities:

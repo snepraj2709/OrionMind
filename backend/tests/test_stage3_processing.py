@@ -92,31 +92,35 @@ def test_zero_one_two_three_theme_normalization(mode, items, scores) -> None:
 
 
 @pytest.mark.parametrize(
-    "theme",
+    ("theme", "expected_key"),
     [
-        {"mode": "balanced", "themes": [{"key": "career", "tier": "primary", "evidence_segment_id": "segment_0001"}]},
-        {"mode": None, "themes": [{"key": "career", "tier": "primary", "evidence_segment_id": "segment_0001"}]},
-        {"mode": "dominant", "themes": [{"key": "career", "tier": "secondary", "evidence_segment_id": "segment_0001"}]},
-        {"mode": "dominant", "themes": [
+        ({"mode": "balanced", "themes": [{"key": "career", "tier": "primary", "evidence_segment_id": "segment_0001"}]}, "career"),
+        ({"mode": None, "themes": [{"key": "career", "tier": "primary", "evidence_segment_id": "segment_0001"}]}, "career"),
+        ({"mode": "dominant", "themes": [{"key": "career", "tier": "secondary", "evidence_segment_id": "segment_0001"}]}, "career"),
+        ({"mode": "dominant", "themes": [
             {"key": "career", "tier": "primary", "evidence_segment_id": "segment_0001"},
             {"key": "career", "tier": "secondary", "evidence_segment_id": "segment_0002"},
-        ]},
+        ]}, "career"),
     ],
 )
-def test_invalid_modes_tiers_and_duplicate_keys_are_rejected(theme) -> None:
-    with pytest.raises(ValidationError):
-        ModelEntryExtraction.model_validate(
-            {
-                "ideas": [],
-                "memories": [],
-                "theme": theme,
-                "reflection": {
-                    "filled_energy": None,
-                    "drained_energy": None,
-                    "learned_about_self": None,
-                },
-            }
-        )
+def test_model_theme_shape_drift_is_normalized(theme, expected_key) -> None:
+    result = ModelEntryExtraction.model_validate(
+        {
+            "ideas": [],
+            "memories": [],
+            "theme": theme,
+            "reflection": {
+                "filled_energy": None,
+                "drained_energy": None,
+                "learned_about_self": None,
+            },
+        }
+    )
+
+    assert result.theme.mode == "dominant"
+    assert [(item.key, item.tier) for item in result.theme.themes] == [
+        (expected_key, "primary")
+    ]
 
 
 def test_unknown_theme_and_segment_references_are_rejected() -> None:

@@ -17,6 +17,7 @@ from app.modules.jobs.types import JobClaim
 from app.modules.reflection_engine.evidence import (
     EvidenceValidator,
     loop_node_key,
+    loop_role_fingerprint,
     roles_are_compatible,
     transition_key,
 )
@@ -87,10 +88,7 @@ class _Chain:
 
     @property
     def nodes(self) -> tuple[Node, ...]:
-        return tuple(
-            (cast(LoopRole, signal.loop_role), signal.normalized_label_fingerprint)
-            for signal in self.signals
-        )
+        return tuple(_signal_node(signal) for signal in self.signals)
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,13 +190,19 @@ class ReflectionEngineService:
             candidate.id for candidate in previous if candidate.status == "rejected"
         }
         previous_by_id = {candidate.id: candidate for candidate in previous}
-        publishable = [
-            candidate
-            for candidate in batch.candidates
-            if candidate.publication_gate_passed
-            and candidate.status != "rejected"
-            and candidate.id not in previously_rejected
-        ]
+        publishable = _select_synthesis_candidates(
+            [
+                candidate
+                for candidate in batch.candidates
+                if candidate.publication_gate_passed
+                and candidate.status != "rejected"
+                and candidate.id not in previously_rejected
+            ]
+        )
+        synthesis_support = {
+            candidate.id: _select_synthesis_support_ids(candidate, signals)
+            for candidate in publishable
+        }
         contexts = {
             str(candidate.id): self._synthesis_candidate_context(
                 candidate,
@@ -206,6 +210,7 @@ class ReflectionEngineService:
                 basis_end=basis.basis_end,
                 previous_candidate=previous_by_id.get(candidate.id),
                 feedback_qualification=feedback.get(str(candidate.id)),
+                support_signal_ids=synthesis_support[candidate.id],
             )
             for candidate in publishable
         }
@@ -250,6 +255,7 @@ class ReflectionEngineService:
             materialized = self._materialize_proposal(
                 deterministic,
                 proposal=proposal,
+                synthesis_support_signal_ids=synthesis_support[deterministic.id],
             )
             if materialized is None:
                 self._record_discard(
@@ -385,13 +391,14 @@ class ReflectionEngineService:
         basis_end: date | None,
         previous_candidate: PreviousCandidate | None,
         feedback_qualification: str | None,
+        support_signal_ids: Sequence[UUID],
     ) -> dict[str, object]:
         if basis_end is None:
             raise SnapshotValidationError("synthesis basis end is unavailable")
         by_id = {signal.id: signal for signal in signals}
         evidence = []
         for role, identifiers in (
-            ("supporting", candidate.support_signal_ids),
+            ("supporting", support_signal_ids),
             ("counter", candidate.counter_signal_ids),
         ):
             for signal_id in identifiers:
@@ -437,13 +444,35 @@ class ReflectionEngineService:
                 "structure": previous_candidate.payload.get("structure"),
                 "confidence_label": previous_candidate.payload.get("confidence_label"),
             }
+        deterministic_structure = candidate.structure.model_dump(mode="json")
+        selected = set(support_signal_ids)
+        if isinstance(candidate.structure, InnerTensionStructure):
+            deterministic_structure["left_support_signal_ids"] = [
+                str(item)
+                for item in candidate.structure.left_support_signal_ids
+                if item in selected
+            ]
+            deterministic_structure["right_support_signal_ids"] = [
+                str(item)
+                for item in candidate.structure.right_support_signal_ids
+                if item in selected
+            ]
+        elif isinstance(candidate.structure, RecurringLoopStructure):
+            for raw_step, step in zip(
+                deterministic_structure["steps"],
+                candidate.structure.steps,
+                strict=True,
+            ):
+                raw_step["support_signal_ids"] = [
+                    str(item) for item in step.support_signal_ids if item in selected
+                ]
         return {
             "candidate_id": str(candidate.id),
             "pattern_type": candidate.pattern_type,
             "canonical_key": candidate.canonical_key,
             "score": candidate.score,
             "score_components": candidate.score_components.model_dump(mode="json"),
-            "deterministic_structure": candidate.structure.model_dump(mode="json"),
+            "deterministic_structure": deterministic_structure,
             "evidence": evidence,
             "range_activation": {
                 "7d": activation(7),
@@ -459,9 +488,10 @@ class ReflectionEngineService:
         candidate: ConstructedCandidate,
         *,
         proposal: HiddenDriverProposal | RecurringLoopProposal | InnerTensionProposal,
+        synthesis_support_signal_ids: Sequence[UUID],
     ) -> ConstructedCandidate | None:
         expected_evidence = {
-            *((item, "supporting") for item in candidate.support_signal_ids),
+            *((item, "supporting") for item in synthesis_support_signal_ids),
             *((item, "counter") for item in candidate.counter_signal_ids),
         }
         if isinstance(proposal, HiddenDriverProposal):
@@ -495,7 +525,9 @@ class ReflectionEngineService:
                 proposal.steps, candidate.structure.steps, strict=True
             ):
                 expected = {
-                    (item, "supporting") for item in deterministic.support_signal_ids
+                    (item, "supporting")
+                    for item in deterministic.support_signal_ids
+                    if item in synthesis_support_signal_ids
                 }
                 if (
                     proposed.loop_role != deterministic.loop_role
@@ -1355,8 +1387,83 @@ def _select_snapshot_candidates(
         )
         if candidate is not None:
             selected.append(candidate)
-    selected.extend(item for item in ordered if item.pattern_type == "inner_tension")
+    selected.extend(
+        [item for item in ordered if item.pattern_type == "inner_tension"][:5]
+    )
     return selected
+
+
+def _select_synthesis_candidates(
+    candidates: Sequence[ConstructedCandidate],
+) -> list[ConstructedCandidate]:
+    ordered = sorted(
+        candidates,
+        key=lambda item: (-item.score, item.canonical_key, str(item.id)),
+    )
+    limits = {
+        "hidden_driver": 15,
+        "recurring_loop": 6,
+        "inner_tension": 8,
+    }
+    selected: list[ConstructedCandidate] = []
+    for pattern_type, limit in limits.items():
+        selected.extend(
+            [
+                item
+                for item in ordered
+                if item.pattern_type == pattern_type
+            ][:limit],
+        )
+    return selected
+
+
+def _select_synthesis_support_ids(
+    candidate: ConstructedCandidate,
+    signals: Sequence[CandidateSignal],
+) -> list[UUID]:
+    """Bound model context while retaining diverse, deterministic evidence."""
+    by_id = {signal.id: signal for signal in signals}
+
+    def diverse(identifiers: Sequence[UUID], limit: int) -> list[UUID]:
+        ordered = sorted(
+            (by_id[item] for item in identifiers),
+            key=lambda item: (-item.confidence, *_signal_order(item)),
+        )
+        chosen: list[CandidateSignal] = []
+        seen_entries: set[UUID] = set()
+        seen_types: set[str] = set()
+        for require_new_type in (True, False):
+            for signal in ordered:
+                if signal in chosen or signal.entry_id in seen_entries:
+                    continue
+                if require_new_type and signal.signal_type in seen_types:
+                    continue
+                chosen.append(signal)
+                seen_entries.add(signal.entry_id)
+                seen_types.add(signal.signal_type)
+                if len(chosen) == limit:
+                    return [item.id for item in chosen]
+        for signal in ordered:
+            if signal not in chosen:
+                chosen.append(signal)
+                if len(chosen) == limit:
+                    break
+        return [item.id for item in chosen]
+
+    if isinstance(candidate.structure, InnerTensionStructure):
+        selected = [
+            *diverse(candidate.structure.left_support_signal_ids, 4),
+            *diverse(candidate.structure.right_support_signal_ids, 4),
+        ]
+    elif isinstance(candidate.structure, RecurringLoopStructure):
+        selected = [
+            signal_id
+            for step in candidate.structure.steps
+            for signal_id in diverse(step.support_signal_ids, 2)
+        ]
+    else:
+        selected = diverse(candidate.support_signal_ids, 8)
+    return list(dict.fromkeys(selected))
 
 
 def _snapshot_candidate_status(
@@ -1476,7 +1583,7 @@ def _lifecycle(
 def _signal_node(signal: CandidateSignal) -> Node:
     if signal.loop_role is None:
         raise ValueError("loop signal has no role")
-    return signal.loop_role, signal.normalized_label_fingerprint
+    return signal.loop_role, loop_role_fingerprint(signal.loop_role)
 
 
 def _node_text(node: Node) -> str:

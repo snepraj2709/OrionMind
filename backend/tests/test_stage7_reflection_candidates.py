@@ -508,6 +508,44 @@ def test_loop_requires_supported_adjacent_and_closing_transitions() -> None:
         basis_end=BASE_DATE + timedelta(days=89),
         transition_support=complete,
     ) == ()
+
+
+def test_loop_construction_groups_semantically_equal_roles_across_varied_labels() -> None:
+    signals: list[CandidateSignal] = []
+    roles = ("trigger", "interpretation", "avoidance", "reinforcement", "trigger")
+    for entry_index in range(10):
+        entry_id = UUID(int=90_000 + entry_index)
+        entry_date = BASE_DATE + timedelta(days=entry_index * 5)
+        for role_index, role in enumerate(roles):
+            index = 1_000 + entry_index * len(roles) + role_index
+            signals.append(
+                signal(
+                    index,
+                    entry_id=entry_id,
+                    entry_date=entry_date,
+                    loop_role=role,
+                    label_fingerprint=f"{index:064x}",
+                    source_start=role_index * 6,
+                    source_end=role_index * 6 + 5,
+                    source_quote="cycle",
+                    entry_text="cycle " * 30,
+                )
+            )
+
+    loops = [
+        item
+        for item in service().construct_candidates(
+            user_id=USER,
+            basis=basis(source_version=100).model_copy(
+                update={"valid_entry_count": 10, "distinct_entry_dates": 10}
+            ),
+            signals=signals,
+        ).candidates
+        if item.pattern_type == "recurring_loop"
+    ]
+
+    assert loops
+    assert any(item.publication_gate_passed for item in loops)
     complete.pop(keys[-1])
     assert "LOOP_CLOSURE_UNSUPPORTED" in validator.validate_candidate(
         candidate,

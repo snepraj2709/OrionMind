@@ -1,0 +1,269 @@
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
+
+import pytest
+
+from app.shared.observability.reflection import token_usage
+from scripts.run_sample_reflection_e2e import (
+    LiveRunError,
+    atomic_write_json,
+    build_settings,
+    estimate_call_cost,
+    failure_report,
+    latency_summary,
+    load_sample_entries,
+    model_usage_report,
+    parse_args,
+    schedule_synthesis,
+)
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_canonical_dataset_is_exactly_30_unique_entries() -> None:
+    entries, digest = load_sample_entries(ROOT / "data/sample-entries.json")
+
+    assert len(entries) == 30
+    assert len({entry.entry_date for entry in entries}) == 30
+    assert entries[0].entry_date.isoformat() == "2026-06-01"
+    assert entries[-1].entry_date.isoformat() == "2026-06-30"
+    assert len(digest) == 64
+    assert all(entry.content.strip() for entry in entries)
+
+
+def test_dataset_validation_rejects_unknown_fields(tmp_path: Path) -> None:
+    sample = tmp_path / "sample.json"
+    sample.write_text(
+        json.dumps(
+            [
+                {
+                    "entry_date": "01 June 2026",
+                    "content": ["Reflective content"],
+                    "unexpected": True,
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LiveRunError, match="invalid shape") as exc_info:
+        load_sample_entries(sample)
+
+    assert exc_info.value.code == "INVALID_DATASET"
+
+
+def test_worker_database_falls_back_to_application_connection(
+    tmp_path: Path,
+) -> None:
+    environment = tmp_path / ".env"
+    environment.write_text(
+        "APP_DATABASE_URL=postgresql+psycopg://postgres:secret@db.example.test:5432/postgres\n"
+        "WORKER_DATABASE_URL=\n",
+        encoding="utf-8",
+    )
+
+    settings = build_settings(environment, uuid4())
+
+    assert settings.WORKER_DATABASE_URL.get_secret_value() == (
+        settings.APP_DATABASE_URL.get_secret_value()
+    )
+
+
+def test_token_usage_reads_cache_and_reasoning_details() -> None:
+    response = SimpleNamespace(
+        usage=SimpleNamespace(
+            input_tokens=2_000,
+            input_tokens_details={
+                "cached_tokens": 1_000,
+                "cache_write_tokens": 500,
+            },
+            output_tokens=100,
+            output_tokens_details=SimpleNamespace(reasoning_tokens=40),
+        )
+    )
+
+    usage = token_usage(response)
+
+    assert usage.input_tokens == 2_000
+    assert usage.cached_input_tokens == 1_000
+    assert usage.cache_write_input_tokens == 500
+    assert usage.output_tokens == 100
+    assert usage.reasoning_output_tokens == 40
+
+
+def test_default_luna_price_uses_each_usage_bucket() -> None:
+    cost = estimate_call_cost(
+        {
+            "serviceTier": "default",
+            "model": "gpt-5.6-luna",
+            "inputTokens": 2_000,
+            "cachedInputTokens": 1_000,
+            "cacheWriteInputTokens": 500,
+            "outputTokens": 100,
+        }
+    )
+
+    assert cost == pytest.approx(0.001825)
+
+
+def test_model_report_distinguishes_model_roles_and_conditional_sol() -> None:
+    base = {
+        "prompt_version": "v1",
+        "status": "success",
+        "retry_class": "none",
+        "service_tier": "default",
+        "duration_ms": 100,
+        "input_tokens": 1_000,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 100,
+        "reasoning_output_tokens": 20,
+    }
+    events = [
+        {
+            "event": "entry_analysis_attempt",
+            "model_role": "entry_analysis",
+            "model_id": "gpt-5.6-luna",
+            **base,
+        },
+        {
+            "event": "reflection_model_attempt",
+            "model_role": "synthesis",
+            "model_id": "gpt-5.6-terra",
+            **base,
+        },
+    ]
+
+    report = model_usage_report(events)
+    by_role = {item["role"]: item for item in report["roles"]}
+
+    assert by_role["entry_analysis"]["calls"] == 1
+    assert by_role["synthesis"]["calls"] == 1
+    assert by_role["critic"]["calls"] == 0
+    assert by_role["critic"]["eligibleCandidates"] == 0
+    assert by_role["critic"]["outcome"] == "not_invoked"
+    assert report["pricingComplete"] is True
+    assert report["estimatedTotalCostUsd"] == pytest.approx(0.0056)
+
+
+def test_unknown_service_tier_never_silently_undercounts_cost() -> None:
+    report = model_usage_report(
+        [
+            {
+                "event": "entry_analysis_attempt",
+                "model_role": "entry_analysis",
+                "model_id": "gpt-5.6-luna",
+                "prompt_version": "v1",
+                "status": "success",
+                "retry_class": "none",
+                "service_tier": "unknown",
+                "duration_ms": 1,
+                "input_tokens": 10,
+                "cached_input_tokens": 0,
+                "cache_write_input_tokens": 0,
+                "output_tokens": 10,
+                "reasoning_output_tokens": 0,
+            }
+        ]
+    )
+
+    assert report["pricingComplete"] is False
+    assert report["estimatedTotalCostUsd"] is None
+
+
+def test_latency_summary_uses_nearest_rank_percentiles() -> None:
+    assert latency_summary([10, 40, 20, 30]) == {
+        "min": 10,
+        "average": 25,
+        "p50": 20,
+        "p95": 40,
+        "max": 40,
+    }
+    assert latency_summary([]) is None
+
+
+def test_failure_report_is_controlled_and_atomic(tmp_path: Path) -> None:
+    args = parse_args(
+        [
+            "--input",
+            "data/sample-entries.json",
+            "--output",
+            str(tmp_path / "result.json"),
+            "--frontend-env",
+            ".env",
+            "--backend-env",
+            "backend/.env",
+        ]
+    )
+    report = failure_report(
+        args,
+        started_at=datetime(2026, 7, 22, tzinfo=UTC),
+        error=LiveRunError("SAFE_CODE", "A controlled failure."),
+        elapsed_seconds=1.25,
+    )
+
+    atomic_write_json(args.output, report)
+    stored = json.loads(args.output.read_text(encoding="utf-8"))
+
+    assert stored["status"] == "failed"
+    assert stored["errors"] == [
+        {"code": "SAFE_CODE", "message": "A controlled failure."}
+    ]
+    assert stored["modelUsage"]["estimatedTotalCostUsd"] == 0.0
+    assert "password" not in args.output.read_text(encoding="utf-8").lower()
+
+
+def test_schedule_synthesis_uses_timestamp_aware_job_service() -> None:
+    class Result:
+        def mappings(self):
+            return self
+
+        def one(self):
+            return {"timezone": "UTC", "last_schedule_local_date": None}
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, *_args, **_kwargs):
+            return Result()
+
+    class Engine:
+        def connect(self):
+            return Connection()
+
+    class Scheduler:
+        def __init__(self) -> None:
+            self.now = None
+            self.uow = None
+
+        def schedule_reflections(self, *, uow, now):
+            self.uow = uow
+            self.now = now
+            return 1
+
+    scheduler = Scheduler()
+    unit_of_work = object()
+    application = SimpleNamespace(
+        state=SimpleNamespace(
+            database_sessions=SimpleNamespace(
+                application_engine=Engine(),
+                unit_of_work_factory=unit_of_work,
+            ),
+            job_service=scheduler,
+        )
+    )
+
+    assert schedule_synthesis(application, uuid4()) == 1
+    assert scheduler.uow is unit_of_work
+    assert scheduler.now.hour == 18
+    assert scheduler.now.minute == 5

@@ -20,7 +20,11 @@ from app.modules.processing.schemas import (
 from app.modules.processing.source_segments import create_source_segments
 from app.modules.processing.types import ThemeDefinition
 from app.shared.observability.logging import safe_log
-from app.shared.observability.reflection import ReflectionTelemetry, token_counts
+from app.shared.observability.reflection import (
+    ModelTokenUsage,
+    ReflectionTelemetry,
+    token_usage,
+)
 
 
 logger = logging.getLogger("orion.processing.provider")
@@ -109,8 +113,8 @@ class OpenAIEntryAnalysisProvider:
         )
         client = self._client.with_options(max_retries=0, timeout=self._timeout)
         started = time.monotonic()
-        input_tokens = 0
-        output_tokens = 0
+        usage = ModelTokenUsage()
+        service_tier = "unknown"
         with self._telemetry.model_span(
             role="entry_analysis",
             model_id=self._model,
@@ -126,7 +130,10 @@ class OpenAIEntryAnalysisProvider:
                     truncation="disabled",
                     safety_identifier=safety_identifier,
                 )
-                input_tokens, output_tokens = token_counts(response)
+                usage = token_usage(response)
+                service_tier = str(
+                    getattr(response, "service_tier", None) or "unknown"
+                )
                 if getattr(response, "status", None) == "incomplete":
                     raise ProviderResponseError("entry analysis response is incomplete")
                 parsed = getattr(response, "output_parsed", None)
@@ -138,13 +145,16 @@ class OpenAIEntryAnalysisProvider:
                     else ModelEntryAnalysis.model_validate(parsed)
                 )
             except (ProviderResponseError, ValidationError) as exc:
+                validation_code, validation_path = _validation_summary(exc)
                 self._record_attempt(
                     span=span,
                     status="invalid",
                     started=started,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
+                    usage=usage,
                     retry_class="terminal",
+                    service_tier=service_tier,
+                    validation_code=validation_code,
+                    validation_path=validation_path,
                 )
                 if isinstance(exc, ValidationError):
                     raise ProviderResponseError("entry analysis schema is invalid") from exc
@@ -154,18 +164,18 @@ class OpenAIEntryAnalysisProvider:
                     span=span,
                     status="failed",
                     started=started,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
+                    usage=usage,
                     retry_class="retryable" if _retryable(exc) else "terminal",
+                    service_tier=service_tier,
                 )
                 raise ProviderUnavailableError("structured entry analysis failed") from exc
             self._record_attempt(
                 span=span,
                 status="success",
                 started=started,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
+                usage=usage,
                 retry_class="none",
+                service_tier=service_tier,
             )
         return result
 
@@ -175,18 +185,24 @@ class OpenAIEntryAnalysisProvider:
         span: Any,
         status: str,
         started: float,
-        input_tokens: int,
-        output_tokens: int,
+        usage: ModelTokenUsage,
         retry_class: str,
+        service_tier: str,
+        validation_code: str = "NONE",
+        validation_path: str = "root",
     ) -> None:
         duration_ms = round((time.monotonic() - started) * 1000)
         self._telemetry.finish_model_span(
             span,
             status=status,
             duration_ms=duration_ms,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=usage.input_tokens,
+            cached_input_tokens=usage.cached_input_tokens,
+            cache_write_input_tokens=usage.cache_write_input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_output_tokens=usage.reasoning_output_tokens,
             retry_class=retry_class,
+            service_tier=service_tier,
         )
         safe_log(
             logger,
@@ -196,7 +212,29 @@ class OpenAIEntryAnalysisProvider:
             prompt_version=ENTRY_ANALYSIS_PROMPT_VERSION,
             status=status,
             duration_ms=duration_ms,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=usage.input_tokens,
+            cached_input_tokens=usage.cached_input_tokens,
+            cache_write_input_tokens=usage.cache_write_input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_output_tokens=usage.reasoning_output_tokens,
             retry_class=retry_class,
+            service_tier=service_tier,
+            validation_code=validation_code,
+            validation_path=validation_path,
         )
+
+
+def _validation_summary(exc: Exception) -> tuple[str, str]:
+    if not isinstance(exc, ValidationError):
+        return type(exc).__name__, "root"
+    errors = exc.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    )
+    if not errors:
+        return "ValidationError", "root"
+    first = errors[0]
+    code = str(first.get("type") or "ValidationError")[:128]
+    path = ".".join(str(part) for part in first.get("loc", ())) or "root"
+    return code[:128], path[:128]

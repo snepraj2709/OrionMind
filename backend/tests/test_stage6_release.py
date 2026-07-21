@@ -39,6 +39,11 @@ def settings(**changes) -> Settings:
         "CORS_ALLOW_ORIGINS": "https://app.example.test",
         "LOG_FORMAT": "text",
         "RATE_LIMITING_ENABLED": True,
+        "REFLECTION_ENGINE_ENABLED": False,
+        "REFLECTION_SCHEDULER_ENABLED": False,
+        "REFLECTION_API_ENABLED": False,
+        "REFLECTION_ROLLOUT_MODE": "off",
+        "REFLECTION_ROLLOUT_USER_IDS": "",
     }
     values.update(changes)
     return Settings.model_validate(values)
@@ -385,7 +390,7 @@ def test_shared_processing_worker_is_the_only_operational_entrypoint() -> None:
 
 
 def test_reflection_release_flags_default_off_and_require_the_engine() -> None:
-    configured = Settings.model_validate({})
+    configured = settings()
     assert configured.REFLECTION_ENGINE_ENABLED is False
     assert configured.REFLECTION_SCHEDULER_ENABLED is False
     assert configured.REFLECTION_API_ENABLED is False
@@ -395,41 +400,35 @@ def test_reflection_release_flags_default_off_and_require_the_engine() -> None:
     with pytest.raises(
         ValidationError, match="reflection scheduler requires the reflection engine"
     ):
-        Settings.model_validate({"REFLECTION_SCHEDULER_ENABLED": True})
+        settings(REFLECTION_SCHEDULER_ENABLED=True)
 
     with pytest.raises(
         ValidationError, match="reflection API requires the reflection engine"
     ):
-        Settings.model_validate({"REFLECTION_API_ENABLED": True})
+        settings(REFLECTION_API_ENABLED=True)
 
     with pytest.raises(
         ValidationError, match="reflection scheduler requires an active rollout mode"
     ):
-        Settings.model_validate(
-            {
-                "REFLECTION_ENGINE_ENABLED": True,
-                "REFLECTION_SCHEDULER_ENABLED": True,
-            }
+        settings(
+            REFLECTION_ENGINE_ENABLED=True,
+            REFLECTION_SCHEDULER_ENABLED=True,
         )
 
     with pytest.raises(
         ValidationError, match="active reflection rollout requires a non-empty cohort"
     ):
-        Settings.model_validate(
-            {
-                "REFLECTION_ENGINE_ENABLED": True,
-                "REFLECTION_ROLLOUT_MODE": "shadow",
-            }
+        settings(
+            REFLECTION_ENGINE_ENABLED=True,
+            REFLECTION_ROLLOUT_MODE="shadow",
         )
 
-    enabled = Settings.model_validate(
-        {
-            "REFLECTION_ENGINE_ENABLED": True,
-            "REFLECTION_SCHEDULER_ENABLED": True,
-            "REFLECTION_API_ENABLED": True,
-            "REFLECTION_ROLLOUT_MODE": "publish",
-            "REFLECTION_ROLLOUT_USER_IDS": str(USER_ID),
-        }
+    enabled = settings(
+        REFLECTION_ENGINE_ENABLED=True,
+        REFLECTION_SCHEDULER_ENABLED=True,
+        REFLECTION_API_ENABLED=True,
+        REFLECTION_ROLLOUT_MODE="publish",
+        REFLECTION_ROLLOUT_USER_IDS=str(USER_ID),
     )
     assert enabled.REFLECTION_SCHEDULER_ENABLED is True
     assert enabled.REFLECTION_API_ENABLED is True

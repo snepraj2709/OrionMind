@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "run": {
+    "dataset": "data/sample-entries.json",
+    "entryCount": 30,
+    "firstEntryDate": "2026-06-01",
+    "lastEntryDate": "2026-06-30",
+    "database": "real Supabase PostgreSQL",
+    "modelCalls": "real OpenAI Responses API",
+    "dataRetention": "preserved for the configured test user"
+  },
+  "timing": {
+    "pipelineWindowSeconds": 2921.241,
+    "entryProcessingWindowSeconds": 2384.854,
+    "reflectionSynthesisWindowSeconds": 431.549,
+    "finalReflectionGetMilliseconds": 1747,
+    "note": "Job windows include retries, diagnosis pauses, and queue time; they are not pure model latency."
+  },
+  "modelUsage": {
+    "roles": [
+      {
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "usedAt": "one persisted analysis per journal entry",
+        "successfulCallsConfirmedByDatabase": 30
+      },
+      {
+        "role": "synthesis",
+        "model": "gpt-5.6-terra",
+        "usedAt": "bounded cross-entry reflection synthesis",
+        "successfulCallsConfirmedByCompletedJob": 1,
+        "preFixFailedAttempts": 3
+      },
+      {
+        "role": "critic",
+        "model": "gpt-5.6-sol",
+        "usedAt": "conditional review after Terra when a proposal meets the critic-routing rule",
+        "routingRule": "abs(score-threshold) <= 0.05 or contradiction >= 0.20",
+        "calls": null
+      }
+    ],
+    "knownPreCanonicalDiagnosticCostUsd": 0.582731,
+    "totalCostUsd": null,
+    "measurementStatus": "incomplete",
+    "note": "The terminal collector output for the resumed Luna and final Terra/Sol calls was truncated, so their token totals cannot be reconstructed safely. The OpenAI billing dashboard is authoritative; no cost is invented here."
+  },
+  "databaseEffects": {
+    "tableRowCounts": {
+      "entries": 30,
+      "past_entry_imports": 30,
+      "entry_analyses": 30,
+      "entry_signals": 403,
+      "user_pii_vaults": 1,
+      "processing_jobs": 31,
+      "pattern_candidates": 47,
+      "pattern_candidate_evidence": 5196,
+      "reflection_snapshots": 1,
+      "reflection_snapshot_insights": 3,
+      "reflection_snapshot_evidence": 0,
+      "reflection_feedback": 0
+    },
+    "entryStatuses": {
+      "completed": 30
+    },
+    "analysisEligibility": {
+      "accepted": 30
+    },
+    "analysisModels": {
+      "gpt-5.6-luna": 30
+    },
+    "jobStatuses": {
+      "entry_processing:completed": 30,
+      "reflection_synthesis:completed": 1
+    },
+    "candidateStatuses": {
+      "hidden_driver:candidate": 15,
+      "inner_tension:candidate": 32
+    },
+    "insightStatuses": {
+      "hidden_driver:insufficient_evidence": 1,
+      "recurring_loop:insufficient_evidence": 1,
+      "inner_tension:insufficient_evidence": 1
+    }
+  },
+  "reflectionGetResponse": {
+    "httpStatus": 200,
+    "range": "all",
+    "reflectionState": "available",
+    "processingState": "idle",
+    "snapshot": {
+      "id": "168bbc69-aa65-5f8d-b1ee-55cdd09c2f89",
+      "version": 1,
+      "generatedAt": "2026-07-21T21:29:06.753354Z",
+      "sourceVersion": 40,
+      "isStale": false
+    },
+    "analysisBasis": {
+      "window": "90d",
+      "validEntryCount": 30,
+      "excludedEntryCount": 0,
+      "distinctEntryDates": 30,
+      "reflectiveWordCount": 4685,
+      "currentRangeFrom": "2026-04-02",
+      "currentRangeTo": "2026-06-30",
+      "excludedReasons": {}
+    },
+    "data": {
+      "hiddenDriver": {
+        "status": "insufficient_evidence",
+        "reasonCode": "DRIVER_NOT_REPEATED",
+        "message": "A possible underlying driver has not repeated enough yet."
+      },
+      "recurringLoop": {
+        "status": "insufficient_evidence",
+        "reasonCode": "LOOP_NOT_REPEATED",
+        "message": "The same sequence has not repeated enough yet."
+      },
+      "innerTensions": {
+        "status": "insufficient_evidence",
+        "reasonCode": "BOTH_SIDES_NOT_SUPPORTED",
+        "message": "There is not enough evidence for two competing needs yet."
+      }
+    }
+  },
+  "checks": [
+    {
+      "name": "reflection_get",
+      "status": "passed",
+      "httpStatus": 200
+    },
+    {
+      "name": "all_three_screen_payloads",
+      "status": "passed",
+      "sections": ["hiddenDriver", "recurringLoop", "innerTensions"]
+    },
+    {
+      "name": "frontend_reflection_tests",
+      "status": "passed",
+      "tests": 37
+    },
+    {
+      "name": "retained_test_user_data",
+      "status": "passed",
+      "note": "No entry, analysis, signal, candidate, job, snapshot, or insight was deleted after verification."
+    }
+  ],
+  "errors": []
+}

@@ -319,6 +319,13 @@ class JobService:
         ):
             return DispatchResult("stale", "WORKER_INTERRUPTED")
         except Exception as exc:
+            if isinstance(exc, AnalysisValidationError):
+                safe_log(
+                    logger,
+                    "entry_analysis_validation_failed",
+                    entry_id=claim.entry_id,
+                    validation_stage=exc.stage,
+                )
             error_code, retryable = _classify_failure(
                 exc,
                 synthesis=claim.job_type == "reflection_synthesis",

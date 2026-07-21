@@ -125,6 +125,7 @@ def settings(*, reflections_enabled: bool = True) -> Settings:
             "LOG_FORMAT": "text",
             "RATE_LIMITING_ENABLED": False,
             "REFLECTION_ENGINE_ENABLED": reflections_enabled,
+            "REFLECTION_SCHEDULER_ENABLED": False,
             "REFLECTION_API_ENABLED": reflections_enabled,
             "REFLECTION_ROLLOUT_MODE": (
                 "publish" if reflections_enabled else "off"
