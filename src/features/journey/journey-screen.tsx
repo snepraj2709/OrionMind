@@ -24,17 +24,20 @@ import { deriveJourneyViewModel } from './adapter';
 import { ChapterDetail } from './chapter-detail';
 import { ChapterRail } from './chapter-rail';
 import { LockedJourney } from './locked-journey';
+import { MockJourneyRepository } from './mock-repository';
 import type { JourneyBoundary, JourneyRange } from './model';
 import { useJourneyEntriesQuery } from './queries';
-import { journeyRepository, type JourneyRepository } from './repository';
+import type { JourneyRepository } from './repository';
 import { ThemeRiver } from './theme-river';
+
+const fixedJourneyRepository = new MockJourneyRepository();
 
 export interface JourneyScreenProps {
   repository?: JourneyRepository;
 }
 
 export function JourneyScreen({
-  repository = journeyRepository,
+  repository = fixedJourneyRepository,
 }: JourneyScreenProps) {
   const { user } = useAuth();
   const [range, setRange] = useState<JourneyRange>('all');

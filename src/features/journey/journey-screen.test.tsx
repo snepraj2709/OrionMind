@@ -36,7 +36,7 @@ function unlockedRepository(entries = journeyEntryFixtures, delay = 0) {
   return new MockJourneyRepository(entries, delay, unlockedStatus);
 }
 
-function renderScreen(repository: JourneyRepository) {
+function renderScreen(repository?: JourneyRepository) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -51,6 +51,42 @@ function renderScreen(repository: JourneyRepository) {
 }
 
 describe('JourneyScreen', () => {
+  it('shows the same fixed locked Journey by default', async () => {
+    renderScreen();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Not enough data yet' }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'Days since signup: 18 of 30, 60%',
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'Entries added: 9 of 15, 60%',
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('img', {
+        name: 'Locked preview of your personal journey',
+      }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('img', {
+        name: 'Sample unlocked journey theme streamgraph',
+      }),
+    ).toBeVisible();
+    expect(screen.getByText('Sample')).toBeVisible();
+    expect(screen.getByRole('radio', { name: 'All' })).toBeChecked();
+    expect(
+      screen.queryByRole('button', { name: 'Refresh journey' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Life Theme River' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('shows a calm loading state while the longitudinal view is assembled', () => {
     renderScreen(unlockedRepository(journeyEntryFixtures, 50));
 
