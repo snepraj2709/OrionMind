@@ -1,7 +1,78 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import demoReflection from '../../../data/orion_30_day_reflection_analysis.json';
 
 import { reflectionApiFixture, reflectionFixtureIds } from './fixtures';
-import { HttpReflectionsRepository } from './repository';
+import { HttpReflectionsRepository, reflectionsRepository } from './repository';
+
+describe('reflectionsRepository', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('serves the complete hardcoded fixture for every range without calling fetch', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('The reflections API must not be called'));
+
+    const allResult = await reflectionsRepository.getReflection({
+      range: 'all',
+    });
+    const sevenDayResult = await reflectionsRepository.getReflection({
+      range: '7d',
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(allResult.range).toBe('all');
+    expect(sevenDayResult.range).toBe('7d');
+    expect(allResult.data.hiddenDriver).toMatchObject({
+      status: 'available',
+      statement: demoReflection.data.hiddenDriver.statement,
+    });
+    expect(allResult.data.hiddenDriver).not.toBe(
+      sevenDayResult.data.hiddenDriver,
+    );
+    expect(allResult.data.hiddenDriver.status).toBe('available');
+    expect(allResult.data.recurringLoop.status).toBe('available');
+    expect(allResult.data.innerTensions.status).toBe('available');
+    if (
+      allResult.data.hiddenDriver.status === 'available' &&
+      allResult.data.recurringLoop.status === 'available' &&
+      allResult.data.innerTensions.status === 'available'
+    ) {
+      expect(allResult.data.hiddenDriver.evidence).toHaveLength(8);
+      expect(allResult.data.recurringLoop.steps).toHaveLength(6);
+      expect(allResult.data.innerTensions.tensions).toHaveLength(3);
+    }
+  });
+
+  it('keeps feedback in the frontend session without calling fetch', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('The reflections API must not be called'));
+    const initial = await reflectionsRepository.getReflection({ range: '30d' });
+    const insight = initial.data.hiddenDriver;
+
+    expect(initial.snapshot).not.toBeNull();
+    expect(insight.status).toBe('available');
+    if (!initial.snapshot || insight.status !== 'available') return;
+
+    await reflectionsRepository.putFeedback({
+      snapshotId: initial.snapshot.id,
+      insightId: insight.id,
+      response: 'resonates',
+    });
+    const refreshed = await reflectionsRepository.getReflection({
+      range: '30d',
+    });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(refreshed.data.hiddenDriver).toMatchObject({
+      status: 'available',
+      feedback: 'resonates',
+    });
+  });
+});
 
 describe('HttpReflectionsRepository', () => {
   it('sends only range to the plural aggregate endpoint', async () => {

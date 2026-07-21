@@ -1,4 +1,4 @@
-/** Test-only repository. Production ReflectionsScreen defaults to HTTP. */
+/** Test-only configurable repository used by unit tests. */
 import { simulateLatency } from '@/services/mock-delay';
 
 import { approvedEvidenceToReflectionEvidence } from './adapter';

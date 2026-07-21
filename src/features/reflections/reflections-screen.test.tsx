@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { routes } from '@/config/routes';
 
+import demoReflection from '../../../data/orion_30_day_reflection_analysis.json';
+
 import type {
   InsufficientInsight,
   ReflectionApiResponse,
@@ -24,11 +26,14 @@ import {
   type ReflectionsRepository,
 } from './repository';
 
+const authState = vi.hoisted(() => ({ userId: 'reader-id' }));
+
 vi.mock('@/features/auth', () => ({
-  useAuth: () => ({ user: { id: 'reader-id' } }),
+  useAuth: () => ({ user: { id: authState.userId } }),
 }));
 
 afterEach(() => {
+  authState.userId = 'reader-id';
   vi.restoreAllMocks();
 });
 
@@ -126,21 +131,48 @@ function deferred<T>() {
 }
 
 describe('ReflectionsScreen', () => {
-  it('defaults to the real HTTP repository', async () => {
-    const get = vi
-      .spyOn(reflectionsRepository, 'getReflection')
-      .mockResolvedValue(fixture());
-    vi.spyOn(reflectionsRepository, 'putFeedback').mockResolvedValue({
-      snapshotId: reflectionFixtureIds.snapshot,
-      insightId: reflectionFixtureIds.hiddenDriver,
-      response: 'resonates',
-      updatedAt: '2026-07-21T12:42:00Z',
-    });
+  it('renders the hardcoded fixture through the default repository', async () => {
+    const get = vi.spyOn(reflectionsRepository, 'getReflection');
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('The reflections API must not be called'));
 
     renderReflections();
 
-    expect(await screen.findByText('Supported by 2 entries')).toBeVisible();
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: demoReflection.data.hiddenDriver.statement,
+      }),
+    ).toBeVisible();
+    expect(screen.getByText('Supported by 7 entries')).toBeVisible();
     expect(get).toHaveBeenCalledWith({ range: 'all' });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('serves the same hardcoded fixture when the authenticated user changes', async () => {
+    const get = vi.spyOn(reflectionsRepository, 'getReflection');
+    const { rerender } = renderReflections();
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: demoReflection.data.hiddenDriver.statement,
+      }),
+    ).toBeVisible();
+
+    authState.userId = 'another-reader-id';
+    rerender(<ReflectionsScreen />);
+
+    expect(
+      await screen.findByRole('heading', {
+        level: 2,
+        name: demoReflection.data.hiddenDriver.statement,
+      }),
+    ).toBeVisible();
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenNthCalledWith(1, { range: 'all' });
+    expect(get).toHaveBeenNthCalledWith(2, { range: 'all' });
   });
 
   it('keeps the header, range, tabs, and skeleton visible while loading', () => {

@@ -9,6 +9,7 @@ import {
   type ReflectionFeedbackResult,
   type ReflectionRequest,
 } from './api-schema';
+import { fixtureReflectionsRepository } from './fixture-repository';
 
 export interface PutReflectionFeedbackInput {
   snapshotId: string;
@@ -56,4 +57,4 @@ export class HttpReflectionsRepository implements ReflectionsRepository {
   }
 }
 
-export const reflectionsRepository = new HttpReflectionsRepository();
+export const reflectionsRepository = fixtureReflectionsRepository;
