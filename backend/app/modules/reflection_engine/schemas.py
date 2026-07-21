@@ -150,6 +150,7 @@ class LoopStepStructure(StrictReflectionModel):
     loop_role: LoopRole
     normalized_label_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     support_signal_ids: list[UUID] = Field(min_length=1)
+    statement: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
 class RecurringLoopStructure(StrictReflectionModel):
@@ -161,6 +162,8 @@ class RecurringLoopStructure(StrictReflectionModel):
     supporting_entries: int = Field(ge=0)
     supported_transitions: int = Field(ge=0)
     distinct_dates: int = Field(ge=0)
+    protection: str | None = Field(default=None, min_length=1, max_length=1000)
+    interruption: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
 class InnerTensionStructure(StrictReflectionModel):
@@ -257,3 +260,90 @@ class CandidateBatch(StrictReflectionModel):
         if len(identities) != len(self.evidence):
             raise ValueError("candidate evidence links must be distinct")
         return self
+
+
+class SynthesisEvidenceReference(StrictReflectionModel):
+    signal_id: UUID
+    evidence_role: EvidenceRole
+
+
+class HiddenDriverProposal(StrictReflectionModel):
+    candidate_id: UUID
+    canonical_need: NeedTag
+    statement: str = Field(min_length=1, max_length=1000)
+    underlying_need: str = Field(min_length=1, max_length=200)
+    evidence: list[SynthesisEvidenceReference] = Field(min_length=1)
+
+
+class LoopStepProposal(StrictReflectionModel):
+    loop_role: LoopRole
+    statement: str = Field(min_length=1, max_length=1000)
+    evidence: list[SynthesisEvidenceReference] = Field(min_length=1)
+
+
+class RecurringLoopProposal(StrictReflectionModel):
+    candidate_id: UUID
+    canonical_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    title: str = Field(min_length=1, max_length=300)
+    description: str = Field(min_length=1, max_length=1000)
+    steps: list[LoopStepProposal] = Field(min_length=3, max_length=6)
+    protection: str = Field(min_length=1, max_length=1000)
+    interruption: str = Field(min_length=1, max_length=1000)
+    counterevidence: list[SynthesisEvidenceReference]
+
+
+class InnerTensionProposal(StrictReflectionModel):
+    candidate_id: UUID
+    left_need: NeedTag
+    right_need: NeedTag
+    left_statement: str = Field(min_length=1, max_length=1000)
+    right_statement: str = Field(min_length=1, max_length=1000)
+    integration: str = Field(min_length=1, max_length=1000)
+    evidence: list[SynthesisEvidenceReference] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_pair(self) -> Self:
+        if self.left_need >= self.right_need:
+            raise ValueError("tension needs must be canonically ordered")
+        return self
+
+
+AbstentionReason = Literal[
+    "INSUFFICIENT_EVIDENCE",
+    "COUNTEREVIDENCE_TOO_STRONG",
+    "UNSAFE_OR_UNSUPPORTED",
+]
+
+
+class SynthesisAbstention(StrictReflectionModel):
+    candidate_id: UUID
+    pattern_type: PatternType
+    reason_code: AbstentionReason
+
+
+class ReflectionSynthesisOutput(StrictReflectionModel):
+    hidden_drivers: list[HiddenDriverProposal] = Field(max_length=3)
+    recurring_loops: list[RecurringLoopProposal] = Field(max_length=3)
+    inner_tensions: list[InnerTensionProposal] = Field(max_length=5)
+    abstentions: list[SynthesisAbstention] = Field(max_length=11)
+
+    @model_validator(mode="after")
+    def validate_unique_candidates(self) -> Self:
+        identifiers = [
+            *(item.candidate_id for item in self.hidden_drivers),
+            *(item.candidate_id for item in self.recurring_loops),
+            *(item.candidate_id for item in self.inner_tensions),
+            *(item.candidate_id for item in self.abstentions),
+        ]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("each synthesis candidate must appear once")
+        return self
+
+
+class ReflectionCriticOutput(StrictReflectionModel):
+    entailed: bool
+    overreaches: bool
+    contradictory_evidence_ignored: bool
+    diagnostic_language: bool
+    evidence_diversity_adequate: bool
+    recommended_action: Literal["publish", "discard"]

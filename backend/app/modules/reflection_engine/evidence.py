@@ -343,7 +343,13 @@ class EvidenceValidator:
             statements = (structure.statement,)
             framed = "a possible pattern across your entries" in structure.statement.casefold()
         elif isinstance(structure, RecurringLoopStructure):
-            statements = (structure.title, structure.description)
+            statements = (
+                structure.title,
+                structure.description,
+                *(step.statement for step in structure.steps if step.statement),
+                *((structure.protection,) if structure.protection else ()),
+                *((structure.interruption,) if structure.interruption else ()),
+            )
             framed = "a possible" in structure.description.casefold()
         else:
             statements = (

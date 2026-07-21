@@ -32,6 +32,8 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: SecretStr = SecretStr("")
     OPENAI_ENTRY_ANALYSIS_MODEL: str = "gpt-5.6-luna"
+    OPENAI_REFLECTION_SYNTHESIS_MODEL: str = "gpt-5.6-terra"
+    OPENAI_REFLECTION_CRITIC_MODEL: str = "gpt-5.6-sol"
     OPENAI_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=60)
     OPENAI_RESPONSE_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, le=180)
     PROCESSING_TOTAL_TIMEOUT_SECONDS: float = Field(default=300.0, gt=0, le=600)
@@ -57,6 +59,10 @@ class Settings(BaseSettings):
     PROCESSING_JOB_RECOVERY_INTERVAL_SECONDS: float = Field(
         default=60.0, ge=10, le=3600
     )
+    REFLECTION_ENGINE_ENABLED: bool = False
+    REFLECTION_SCHEDULER_ENABLED: bool = False
+    REFLECTION_SCHEDULER_POLL_SECONDS: float = Field(default=60.0, ge=1, le=3600)
+    REFLECTION_BASIS_DAYS: int = Field(default=90, ge=90, le=90)
     WEB_CONCURRENCY: int = Field(default=1, ge=1, le=1)
     RATE_LIMITING_ENABLED: bool = True
     LOG_FORMAT: str = "json"
@@ -87,7 +93,11 @@ class Settings(BaseSettings):
             raise ValueError("must be json or text")
         return normalized
 
-    @field_validator("OPENAI_ENTRY_ANALYSIS_MODEL")
+    @field_validator(
+        "OPENAI_ENTRY_ANALYSIS_MODEL",
+        "OPENAI_REFLECTION_SYNTHESIS_MODEL",
+        "OPENAI_REFLECTION_CRITIC_MODEL",
+    )
     @classmethod
     def validate_model_name(cls, value: str) -> str:
         normalized = value.strip()
@@ -124,6 +134,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production(self) -> "Settings":
+        if self.REFLECTION_SCHEDULER_ENABLED and not self.REFLECTION_ENGINE_ENABLED:
+            raise ValueError("reflection scheduler requires the reflection engine")
         if self.ENVIRONMENT != "production":
             return self
         if self.ENABLE_API_DOCS:

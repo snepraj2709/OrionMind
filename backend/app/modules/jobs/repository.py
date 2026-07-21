@@ -13,6 +13,15 @@ FailureOutcome = Literal["pending", "failed", "stale"]
 
 
 class JobRepository:
+    def schedule_reflections(self, session: Session, *, now: datetime) -> int:
+        return int(
+            session.scalar(
+                text("SELECT public.schedule_reflection_jobs(:now)"),
+                {"now": now},
+            )
+            or 0
+        )
+
     def claim(self, session: Session, *, worker_id: str) -> JobClaim | None:
         row = session.execute(
             text("SELECT * FROM public.claim_processing_job(:worker_id)"),

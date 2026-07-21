@@ -7,12 +7,49 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
+from app.modules.jobs.types import JobClaim
+
 
 class StaleCandidateBasisError(RuntimeError):
     pass
 
 
+class StaleSynthesisClaimError(RuntimeError):
+    pass
+
+
 class ReflectionEngineRepository:
+    def load_synthesis_basis(
+        self,
+        session: Session,
+        *,
+        claim: JobClaim,
+        worker_id: str,
+        basis_days: int = 90,
+    ) -> dict[str, object]:
+        try:
+            payload = session.scalar(
+                text(
+                    "SELECT public.get_reflection_synthesis_basis("
+                    ":job_id, :worker_id, :claim_token, :basis_days)"
+                ),
+                {
+                    "job_id": claim.job_id,
+                    "worker_id": worker_id,
+                    "claim_token": claim.claim_token,
+                    "basis_days": basis_days,
+                },
+            )
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "P0001":
+                raise StaleSynthesisClaimError(
+                    "reflection synthesis claim is no longer current"
+                ) from exc
+            raise
+        if not isinstance(payload, dict):
+            raise RuntimeError("reflection synthesis basis payload is invalid")
+        return payload
+
     def load_candidate_basis(
         self,
         session: Session,
@@ -67,3 +104,45 @@ class ReflectionEngineRepository:
                     "reflection candidate basis is no longer current"
                 ) from exc
             raise
+
+    def apply_snapshot(
+        self,
+        session: Session,
+        *,
+        claim: JobClaim,
+        worker_id: str,
+        snapshot: dict[str, object],
+        candidates: list[dict[str, object]],
+        candidate_evidence: list[dict[str, object]],
+        insights: list[dict[str, object]],
+        snapshot_evidence: list[dict[str, object]],
+    ) -> UUID:
+        try:
+            value = session.scalar(
+                text(
+                    "SELECT public.apply_reflection_snapshot("
+                    ":job_id, :worker_id, :claim_token, "
+                    "CAST(:snapshot AS jsonb), CAST(:candidates AS jsonb), "
+                    "CAST(:candidate_evidence AS jsonb), CAST(:insights AS jsonb), "
+                    "CAST(:snapshot_evidence AS jsonb))"
+                ),
+                {
+                    "job_id": claim.job_id,
+                    "worker_id": worker_id,
+                    "claim_token": claim.claim_token,
+                    "snapshot": json.dumps(snapshot),
+                    "candidates": json.dumps(candidates),
+                    "candidate_evidence": json.dumps(candidate_evidence),
+                    "insights": json.dumps(insights),
+                    "snapshot_evidence": json.dumps(snapshot_evidence),
+                },
+            )
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "P0001":
+                raise StaleSynthesisClaimError(
+                    "reflection synthesis claim is no longer current"
+                ) from exc
+            raise
+        if not isinstance(value, UUID):
+            raise RuntimeError("reflection snapshot apply result is invalid")
+        return value
