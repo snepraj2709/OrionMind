@@ -104,3 +104,25 @@ ordered fresh-install schema through migration 0007.
 | `app/modules/jobs/service.py`                 | `fb97c8fcfbade4bb562a29f6349334556302cf30c5fef6ca2694891b0364bb1b` |
 | `tests/test_stage7_entry_analysis.py`         | `493e52372ad2b7da4491f97808c84aaf93740e3b2392f8543aab5b74e41c031d` |
 | `tests/test_stage7_reflection_quality.py`     | `a50b69bfb61929ec00400a6da01c4f38a82bae15aaca5bf494513160e6c07ffb` |
+
+## P0-05 deterministic candidate artifacts
+
+Recorded after the P0-05 implementation and local verification on 2026-07-21. Candidate
+construction is deterministic and model-free; synthesis, snapshots, scheduler behavior, public
+Reflection APIs, and frontend integration remain outside this slice. The P0-04 schema checksum
+above remains historical; the checksum below is the current exact ordered fresh-install schema
+through migration 0008.
+
+| Target-relative path                                      | SHA-256                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------------------ |
+| `migrations/0008_deterministic_reflection_candidates.sql` | `e906fa06dc8c228c7b3bc1ee619f2e61c4506dce1705288e5801566c0c9f690d` |
+| `supabase_schema.sql`                                     | `9fa7ccc73d7579c12171533f6cb336193b7d980dde0a334c3399e7ac333683f5` |
+| `app/shared/security/encryption.py`                       | `95eee6891dceee6edcc47b88fd3924efa26f4450acdc9186507395800a7fc083` |
+| `app/modules/reflection_engine/__init__.py`               | `c4abbf8fade07beb12dd0731a469178c1a9377d1863e4eb7c69d210dec79ff4d` |
+| `app/modules/reflection_engine/schemas.py`                | `c07e9ca029cd174606d250a1594a00478286daebd97d9a93cbfdd31c1b614231` |
+| `app/modules/reflection_engine/scoring.py`                | `dee2ebe7ed2fab69be60f60290504df47beedb40b9f5ffddc483debdb62c6b2e` |
+| `app/modules/reflection_engine/evidence.py`               | `034efe469d0e9d6249257f0e1dc8868cf80ca423a7ed74ac90a1e91f433c86ab` |
+| `app/modules/reflection_engine/repository.py`             | `5265ae10d4dc77357af6dbd07ce2052d0552d2c2459aceab0030626f2e08166b` |
+| `app/modules/reflection_engine/service.py`                | `c5a985621b8f34f17b4eb15840d6b1bc0c61c2d1e0ab8b635128a165d6eb8e92` |
+| `tests/test_stage7_reflection_candidates.py`              | `53cd92d378f6aea6fc73e7ecffcf82b94e2de4f0bd3652ab16f22ee4cf7e20d5` |
+| `tests/test_stage7_reflection_database.py`                | `8a16387c157bada2ec3f04e47918442169392f26ca1bc61f68f0a431e6420e55` |

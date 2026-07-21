@@ -56,6 +56,7 @@ NEW_TABLES = (
 )
 NEW_FUNCTIONS = (
     "apply_combined_entry_processing_job",
+    "apply_deterministic_reflection_candidates",
     "apply_entry_analysis",
     "apply_reflection_snapshot",
     "claim_processing_job",
@@ -68,6 +69,7 @@ NEW_FUNCTIONS = (
     "get_user_pii_vault_for_update",
     "get_entry_processing_payload",
     "get_entry_quality_history",
+    "get_reflection_candidate_basis",
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
     "put_reflection_feedback_for_owner",
@@ -204,6 +206,42 @@ def insert_analysis_signal(
     return analysis_id, signal_id, source_version
 
 
+def candidate_payload(
+    candidate_id: UUID,
+    *,
+    canonical_key: str = "c" * 64,
+    status: str = "candidate",
+    version: int = 1,
+    rejected_at: str | None = None,
+    rejected_source_version: int | None = None,
+    publication_gate_passed: bool = True,
+) -> dict[str, object]:
+    return {
+        "id": str(candidate_id),
+        "pattern_type": "hidden_driver",
+        "canonical_key": canonical_key,
+        "status": status,
+        "score": 0.8,
+        "score_components": {"recurrence": 0.8, "stability": 0.5},
+        "payload_envelope": ENVELOPE_V1,
+        "first_seen_at": "2026-07-01T00:00:00+00:00",
+        "last_seen_at": "2026-07-20T00:00:00+00:00",
+        "version": version,
+        "rejected_at": rejected_at,
+        "rejected_source_version": rejected_source_version,
+        "publication_gate_passed": publication_gate_passed,
+    }
+
+
+def evidence_payload(candidate_id: UUID, signal_id: UUID) -> dict[str, object]:
+    return {
+        "candidate_id": str(candidate_id),
+        "signal_id": str(signal_id),
+        "evidence_role": "supporting",
+        "evidence_weight": 0.9,
+    }
+
+
 def schema_signature(connection: psycopg.Connection) -> tuple:
     columns = connection.execute(
         "SELECT table_name, ordinal_position, column_name, data_type, udt_name, "
@@ -267,6 +305,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0005_reflection_engine.sql",
         "0006_shared_entry_queue.sql",
         "0007_combined_entry_analysis.sql",
+        "0008_deterministic_reflection_candidates.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -917,3 +956,203 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
         assert replacement is not None
         assert replacement[0] == "pending"
         assert replacement[1] > source_two
+
+
+def test_candidate_basis_and_atomic_apply_are_worker_only_owner_safe_and_idempotent() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    with psycopg.connect(value) as connection:
+        entry_one = insert_entry(connection, USER_ONE, entry_date="2026-07-01")
+        _, signal_one, source_one = insert_analysis_signal(
+            connection, USER_ONE, entry_one
+        )
+        entry_two = insert_entry(connection, USER_TWO, entry_date="2026-07-02")
+        _, signal_two, _ = insert_analysis_signal(connection, USER_TWO, entry_two)
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version) VALUES (%s, %s)",
+            (USER_ONE, source_one),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    "SELECT public.get_reflection_candidate_basis(%s, %s, 90)",
+                    (USER_ONE, source_one),
+                )
+
+        candidate_id = uuid4()
+        candidates = [candidate_payload(candidate_id)]
+        evidence = [evidence_payload(candidate_id, signal_one)]
+        with connection.transaction():
+            worker(connection)
+            candidate_basis = connection.execute(
+                "SELECT public.get_reflection_candidate_basis(%s, %s, 90)",
+                (USER_ONE, source_one),
+            ).fetchone()[0]
+            assert candidate_basis["source_version"] == source_one
+            assert candidate_basis["valid_entry_count"] == 1
+            assert [item["id"] for item in candidate_basis["signals"]] == [
+                str(signal_one)
+            ]
+            first = connection.execute(
+                "SELECT public.apply_deterministic_reflection_candidates("
+                "%s, %s, %s::jsonb, %s::jsonb)",
+                (
+                    USER_ONE,
+                    source_one,
+                    json.dumps(candidates),
+                    json.dumps(evidence),
+                ),
+            ).fetchone()[0]
+            replay = connection.execute(
+                "SELECT public.apply_deterministic_reflection_candidates("
+                "%s, %s, %s::jsonb, %s::jsonb)",
+                (
+                    USER_ONE,
+                    source_one,
+                    json.dumps(candidates),
+                    json.dumps(evidence),
+                ),
+            ).fetchone()[0]
+            assert (first, replay) == (1, 0)
+        assert connection.execute(
+            "SELECT last_source_version, count(evidence.signal_id) "
+            "FROM public.pattern_candidates AS candidate "
+            "JOIN public.pattern_candidate_evidence AS evidence "
+            "ON evidence.candidate_id = candidate.id AND evidence.user_id = candidate.user_id "
+            "WHERE candidate.id = %s GROUP BY candidate.last_source_version",
+            (candidate_id,),
+        ).fetchone() == (source_one, 1)
+
+        with pytest.raises(psycopg.errors.RaiseException):
+            with connection.transaction():
+                worker(connection)
+                connection.execute(
+                    "SELECT public.apply_deterministic_reflection_candidates("
+                    "%s, 0, %s::jsonb, '[]'::jsonb)",
+                    (USER_ONE, json.dumps([candidate_payload(uuid4())])),
+                )
+        bad_candidate_id = uuid4()
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            with connection.transaction():
+                worker(connection)
+                connection.execute(
+                    "SELECT public.apply_deterministic_reflection_candidates("
+                    "%s, %s, %s::jsonb, %s::jsonb)",
+                    (
+                        USER_ONE,
+                        source_one,
+                        json.dumps(
+                            [
+                                candidate_payload(
+                                    bad_candidate_id, canonical_key="e" * 64
+                                )
+                            ]
+                        ),
+                        json.dumps(
+                            [evidence_payload(bad_candidate_id, signal_two)]
+                        ),
+                    ),
+                )
+        assert connection.execute(
+            "SELECT count(*) FROM public.pattern_candidates WHERE id = %s",
+            (bad_candidate_id,),
+        ).fetchone() == (0,)
+
+
+def test_database_rejected_candidate_reentry_requires_three_new_entries_on_two_dates() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        old_entry = insert_entry(connection, USER_ONE, entry_date="2026-07-01")
+        _, _, rejected_source = insert_analysis_signal(
+            connection, USER_ONE, old_entry
+        )
+        new_signal_ids: list[UUID] = []
+        latest_source = rejected_source
+        for entry_date in ("2026-07-10", "2026-07-10", "2026-07-11"):
+            entry_id = insert_entry(connection, USER_ONE, entry_date=entry_date)
+            _, signal_id, latest_source = insert_analysis_signal(
+                connection, USER_ONE, entry_id
+            )
+            new_signal_ids.append(signal_id)
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version) VALUES (%s, %s)",
+            (USER_ONE, latest_source),
+        )
+        candidate_id = uuid4()
+        connection.execute(
+            "INSERT INTO public.pattern_candidates "
+            "(id, user_id, pattern_type, canonical_key, status, score, "
+            "score_components, payload_envelope, first_seen_at, last_seen_at, "
+            "rejected_at, rejected_source_version, last_source_version) "
+            "VALUES (%s, %s, 'hidden_driver', %s, 'rejected', 0.8, %s::jsonb, "
+            "%s::jsonb, pg_catalog.now(), pg_catalog.now(), pg_catalog.now(), %s, %s)",
+            (
+                candidate_id,
+                USER_ONE,
+                "d" * 64,
+                json.dumps({"recurrence": 0.8}),
+                json.dumps(ENVELOPE_V1),
+                rejected_source,
+                rejected_source,
+            ),
+        )
+        connection.commit()
+
+        reentry = candidate_payload(
+            candidate_id,
+            canonical_key="d" * 64,
+            version=2,
+            publication_gate_passed=True,
+        )
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            with connection.transaction():
+                worker(connection)
+                connection.execute(
+                    "SELECT public.apply_deterministic_reflection_candidates("
+                    "%s, %s, %s::jsonb, %s::jsonb)",
+                    (
+                        USER_ONE,
+                        latest_source,
+                        json.dumps([reentry]),
+                        json.dumps(
+                            [
+                                evidence_payload(candidate_id, signal_id)
+                                for signal_id in new_signal_ids[:2]
+                            ]
+                        ),
+                    ),
+                )
+        assert connection.execute(
+            "SELECT status, last_source_version FROM public.pattern_candidates WHERE id = %s",
+            (candidate_id,),
+        ).fetchone() == ("rejected", rejected_source)
+
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.apply_deterministic_reflection_candidates("
+                "%s, %s, %s::jsonb, %s::jsonb)",
+                (
+                    USER_ONE,
+                    latest_source,
+                    json.dumps([reentry]),
+                    json.dumps(
+                        [
+                            evidence_payload(candidate_id, signal_id)
+                            for signal_id in new_signal_ids
+                        ]
+                    ),
+                ),
+            ).fetchone() == (1,)
+        admin(connection)
+        assert connection.execute(
+            "SELECT status, rejected_at, rejected_source_version, last_source_version "
+            "FROM public.pattern_candidates WHERE id = %s",
+            (candidate_id,),
+        ).fetchone() == ("candidate", None, None, latest_source)

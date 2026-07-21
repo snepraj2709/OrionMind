@@ -32,6 +32,7 @@ ReflectionFingerprintPurpose: TypeAlias = Literal[
     "token_trigram",
     "signal_label",
     "safety_identifier",
+    "candidate_canonical",
 ]
 
 ENVELOPE_PURPOSES = frozenset(
@@ -379,6 +380,7 @@ class AesGcmContentCipher:
                 "token_trigram",
                 "signal_label",
                 "safety_identifier",
+                "candidate_canonical",
             }
         ):
             raise ValueError("invalid reflection fingerprint input")
