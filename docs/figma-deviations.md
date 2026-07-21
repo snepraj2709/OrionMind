@@ -55,8 +55,8 @@ This file records known differences between the Figma Make reference and the pro
 - **Approved shell width:** The brief asks to preserve a 380–400px sidebar. Production retains the approved Orion shell token, `clamp(264px, 18vw, 296px)`, so Reflections does not introduce a route-specific layout exception.
 - **Semantic color limits:** The brief mentions restrained lavender and terracotta accents. Those colors do not have approved semantic roles in the Orion design system, so the implementation uses the existing `accent`, `primary`, `muted`, and border tokens and never treats color as the only status cue.
 - **Refresh and filtered-empty states:** A compact refresh control, preserved-data refresh failure, offline notice, and distinct no-results state are included to satisfy the application data-state contract. They extend the brief without changing its Hidden Drivers, Recurring Loops, and Inner Tensions hierarchy.
-- **API boundary:** Production Reflections now requests a screen-ready, Zod-validated payload from authenticated `GET /api/v1/reflection`, scoped by user, active tab, and range. The endpoint also supports an unused bulk `all` response. Its source remains the single eight-entry fixture module until persistent storage replaces the simulation.
-- **Review integration limitation:** Approved Review reflections are intentionally not merged into the endpoint's static fixture response. The two features remain disconnected until a persistent backend owns the shared evidence lifecycle.
+- **API boundary:** Production Reflections requests one strict, Zod-validated aggregate from authenticated `GET /api/v1/reflections?range=7d|30d|all`. Ownership comes from the bearer token, tabs remain local UI state, and backend snapshot storage supplies the three reflection sections.
+- **Review integration limitation:** Approved Review reflections remain separate from longitudinal reflection snapshots. The aggregate endpoint reads accepted entry analyses and signals rather than the mock Review store.
 
 ### Evidence and typography
 

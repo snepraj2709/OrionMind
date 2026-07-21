@@ -21,11 +21,11 @@ cohort, so cohort membership cannot be inferred from a different response.
 Shadow mode runs synthesis and validation in the worker but never writes a
 public snapshot, candidate, insight, or evidence row.
 
-The browser build setting `NEXT_PUBLIC_REFLECTIONS_ENABLED` also defaults to
-`false`. A disabled build keeps the Reflections page shell and heading, renders
-the shared accessible unavailable state, and makes no aggregate or feedback
-request. Set it to `true` only alongside an enabled backend API; enabled builds
-retain the query key `['reflections', user.id, range]` and the behavior below.
+The authenticated Reflections screen always requests this API. Backend release
+and cohort controls remain authoritative: disabled or out-of-cohort reads return
+the opaque `503` response above, which the screen presents as a technical error
+with Retry. The client query key remains
+`['reflections', user.id, range]`.
 
 These controls do not change entry ingestion or processing. Text, voice,
 historical import, retry, and operator backfill continue through the shared
@@ -88,8 +88,18 @@ and correction context; it is never journal evidence.
   update or failure status.
 - `insufficient_reflective_content`: show the server-safe message and a New
   Entry action.
+- section-level `insufficient_evidence`: keep the tabs and show the section's
+  server-safe no-results message.
+- an available insight with no evidence in the selected range: show a
+  tab-level no-results state; for inner tensions, retain only tensions with
+  range evidence and show no results if none remain.
 - no-snapshot technical failure: the server returns `503`; the client shows its
   technical error and retry state without fabricating insufficiency.
+
+Missing sections, empty response objects, empty `available` tension arrays,
+unknown fields, and unknown enum values are contract violations. Strict client
+validation routes them to the same technical error and retry state rather than
+interpreting them as empty reflection data.
 
 Both operations are authenticated, return `Cache-Control: private, no-store`,
 and perform no synchronous model or provider call. The removed singular

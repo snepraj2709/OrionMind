@@ -18,6 +18,7 @@ import {
 } from './fixtures';
 import { ReflectionsScreen } from './reflections-screen';
 import {
+  HttpReflectionsRepository,
   reflectionsRepository,
   type PutReflectionFeedbackInput,
   type ReflectionsRepository,
@@ -97,10 +98,7 @@ function repositoryFor(initial = fixture()) {
   };
 }
 
-function renderReflections(
-  repository?: ReflectionsRepository,
-  reflectionsEnabled = true,
-) {
+function renderReflections(repository?: ReflectionsRepository) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -111,13 +109,9 @@ function renderReflections(
     );
   }
 
-  const rendered = render(
-    <ReflectionsScreen
-      reflectionsEnabled={reflectionsEnabled}
-      repository={repository}
-    />,
-    { wrapper: Wrapper },
-  );
+  const rendered = render(<ReflectionsScreen repository={repository} />, {
+    wrapper: Wrapper,
+  });
   return { ...rendered, queryClient };
 }
 
@@ -132,28 +126,6 @@ function deferred<T>() {
 }
 
 describe('ReflectionsScreen', () => {
-  it('renders an accessible unavailable state without reading or writing when disabled', () => {
-    const { getReflection, putFeedback, repository } = repositoryFor();
-
-    renderReflections(repository, false);
-
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Reflections',
-    );
-    const unavailable = screen.getByRole('status');
-    expect(unavailable).toBeVisible();
-    expect(
-      within(unavailable).getByRole('heading', {
-        name: 'Reflections aren’t available yet',
-      }),
-    ).toBeVisible();
-    expect(
-      screen.queryByText('Supported by 2 entries'),
-    ).not.toBeInTheDocument();
-    expect(getReflection).not.toHaveBeenCalled();
-    expect(putFeedback).not.toHaveBeenCalled();
-  });
-
   it('defaults to the real HTTP repository', async () => {
     const get = vi
       .spyOn(reflectionsRepository, 'getReflection')
@@ -318,6 +290,8 @@ describe('ReflectionsScreen', () => {
     expect(screen.getByText(insufficient.message)).toBeVisible();
     await user.click(screen.getByRole('radio', { name: 'Recurring loops' }));
     expect(screen.getByText(insufficient.message)).toBeVisible();
+    await user.click(screen.getByRole('radio', { name: 'Inner tensions' }));
+    expect(screen.getByText(insufficient.message)).toBeVisible();
   });
 
   it('keeps available tabs usable when one section is insufficient', async () => {
@@ -418,6 +392,54 @@ describe('ReflectionsScreen', () => {
     expect(await screen.findByText('Supported by 2 entries')).toBeVisible();
   });
 
+  it('treats a malformed successful response as a technical load failure', async () => {
+    const repository = new HttpReflectionsRepository(
+      vi.fn().mockResolvedValue(Response.json({ data: {} })),
+    );
+
+    renderReflections(repository);
+
+    expect(
+      await screen.findByText('Reflections are unavailable'),
+    ).toBeVisible();
+    expect(
+      screen.queryByText('More personal reflection is needed'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows a no-results state for available hidden drivers and loops without range evidence', async () => {
+    const response = fixture((value) => {
+      if (value.data.hiddenDriver.status === 'available') {
+        value.data.hiddenDriver.evidence = [];
+      }
+      if (value.data.recurringLoop.status === 'available') {
+        value.data.recurringLoop.evidence = [];
+      }
+    });
+    const user = userEvent.setup();
+    renderReflections(repositoryFor(response).repository);
+
+    expect(
+      await screen.findByText('No supporting entries in this range'),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        'No supporting entries are available for this pattern in the latest 90-day reflection window.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('group', { name: 'Hidden driver feedback' }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: 'Recurring loops' }));
+    expect(
+      screen.getByText('No supporting entries in this range'),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('group', { name: 'Recurring loop feedback' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('renders zero, one, and every returned inner tension', async () => {
     const user = userEvent.setup();
     const zero = fixture((value) => {
@@ -448,6 +470,39 @@ describe('ReflectionsScreen', () => {
     await screen.findByText('Supported by 2 entries');
     await user.click(screen.getByRole('radio', { name: 'Inner tensions' }));
     expect(screen.getAllByText('Possible integration')).toHaveLength(2);
+  });
+
+  it('filters zero-evidence inner tensions and falls back when none have range evidence', async () => {
+    const user = userEvent.setup();
+    const mixed = fixture((value) => {
+      if (value.data.innerTensions.status === 'available') {
+        value.data.innerTensions.tensions[0]!.evidence = [];
+      }
+    });
+    const first = renderReflections(repositoryFor(mixed).repository);
+    await screen.findByText('Supported by 2 entries');
+    await user.click(screen.getByRole('radio', { name: 'Inner tensions' }));
+    expect(
+      screen.queryByRole('heading', { name: 'Novelty' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Belonging' })).toBeVisible();
+    expect(screen.getAllByText('Possible integration')).toHaveLength(1);
+    first.unmount();
+
+    const empty = fixture((value) => {
+      if (value.data.innerTensions.status === 'available') {
+        value.data.innerTensions.tensions.forEach((tension) => {
+          tension.evidence = [];
+        });
+      }
+    });
+    renderReflections(repositoryFor(empty).repository);
+    await screen.findByText('Supported by 2 entries');
+    await user.click(screen.getByRole('radio', { name: 'Inner tensions' }));
+    expect(
+      screen.getByText('No supporting entries in this range'),
+    ).toBeVisible();
+    expect(screen.queryByText('Possible integration')).not.toBeInTheDocument();
   });
 
   it('optimistically saves once, disables only that insight, and reconciles success', async () => {

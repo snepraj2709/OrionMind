@@ -58,6 +58,53 @@ describe('reflection wire schemas', () => {
     },
   );
 
+  it('parses backend-exact zero-count, pending, and stale response states', () => {
+    const zeroCount = structuredClone(reflectionApiFixture);
+    zeroCount.reflectionState = 'insufficient_reflective_content';
+    zeroCount.processingState = 'idle';
+    zeroCount.snapshot = null;
+    zeroCount.analysisBasis = {
+      window: '90d',
+      validEntryCount: 0,
+      excludedEntryCount: 0,
+      distinctEntryDates: 0,
+      reflectiveWordCount: 0,
+      currentRangeFrom: null,
+      currentRangeTo: null,
+      excludedReasons: null,
+    };
+    zeroCount.data = {
+      hiddenDriver: {
+        status: 'insufficient_evidence',
+        reasonCode: 'NOT_ENOUGH_REFLECTIVE_CONTENT',
+        message: 'There is not enough personal reflection yet.',
+      },
+      recurringLoop: {
+        status: 'insufficient_evidence',
+        reasonCode: 'LOOP_NOT_REPEATED',
+        message: 'The same sequence has not repeated enough yet.',
+      },
+      innerTensions: {
+        status: 'insufficient_evidence',
+        reasonCode: 'BOTH_SIDES_NOT_SUPPORTED',
+        message: 'There is not enough evidence for two competing needs yet.',
+      },
+    };
+
+    const pending = structuredClone(zeroCount);
+    pending.reflectionState = 'first_reflection_pending';
+    pending.processingState = 'pending';
+
+    const stale = structuredClone(reflectionApiFixture);
+    stale.reflectionState = 'stale';
+    stale.processingState = 'failed';
+    if (stale.snapshot) stale.snapshot.isStale = true;
+
+    expect(reflectionApiResponseSchema.parse(zeroCount)).toEqual(zeroCount);
+    expect(reflectionApiResponseSchema.parse(pending)).toEqual(pending);
+    expect(reflectionApiResponseSchema.parse(stale)).toEqual(stale);
+  });
+
   it('accepts only the closed range request and no owner or tab fields', () => {
     expect(reflectionRequestSchema.parse({ range: '30d' })).toEqual({
       range: '30d',
@@ -108,6 +155,29 @@ describe('reflection wire schemas', () => {
     expect(
       reflectionFeedbackRequestSchema.safeParse({ response: 'accepted' })
         .success,
+    ).toBe(false);
+  });
+
+  it('rejects missing sections, empty payloads, and empty available tensions', () => {
+    const missingSection = structuredClone(reflectionApiFixture) as Record<
+      string,
+      unknown
+    >;
+    const data = missingSection.data as Record<string, unknown>;
+    delete data.recurringLoop;
+
+    expect(reflectionApiResponseSchema.safeParse({}).success).toBe(false);
+    expect(reflectionApiResponseSchema.safeParse(missingSection).success).toBe(
+      false,
+    );
+    expect(
+      reflectionApiResponseSchema.safeParse({
+        ...reflectionApiFixture,
+        data: {
+          ...reflectionApiFixture.data,
+          innerTensions: { status: 'available', tensions: [] },
+        },
+      }).success,
     ).toBe(false);
   });
 

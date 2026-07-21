@@ -49,10 +49,23 @@ describe('HttpReflectionsRepository', () => {
     );
   });
 
-  it('rejects failed and malformed GET and feedback responses', async () => {
+  it.each([401, 422, 503])(
+    'rejects a non-success GET response with status %s before parsing',
+    async (status) => {
+      const request = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response(null, { status }));
+      const repository = new HttpReflectionsRepository(request);
+
+      await expect(repository.getReflection({ range: 'all' })).rejects.toThrow(
+        `Reflection request failed: ${status}`,
+      );
+    },
+  );
+
+  it('rejects malformed GET and failed or malformed feedback responses', async () => {
     const request = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(null, { status: 503 }))
       .mockResolvedValueOnce(Response.json({ range: 'all' }))
       .mockResolvedValueOnce(new Response(null, { status: 404 }))
       .mockResolvedValueOnce(Response.json({ response: 'rejected' }));
@@ -63,9 +76,6 @@ describe('HttpReflectionsRepository', () => {
       response: 'rejected' as const,
     };
 
-    await expect(repository.getReflection({ range: 'all' })).rejects.toThrow(
-      'Reflection request failed: 503',
-    );
     await expect(repository.getReflection({ range: 'all' })).rejects.toThrow();
     await expect(repository.putFeedback(feedbackInput)).rejects.toThrow(
       'Reflection feedback failed: 404',

@@ -70,12 +70,12 @@ This document specifies the smallest repository-compatible implementation of an 
 ### Frontend shape
 
 - `src/features/reflections/reflections-screen.tsx` is already a client boundary inside the protected `/reflections` route and composes `PageShell`.
-- It currently injects `MockReflectionsRepository` by default and makes one query per active tab.
-- `src/app/api/v1/reflection/route.ts` is a production-reachable fixture route backed by static entries. It must be removed once the real aggregate backend is wired.
+- It defaults to `HttpReflectionsRepository`, requests the plural aggregate once per user and range, and keeps tab changes local.
+- The singular fixture route has been removed; production has no mock or same-origin reflection fallback.
 - `src/features/reflections/api-schema.ts` is the executable Zod wire contract; `repository.ts` parses every response; `queries.ts` owns the TanStack Query key.
 - The screen already reuses `DataViewStatus`, `EmptyState`, `NoResultsState`, `InlineError`, `EvidenceDrawer`, `RefreshButton`, `ReflectionTabs`, the three insight compositions, and the feedback surface.
-- `InnerTensionCard` already supports multiple tensions. The API must also permit zero or one.
-- The current response buttons (`resonates`, `partly`, `rejected`) are local React state and are not restored after refresh.
+- `InnerTensionCard` supports multiple tensions. Zero tensions use the strict `insufficient_evidence` union; an `available` section requires at least one tension.
+- The response buttons (`resonates`, `partly`, `rejected`) persist through the plural feedback endpoint and reconcile the current aggregate cache.
 - The authenticated API client restricts requests to the configured origin and `/api/v1` path, adds the Supabase bearer token, coordinates one token refresh, and prevents cross-origin/path confusion.
 
 ### Existing test and release contracts

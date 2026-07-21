@@ -14,7 +14,6 @@ import {
 import { PageHeader, PageShell, Section } from '@/components/layout';
 import { AppLink, SegmentedControl } from '@/components/navigation';
 import { EvidenceDrawer, RefreshButton } from '@/components/shared';
-import { apiConfig } from '@/config/api';
 import type { ThemeKey } from '@/config/design-system';
 import { dataViewMessages } from '@/config/messages';
 import { routes } from '@/config/routes';
@@ -77,13 +76,24 @@ function InsufficientSection({ insight }: { insight: InsufficientInsight }) {
   );
 }
 
+function NoEvidenceSection({ range }: { range: ReflectionRange }) {
+  return (
+    <NoResultsState
+      description={
+        range === 'all'
+          ? 'No supporting entries are available for this pattern in the latest 90-day reflection window.'
+          : 'No supporting entries for this pattern fall within the selected range. Try a broader range.'
+      }
+      title="No supporting entries in this range"
+    />
+  );
+}
+
 export interface ReflectionsScreenProps {
-  reflectionsEnabled?: boolean;
   repository?: ReflectionsRepository;
 }
 
 export function ReflectionsScreen({
-  reflectionsEnabled = apiConfig.reflectionsEnabled,
   repository = reflectionsRepository,
 }: ReflectionsScreenProps) {
   const { user } = useAuth();
@@ -93,7 +103,7 @@ export function ReflectionsScreen({
   const [drawerItems, setDrawerItems] = useState<DrawerEvidenceItem[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isOnline = useOnlineStatus();
-  const activeUserId = reflectionsEnabled ? user?.id : undefined;
+  const activeUserId = user?.id;
 
   const { query: reflectionQuery, viewStatus } = useReflectionQuery(
     activeUserId,
@@ -120,7 +130,6 @@ export function ReflectionsScreen({
     insightId: string,
     response: ReflectionFeedbackResponse,
   ) {
-    if (!reflectionsEnabled) return;
     const snapshotId = reflectionQuery.data?.snapshot?.id;
     if (!snapshotId) return;
     feedbackMutation.submitFeedback({ insightId, response, snapshotId });
@@ -129,21 +138,6 @@ export function ReflectionsScreen({
   const response = reflectionQuery.data;
   const basis = response?.analysisBasis;
 
-  if (!reflectionsEnabled) {
-    return (
-      <PageShell className="space-y-8">
-        <PageHeader
-          description="A private space for patterns across your journal entries."
-          title={routes.reflections.label}
-        />
-        <EmptyState
-          description="You can keep using your journal as usual. This space will appear when it is available."
-          title="Reflections aren’t available yet"
-        />
-      </PageShell>
-    );
-  }
-
   let activePanel: ReactNode = null;
 
   if (response && activeView === 'hidden-drivers') {
@@ -151,6 +145,8 @@ export function ReflectionsScreen({
     activePanel =
       insight.status === 'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : insight.evidence.length === 0 ? (
+        <NoEvidenceSection range={range} />
       ) : (
         <HiddenDriverCard
           driver={insight}
@@ -170,6 +166,8 @@ export function ReflectionsScreen({
     activePanel =
       insight.status === 'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : insight.evidence.length === 0 ? (
+        <NoEvidenceSection range={range} />
       ) : (
         <Section
           description={insight.description}
@@ -192,16 +190,22 @@ export function ReflectionsScreen({
 
   if (response && activeView === 'inner-tensions') {
     const insight = response.data.innerTensions;
+    const tensionsWithEvidence =
+      insight.status === 'available'
+        ? insight.tensions.filter((tension) => tension.evidence.length > 0)
+        : [];
     activePanel =
       insight.status === 'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : tensionsWithEvidence.length === 0 ? (
+        <NoEvidenceSection range={range} />
       ) : (
         <Section
           headingId="inner-tensions-heading"
           title="Needs you may be trying to hold at the same time"
         >
           <div className="space-y-4">
-            {insight.tensions.map((tension) => (
+            {tensionsWithEvidence.map((tension) => (
               <InnerTensionCard
                 error={feedbackMutation.errors[tension.id]}
                 key={tension.id}

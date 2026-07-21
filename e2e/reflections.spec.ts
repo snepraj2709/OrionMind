@@ -218,3 +218,33 @@ test('renders first-pending and insufficient-content states from the API', async
     page.getByRole('link', { name: 'Write a new entry' }),
   ).toBeVisible();
 });
+
+test('shows no-results fallbacks for available insights without range evidence', async ({
+  page,
+}) => {
+  const response = structuredClone(reflectionApiFixture);
+  if (response.data.hiddenDriver.status === 'available') {
+    response.data.hiddenDriver.evidence = [];
+  }
+  if (response.data.recurringLoop.status === 'available') {
+    response.data.recurringLoop.evidence = [];
+  }
+  if (response.data.innerTensions.status === 'available') {
+    response.data.innerTensions.tensions[0]!.evidence = [];
+  }
+
+  await openReflections(page, response);
+  await expect(
+    page.getByText('No supporting entries in this range'),
+  ).toBeVisible();
+
+  await page.getByRole('radio', { name: 'Recurring loops' }).click();
+  await expect(
+    page.getByText('No supporting entries in this range'),
+  ).toBeVisible();
+
+  await page.getByRole('radio', { name: 'Inner tensions' }).click();
+  await expect(page.getByRole('heading', { name: 'Novelty' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Belonging' })).toBeVisible();
+  await expect(page.getByText('Possible integration')).toHaveCount(1);
+});
