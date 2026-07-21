@@ -238,6 +238,7 @@ def create_app(
         repository=ReflectionsRepository(),
         cipher=resolved_content_cipher,
         basis_days=resolved_settings.REFLECTION_BASIS_DAYS,
+        enabled=resolved_settings.REFLECTION_API_ENABLED,
     )
     app.state.content_cipher = resolved_content_cipher
     app.state.entry_service = EntryService(

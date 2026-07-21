@@ -23,4 +23,20 @@ describe('API configuration', () => {
       'https://api.orion.test/api/v1/reflection',
     );
   });
+
+  it('keeps Reflections disabled when its public flag is absent', async () => {
+    vi.stubEnv('NEXT_PUBLIC_REFLECTIONS_ENABLED', '');
+    const { apiConfig } = await import('./api');
+
+    expect(apiConfig.reflectionsEnabled).toBe(false);
+  });
+
+  it('enables Reflections only for an explicit true public flag', async () => {
+    vi.stubEnv('NEXT_PUBLIC_REFLECTIONS_ENABLED', 'true');
+    const { apiConfig, publicFeatureEnabled } = await import('./api');
+
+    expect(apiConfig.reflectionsEnabled).toBe(true);
+    expect(publicFeatureEnabled('false')).toBe(false);
+    expect(publicFeatureEnabled('unexpected')).toBe(false);
+  });
 });

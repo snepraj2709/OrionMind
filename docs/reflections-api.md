@@ -1,5 +1,32 @@
 # Reflections API
 
+## Release controls
+
+Reflections are fail-closed. The backend settings
+`REFLECTION_ENGINE_ENABLED`, `REFLECTION_SCHEDULER_ENABLED`, and
+`REFLECTION_API_ENABLED` all default to `false`. Enabling the scheduler or the
+public API requires the engine; the API does not require the scheduler because
+it may expose an already-created snapshot.
+
+When `REFLECTION_API_ENABLED=false`, both operations below return the same
+opaque `503 SERVICE_UNAVAILABLE` envelope with `Cache-Control: private,
+no-store`. The service gate runs before any Reflection repository read,
+feedback write, or provider call. The routes remain in the frozen inventory
+and OpenAPI contract.
+
+The browser build setting `NEXT_PUBLIC_REFLECTIONS_ENABLED` also defaults to
+`false`. A disabled build keeps the Reflections page shell and heading, renders
+the shared accessible unavailable state, and makes no aggregate or feedback
+request. Set it to `true` only alongside an enabled backend API; enabled builds
+retain the query key `['reflections', user.id, range]` and the behavior below.
+
+These controls do not change entry ingestion or processing. Text, voice,
+historical import, retry, and operator backfill continue through the shared
+`processing_jobs` queue. Production Reflections must remain disabled until the
+P0-09D release blocker is resolved with a real KMS-backed key source, rotation,
+and recovery procedure; environment-held key maps do not satisfy that
+requirement.
+
 ## Aggregate read
 
 `GET /api/v1/reflections?range=7d|30d|all`

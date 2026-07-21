@@ -56,12 +56,14 @@ class ReflectionsService:
         *,
         repository: ReflectionsRepository,
         cipher: ContentCipher,
+        enabled: bool,
         basis_days: int = 90,
     ) -> None:
         if basis_days != 90:
             raise ValueError("the MVP reflection basis must be exactly 90 days")
         self._repository = repository
         self._cipher = cipher
+        self._enabled = enabled
 
     def read(
         self,
@@ -69,6 +71,7 @@ class ReflectionsService:
         query: ReflectionQuery,
         uow: UnitOfWorkFactory,
     ) -> ReflectionResponse:
+        self._require_enabled()
         with uow.for_user(query.user_id) as work:
             raw = self._repository.load_aggregate(work.session, user_id=query.user_id)
         return self._build_response(query=query, raw=raw)
@@ -79,6 +82,7 @@ class ReflectionsService:
         command: FeedbackCommand,
         uow: UnitOfWorkFactory,
     ) -> FeedbackResult:
+        self._require_enabled()
         try:
             with uow.for_user(command.user_id) as work:
                 saved = self._repository.put_feedback(
@@ -101,6 +105,15 @@ class ReflectionsService:
             response=saved.response,
             updated_at=saved.updated_at,
         )
+
+    def _require_enabled(self) -> None:
+        if not self._enabled:
+            raise DomainError(
+                503,
+                "SERVICE_UNAVAILABLE",
+                "The service is temporarily unavailable.",
+                headers=NO_STORE_HEADERS,
+            )
 
     def _build_response(
         self,

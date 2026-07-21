@@ -31,6 +31,7 @@ export default defineConfig({
     ? undefined
     : {
         command: 'npm run build && npm run start -- --port 3100',
+        env: { NEXT_PUBLIC_REFLECTIONS_ENABLED: 'true' },
         timeout: 120_000,
         url: `${baseURL}/api/health`,
         reuseExistingServer: !process.env.CI,

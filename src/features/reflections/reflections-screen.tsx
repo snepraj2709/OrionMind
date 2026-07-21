@@ -14,8 +14,9 @@ import {
 import { PageHeader, PageShell, Section } from '@/components/layout';
 import { AppLink, SegmentedControl } from '@/components/navigation';
 import { EvidenceDrawer, RefreshButton } from '@/components/shared';
-import { dataViewMessages } from '@/config/messages';
+import { apiConfig } from '@/config/api';
 import type { ThemeKey } from '@/config/design-system';
+import { dataViewMessages } from '@/config/messages';
 import { routes } from '@/config/routes';
 import { useAuth } from '@/features/auth';
 import { useOnlineStatus } from '@/hooks';
@@ -77,10 +78,12 @@ function InsufficientSection({ insight }: { insight: InsufficientInsight }) {
 }
 
 export interface ReflectionsScreenProps {
+  reflectionsEnabled?: boolean;
   repository?: ReflectionsRepository;
 }
 
 export function ReflectionsScreen({
+  reflectionsEnabled = apiConfig.reflectionsEnabled,
   repository = reflectionsRepository,
 }: ReflectionsScreenProps) {
   const { user } = useAuth();
@@ -90,14 +93,15 @@ export function ReflectionsScreen({
   const [drawerItems, setDrawerItems] = useState<DrawerEvidenceItem[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isOnline = useOnlineStatus();
+  const activeUserId = reflectionsEnabled ? user?.id : undefined;
 
   const { query: reflectionQuery, viewStatus } = useReflectionQuery(
-    user?.id,
+    activeUserId,
     { range },
     repository,
   );
   const feedbackMutation = useReflectionFeedbackMutation(
-    user?.id,
+    activeUserId,
     range,
     repository,
   );
@@ -116,6 +120,7 @@ export function ReflectionsScreen({
     insightId: string,
     response: ReflectionFeedbackResponse,
   ) {
+    if (!reflectionsEnabled) return;
     const snapshotId = reflectionQuery.data?.snapshot?.id;
     if (!snapshotId) return;
     feedbackMutation.submitFeedback({ insightId, response, snapshotId });
@@ -123,6 +128,22 @@ export function ReflectionsScreen({
 
   const response = reflectionQuery.data;
   const basis = response?.analysisBasis;
+
+  if (!reflectionsEnabled) {
+    return (
+      <PageShell className="space-y-8">
+        <PageHeader
+          description="A private space for patterns across your journal entries."
+          title={routes.reflections.label}
+        />
+        <EmptyState
+          description="You can keep using your journal as usual. This space will appear when it is available."
+          title="Reflections aren’t available yet"
+        />
+      </PageShell>
+    );
+  }
+
   let activePanel: ReactNode = null;
 
   if (response && activeView === 'hidden-drivers') {

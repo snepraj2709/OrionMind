@@ -116,7 +116,7 @@ def cipher() -> AesGcmContentCipher:
     )
 
 
-def settings() -> Settings:
+def settings(*, reflections_enabled: bool = True) -> Settings:
     return Settings.model_validate(
         {
             "ENVIRONMENT": "test",
@@ -124,6 +124,8 @@ def settings() -> Settings:
             "CORS_ALLOW_ORIGINS": "https://app.example.test",
             "LOG_FORMAT": "text",
             "RATE_LIMITING_ENABLED": False,
+            "REFLECTION_ENGINE_ENABLED": reflections_enabled,
+            "REFLECTION_API_ENABLED": reflections_enabled,
         }
     )
 
@@ -339,13 +341,13 @@ def add_tension(
     return insight_id
 
 
-def build_app(raw: dict[str, object]):
+def build_app(raw: dict[str, object], *, reflections_enabled: bool = True):
     content_cipher = cipher()
     repository = Repository(raw)
     provider = Provider()
     sessions = DatabaseSessions(None, None, lambda: Session(), None)  # type: ignore[arg-type]
     app = create_app(
-        settings=settings(),
+        settings=settings(reflections_enabled=reflections_enabled),
         database_sessions=sessions,
         token_verifier=Verifier(),
         reflection_provider=provider,
@@ -354,8 +356,45 @@ def build_app(raw: dict[str, object]):
     app.state.reflections_service = ReflectionsService(
         repository=repository,  # type: ignore[arg-type]
         cipher=content_cipher,
+        enabled=reflections_enabled,
     )
     return app, repository, provider, content_cipher
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("GET", "/api/v1/reflections?range=all", None),
+        (
+            "PUT",
+            f"/api/v1/reflections/{SNAPSHOT_ID}/insights/{uuid4()}/feedback",
+            {"response": "resonates"},
+        ),
+    ],
+)
+def test_disabled_reflection_operations_are_opaque_no_store_and_side_effect_free(
+    method: str,
+    path: str,
+    payload: dict[str, str] | None,
+) -> None:
+    app, repository, provider, _content_cipher = build_app(
+        raw_with_snapshot(), reflections_enabled=False
+    )
+
+    with TestClient(app) as client:
+        response = client.request(method, path, headers=HEADERS, json=payload)
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.json() == {
+        "error_code": "SERVICE_UNAVAILABLE",
+        "message": "The service is temporarily unavailable.",
+        "details": {},
+        "request_id": response.json()["request_id"],
+    }
+    assert repository.read_users == []
+    assert repository.feedback_calls == []
+    assert provider.calls == []
 
 
 @pytest.mark.parametrize("selected_range", ["7d", "30d", "all"])

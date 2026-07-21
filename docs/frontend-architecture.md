@@ -276,9 +276,9 @@ Do not infer missing API fields from the Make fixtures. When the backend contrac
 
 #### Reflections screen-data boundary
 
-Reflections uses the authenticated `GET /api/v1/reflection` screen-data contract documented in `docs/reflections-api.md`. Its Zod-discriminated response is already shaped for one of Hidden Driver, Recurring Loop, Inner Tension, or the supported bulk `all` variant, so the UI renders the selected payload directly instead of running a second client derivation. Query keys contain the authenticated user ID, active API tab, and date range.
+Reflections uses the authenticated aggregate `GET /api/v1/reflections?range=7d|30d|all` contract documented in `docs/reflections-api.md`. Its Zod-discriminated response returns Hidden Driver, Recurring Loop, and zero, one, or multiple Inner Tensions together. Query keys contain the authenticated user ID and date range; tabs are local UI state and never enter the wire request. Feedback uses the owner-derived plural insight endpoint and reconciles the same aggregate cache.
 
-The simulated handler derives those payloads from one typed fixture module. This is a temporary transport-compatible boundary: Review-approved reflection evidence is not merged into the production Reflections query until persistent backend storage owns both features.
+`NEXT_PUBLIC_REFLECTIONS_ENABLED` is a fail-closed build setting and defaults to `false`. When disabled, the screen keeps the page shell and heading, uses the shared accessible unavailable state, and creates no aggregate or feedback request. When enabled, production uses the authenticated HTTP repository. Reflection fixtures, response builders, and mock repositories are test-only and are not exported through the production feature entrypoint.
 
 Client API URLs resolve through `src/config/api.ts`. `NEXT_PUBLIC_API_BASE_URL` is empty for same-origin mock routes and may be set to a real backend origin without changing feature components. The shared API client reads the current Supabase session, attaches its access token as a bearer credential, and restricts authenticated requests to the configured origin under `/api/v1`. A cross-origin backend must explicitly allow the frontend origin, credentials, and the `Authorization` header.
 

@@ -46,6 +46,13 @@ Use HTTPS Supabase and CORS origins. Keep API docs disabled. Retain the fixed re
 request limits, one-worker setting, and separate application/worker URLs enforced by production
 settings validation.
 
+Keep `REFLECTION_ENGINE_ENABLED=false`, `REFLECTION_SCHEDULER_ENABLED=false`, and
+`REFLECTION_API_ENABLED=false` in production until all Reflection release blockers are closed. The
+scheduler and public API each require the engine when enabled; the API remains independent of the
+scheduler so an existing internal snapshot can be read without scheduling new synthesis. Frontend
+production builds must likewise keep `NEXT_PUBLIC_REFLECTIONS_ENABLED=false`. These flags are
+release controls, not substitutes for KMS readiness.
+
 ## Startup and health
 
 Web startup performs only a bounded `SELECT 1` through every configured database engine. A failed
@@ -62,7 +69,8 @@ SQLAlchemy traces. No public metrics route exists.
 
 ## Release blockers
 
-Before calling the service production-ready, implement KMS-backed key wrapping and its rotation and
-recovery runbook, then run the waived two-account Supabase API/direct-RLS proof, Auth
+Before calling the service production-ready, implement a real KMS-backed key source and its
+rotation and recovery runbook; environment-held master-key maps are not sufficient. Then run the
+waived two-account Supabase API/direct-RLS proof, Auth
 deletion/cascade proof, and cross-user ciphertext/decryption proof against an authorized disposable
 Supabase project. Deployment itself also requires explicit authorization.

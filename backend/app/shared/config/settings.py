@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     )
     REFLECTION_ENGINE_ENABLED: bool = False
     REFLECTION_SCHEDULER_ENABLED: bool = False
+    REFLECTION_API_ENABLED: bool = False
     REFLECTION_SCHEDULER_POLL_SECONDS: float = Field(default=60.0, ge=1, le=3600)
     REFLECTION_BASIS_DAYS: int = Field(default=90, ge=90, le=90)
     WEB_CONCURRENCY: int = Field(default=1, ge=1, le=1)
@@ -136,6 +137,8 @@ class Settings(BaseSettings):
     def validate_production(self) -> "Settings":
         if self.REFLECTION_SCHEDULER_ENABLED and not self.REFLECTION_ENGINE_ENABLED:
             raise ValueError("reflection scheduler requires the reflection engine")
+        if self.REFLECTION_API_ENABLED and not self.REFLECTION_ENGINE_ENABLED:
+            raise ValueError("reflection API requires the reflection engine")
         if self.ENVIRONMENT != "production":
             return self
         if self.ENABLE_API_DOCS:

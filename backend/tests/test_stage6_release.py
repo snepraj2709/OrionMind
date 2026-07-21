@@ -371,3 +371,40 @@ def test_shared_processing_worker_is_the_only_operational_entrypoint() -> None:
     assert configured.PROCESSING_JOB_HEARTBEAT_SECONDS == 30
     assert configured.PROCESSING_JOB_STALE_SECONDS == 300
     assert configured.PROCESSING_JOB_RECOVERY_INTERVAL_SECONDS == 60
+
+    app = create_app(
+        settings=configured,
+        database_sessions=empty_sessions(),
+        token_verifier=Verifier(),
+    )
+    assert app.state.reflections_service._enabled is False
+    assert app.state.job_service._processing is app.state.processing_service
+    assert app.state.processing_worker._service is app.state.job_service
+    assert ("POST", "/api/v1/entry") in PUBLIC_OPERATIONS
+
+
+def test_reflection_release_flags_default_off_and_require_the_engine() -> None:
+    configured = Settings.model_validate({})
+    assert configured.REFLECTION_ENGINE_ENABLED is False
+    assert configured.REFLECTION_SCHEDULER_ENABLED is False
+    assert configured.REFLECTION_API_ENABLED is False
+
+    with pytest.raises(
+        ValidationError, match="reflection scheduler requires the reflection engine"
+    ):
+        Settings.model_validate({"REFLECTION_SCHEDULER_ENABLED": True})
+
+    with pytest.raises(
+        ValidationError, match="reflection API requires the reflection engine"
+    ):
+        Settings.model_validate({"REFLECTION_API_ENABLED": True})
+
+    enabled = Settings.model_validate(
+        {
+            "REFLECTION_ENGINE_ENABLED": True,
+            "REFLECTION_SCHEDULER_ENABLED": True,
+            "REFLECTION_API_ENABLED": True,
+        }
+    )
+    assert enabled.REFLECTION_SCHEDULER_ENABLED is True
+    assert enabled.REFLECTION_API_ENABLED is True

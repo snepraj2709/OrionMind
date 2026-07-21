@@ -97,7 +97,10 @@ function repositoryFor(initial = fixture()) {
   };
 }
 
-function renderReflections(repository?: ReflectionsRepository) {
+function renderReflections(
+  repository?: ReflectionsRepository,
+  reflectionsEnabled = true,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -108,9 +111,13 @@ function renderReflections(repository?: ReflectionsRepository) {
     );
   }
 
-  const rendered = render(<ReflectionsScreen repository={repository} />, {
-    wrapper: Wrapper,
-  });
+  const rendered = render(
+    <ReflectionsScreen
+      reflectionsEnabled={reflectionsEnabled}
+      repository={repository}
+    />,
+    { wrapper: Wrapper },
+  );
   return { ...rendered, queryClient };
 }
 
@@ -125,6 +132,28 @@ function deferred<T>() {
 }
 
 describe('ReflectionsScreen', () => {
+  it('renders an accessible unavailable state without reading or writing when disabled', () => {
+    const { getReflection, putFeedback, repository } = repositoryFor();
+
+    renderReflections(repository, false);
+
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      'Reflections',
+    );
+    const unavailable = screen.getByRole('status');
+    expect(unavailable).toBeVisible();
+    expect(
+      within(unavailable).getByRole('heading', {
+        name: 'Reflections aren’t available yet',
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByText('Supported by 2 entries'),
+    ).not.toBeInTheDocument();
+    expect(getReflection).not.toHaveBeenCalled();
+    expect(putFeedback).not.toHaveBeenCalled();
+  });
+
   it('defaults to the real HTTP repository', async () => {
     const get = vi
       .spyOn(reflectionsRepository, 'getReflection')
