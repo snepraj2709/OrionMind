@@ -20,23 +20,36 @@ test('serves the canonical logo and a valid favicon', async ({ request }) => {
   ]);
 });
 
-test('allows public route access', async ({ page }) => {
+test('loads the public landing route without runtime errors', async ({
+  page,
+}) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
   await page.goto(routes.home.path);
+  await page.waitForLoadState('networkidle');
   await expect(page).toHaveURL(routes.home.path);
   await expect(
     page.getByRole('heading', {
-      name: 'A place for what happened—and what it may be showing you.',
+      name: 'Connect the dots in your thoughts.',
     }),
   ).toBeVisible();
+  await expect(page.getByText('Something went wrong')).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
 
-  const createAccountLinks = page.getByRole('link', {
-    name: 'Create account',
-  });
-  await expect(createAccountLinks).toHaveCount(3);
-  for (const link of await createAccountLinks.all()) {
-    await expect(link).toHaveAttribute('href', routes.signup.path);
-  }
+test('keeps the landing-page top bar in normal document flow', async ({
+  page,
+}) => {
+  await page.goto(routes.home.path);
+  await page.waitForLoadState('networkidle');
 
+  const banner = page.getByRole('banner');
+  await expect(banner).toHaveCount(1);
+  await expect(banner).toHaveCSS('position', 'static');
+});
+
+test('allows forgot-password public route access', async ({ page }) => {
   await page.goto(routes.forgotPassword.path);
 
   await expect(
@@ -44,20 +57,22 @@ test('allows public route access', async ({ page }) => {
   ).toBeVisible();
 });
 
-test('keeps every landing action available without mobile overflow', async ({
+test('loads the mobile landing route without runtime errors or overflow', async ({
   page,
 }) => {
+  const pageErrors: string[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+
   await page.setViewportSize({ width: 320, height: 900 });
   await page.goto(routes.home.path);
+  await page.waitForLoadState('networkidle');
 
   await expect(
     page.getByRole('heading', {
-      name: 'A place for what happened—and what it may be showing you.',
+      name: 'Connect the dots in your thoughts.',
     }),
   ).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Create account' })).toHaveCount(
-    3,
-  );
+  await expect(page.getByText('Something went wrong')).toHaveCount(0);
 
   const pageWidth = await page.evaluate(() => ({
     content: document.documentElement.scrollWidth,
@@ -66,30 +81,73 @@ test('keeps every landing action available without mobile overflow', async ({
 
   expect(pageWidth.content).toBeLessThanOrEqual(pageWidth.viewport);
 
-  const viewportSections = await page
-    .locator('[data-viewport-section]')
-    .evaluateAll((sections) =>
-      sections.map((section) => ({
-        height: section.getBoundingClientRect().height,
-        contentHeight: section.scrollHeight,
-      })),
-    );
+  expect(pageErrors).toEqual([]);
+});
 
-  expect(viewportSections).toHaveLength(3);
-  for (const section of viewportSections) {
-    expect(section.height).toBeGreaterThanOrEqual(900);
-    expect(section.contentHeight).toBeLessThanOrEqual(section.height);
+test('uses the document as the only landing-page vertical scroller', async ({
+  page,
+}) => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 768, height: 900 },
+    { width: 320, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(routes.home.path);
+    await page.waitForLoadState('networkidle');
+
+    const result = await page.evaluate(() => {
+      const nestedVerticalScrollContainers = Array.from(
+        document.querySelectorAll<HTMLElement>('*'),
+      )
+        .filter((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          return (
+            style.display !== 'none' &&
+            style.visibility !== 'hidden' &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            ['auto', 'scroll'].includes(style.overflowY)
+          );
+        })
+        .map((element) => ({
+          tag: element.tagName.toLowerCase(),
+          className:
+            typeof element.className === 'string' ? element.className : '',
+        }));
+      return {
+        behavior: getComputedStyle(document.documentElement).scrollBehavior,
+        documentScroller: document.scrollingElement?.tagName.toLowerCase(),
+        nestedVerticalScrollContainers,
+      };
+    });
+
+    expect(result.behavior).toBe('auto');
+    expect(result.documentScroller).toBe('html');
+    expect(result.nestedVerticalScrollContainers).toEqual([]);
   }
+});
 
-  const footer = page.getByRole('contentinfo');
-  await expect(
-    footer.getByRole('heading', {
-      name: 'Begin with the entry only you can write.',
-    }),
-  ).toBeVisible();
-  await expect(footer.getByRole('link', { name: 'Twitter / X' })).toBeVisible();
-  await expect(footer.getByRole('link', { name: 'LinkedIn' })).toBeVisible();
-  await expect(footer.getByRole('link', { name: 'Instagram' })).toBeVisible();
+test('keeps wheel input authoritative after section navigation', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(routes.home.path);
+  await page.waitForLoadState('networkidle');
+
+  await page
+    .locator('a[href="#how-it-works"]')
+    .first()
+    .evaluate((link: HTMLAnchorElement) => link.click());
+  await page.waitForTimeout(100);
+  const beforeWheel = await page.evaluate(() => window.scrollY);
+  await page.mouse.move(720, 450);
+  await page.mouse.wheel(0, 400);
+  await page.waitForTimeout(150);
+  const afterWheel = await page.evaluate(() => window.scrollY);
+
+  expect(afterWheel).toBeGreaterThan(beforeWheel);
 });
 
 test('redirects protected routes to login', async ({ page }) => {

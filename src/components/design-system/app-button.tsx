@@ -87,7 +87,7 @@ export function AppButton({
       aria-busy={loading || undefined}
       aria-label={loading ? loadingLabel : ariaLabel}
       className={cn(
-        'type-button focus-visible:ring-ring relative gap-2 transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+        'type-button focus-visible:ring-ring relative w-fit max-w-full gap-2 whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
         shapeClasses[shape],
         variantClasses[variant],
         variant === 'icon' ? iconSizeClass : sizeClasses[size],

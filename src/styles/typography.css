@@ -99,3 +99,96 @@
   font-weight: 400;
   line-height: 40px;
 }
+
+/* Landing-only roles approved in docs/design-exceptions.md. */
+@utility type-landing-brand {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+@utility type-landing-hero {
+  font-family: var(--font-sans);
+  font-size: 56px;
+  font-weight: 600;
+  line-height: 64px;
+}
+
+@utility type-landing-final {
+  font-family: var(--font-sans);
+  font-size: 44px;
+  font-weight: 600;
+  line-height: 52px;
+}
+
+@utility type-landing-display {
+  font-family: var(--font-sans);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 48px;
+}
+
+@utility type-landing-section-large {
+  font-family: var(--font-sans);
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 44px;
+}
+
+@utility type-landing-section {
+  font-family: var(--font-sans);
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 40px;
+}
+
+@utility type-landing-quote {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 44px;
+}
+
+@utility type-landing-supporting {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 26px;
+}
+
+@utility type-landing-stage-title {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+@utility type-landing-editorial {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 24px;
+}
+
+@utility type-landing-card-title {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 19px;
+}
+
+@utility type-landing-compact {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 17px;
+}
+
+@utility type-landing-caption {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+}

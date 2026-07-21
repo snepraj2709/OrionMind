@@ -116,7 +116,13 @@ export function JourneySteamgraph({
             />
           ))}
         </svg>
-        <div aria-hidden="true" className="grid grid-cols-6 gap-2 pt-3">
+        <div
+          aria-hidden="true"
+          className="grid gap-2 pt-3"
+          style={{
+            gridTemplateColumns: `repeat(${points.length}, minmax(0, 1fr))`,
+          }}
+        >
           {points.map((point) => (
             <Typography
               className="text-muted-foreground text-center"

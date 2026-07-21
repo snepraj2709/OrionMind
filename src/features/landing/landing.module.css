@@ -28,8 +28,775 @@
   animation: landing-loop-stage 7s var(--ease-out) infinite;
 }
 
-.sectionAnchor {
-  scroll-margin-top: var(--mobile-header-height);
+.landingPage {
+  --landing-desktop-gutter: 80px;
+}
+
+.desktopHeader,
+.headerShell {
+  height: 72px;
+}
+
+.landingBrand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.heroSection {
+  min-height: 720px;
+}
+
+.heroShell,
+.quoteShell,
+.transformationShell,
+.featureShell,
+.insightsShell,
+.reflectionsShell,
+.journeyShell,
+.trustShell,
+.finalCtaShell,
+.footerShell {
+  padding-block: var(--space-20);
+}
+
+.mockImage {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.featureBullets li,
+.insightsShell li {
+  position: relative;
+}
+
+.bulletDot {
+  width: 4px;
+  height: 4px;
+  margin-top: 8px;
+  flex: 0 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+.featureDetails {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.stageDots {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  height: 8px;
+  background: var(--background);
+  padding-right: 5px;
+}
+
+.stageDots span {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--primary);
+}
+
+.stageDots span:nth-child(2) {
+  background: var(--accent);
+}
+
+.stageDots span:nth-child(3) {
+  background: var(--counterpoint);
+}
+
+.emphasis,
+.tensionDetails li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.emphasis > span,
+.tensionDetails li > span {
+  width: 4px;
+  height: 4px;
+  margin-top: 6px;
+  flex: 0 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--counterpoint);
+}
+
+.tensionDetails ul {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.tensionDetails li:first-child > span {
+  background: var(--primary);
+}
+
+.journeyLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+}
+
+.journeyLegend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.journeyLegend li > span {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+}
+
+@media (min-width: 1024px) {
+  .exactShell {
+    max-width: 1440px;
+    height: 100%;
+    padding: 0 var(--landing-desktop-gutter);
+  }
+
+  .headerShell {
+    padding-block: 0;
+  }
+
+  .desktopHeader nav:first-of-type {
+    gap: 32px;
+  }
+
+  .desktopHeader nav:last-of-type {
+    gap: 24px;
+  }
+
+  .desktopHeader nav a:not([data-slot='button']) {
+    padding-inline: 0;
+  }
+
+  .heroSection,
+  .heroShell {
+    height: 720px;
+    min-height: 720px;
+  }
+
+  .heroShell,
+  .quoteShell,
+  .transformationShell,
+  .featureShell,
+  .insightsShell,
+  .reflectionsShell,
+  .journeyShell,
+  .trustShell,
+  .finalCtaShell,
+  .footerShell {
+    position: relative;
+    display: block;
+    padding-block: 0;
+  }
+
+  .heroCopy {
+    position: absolute;
+    top: 222px;
+    left: 80px;
+    width: 624px;
+    height: 336px;
+    max-width: none;
+  }
+
+  .heroHeadline {
+    width: 624px;
+  }
+
+  .heroHeadline > span:last-child {
+    column-gap: 14px;
+  }
+
+  .heroCopy > * {
+    margin-block: 0 !important;
+  }
+
+  .heroCopy > :nth-child(2) {
+    margin-top: 16px !important;
+  }
+
+  .heroCopy > :nth-child(3) {
+    margin-top: 32px !important;
+    gap: 20px;
+  }
+
+  .heroCopy > :nth-child(4) {
+    margin-top: 16px !important;
+  }
+
+  .heroVisual {
+    position: absolute;
+    top: 180px;
+    left: 736px;
+    width: 624px;
+    height: 420px;
+  }
+
+  .quoteSection,
+  .quoteShell {
+    height: 442px;
+  }
+
+  .quoteShell > blockquote {
+    position: absolute;
+    top: 100px;
+    left: 320px;
+    width: 800px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .quoteShell > :nth-child(2) {
+    position: absolute;
+    top: 204px;
+    left: 320px;
+    width: 800px;
+    margin: 0;
+  }
+
+  .quoteShell > :nth-child(3) {
+    position: absolute;
+    top: 264px;
+    left: 400px;
+    width: 640px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .transformationSection,
+  .transformationShell {
+    height: 664px;
+  }
+
+  .transformationShell > div:first-child {
+    position: absolute;
+    top: 120px;
+    left: 80px;
+    width: 640px;
+    max-width: none;
+  }
+
+  .transformationShell > div:first-child > * {
+    margin-block: 0 !important;
+  }
+
+  .transformationShell > div:first-child p {
+    margin-top: 16px !important;
+  }
+
+  .transformationShell > ol {
+    position: absolute;
+    top: 344px;
+    left: 80px;
+    width: 1280px;
+    height: 200px;
+    grid-template-columns: repeat(4, 296px);
+    gap: 32px;
+  }
+
+  .transformationShell > ol::before {
+    position: absolute;
+    top: 3px;
+    right: 0;
+    left: 0;
+    border-top: 1px dashed var(--border);
+    content: '';
+  }
+
+  .transformationShell > ol li {
+    position: relative;
+    height: 116px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .transformationShell > ol li > * {
+    margin-block: 0 !important;
+  }
+
+  .transformationShell > ol h3 {
+    margin-top: 36px !important;
+  }
+
+  .transformationShell > ol p {
+    margin-top: 8px !important;
+  }
+
+  .featureSection,
+  .featureShell {
+    position: relative;
+  }
+
+  .captureSection,
+  .captureSection .featureShell {
+    height: 645px;
+  }
+
+  .reviewSection,
+  .reviewSection .featureShell {
+    height: 727px;
+  }
+
+  .hiddenDriversSection,
+  .hiddenDriversSection .featureShell {
+    height: 560px;
+  }
+
+  .recurringLoopsSection,
+  .recurringLoopsSection .featureShell {
+    height: 660px;
+  }
+
+  .innerTensionsSection,
+  .innerTensionsSection .featureShell {
+    height: 581px;
+  }
+
+  .featureVisual,
+  .featureCopy {
+    position: absolute;
+    max-width: none;
+  }
+
+  .featureCopy > *,
+  .featureCopy > div:first-child > * {
+    margin-block: 0 !important;
+  }
+
+  .featureCopy > div:first-child > h2,
+  .featureCopy > div:first-child > p {
+    margin-top: 16px !important;
+  }
+
+  .featureCopy > .featureBullets,
+  .featureCopy > .featureDetails {
+    margin-top: 32px !important;
+  }
+
+  .featureCopy > .featureBullets + *,
+  .featureCopy > .featureDetails + * {
+    margin-top: 24px !important;
+  }
+
+  .featureCopy > div:first-child + blockquote,
+  .featureCopy > div:first-child + div {
+    margin-top: 24px !important;
+  }
+
+  .featureBullets li {
+    gap: 10px;
+  }
+
+  .captureSection .featureCopy {
+    top: 120px;
+    left: 80px;
+    width: 515px;
+  }
+
+  .captureSection .featureVisual {
+    top: 132.5px;
+    left: 627px;
+    width: 733px;
+    height: 380px;
+  }
+
+  .reviewSection .featureVisual {
+    top: 163.5px;
+    left: 80px;
+    width: 733px;
+    height: 400px;
+  }
+
+  .reviewSection .featureCopy {
+    top: 120px;
+    left: 845px;
+    width: 515px;
+  }
+
+  .reviewSection .featureDetails + div {
+    margin-top: 24px !important;
+  }
+
+  .reviewSection .featureDetails dd {
+    margin-top: 4px;
+  }
+
+  .reviewSection .featureDetails + div > * {
+    margin-block: 0 !important;
+  }
+
+  .reviewSection .featureDetails + div > :last-child {
+    margin-top: 8px !important;
+  }
+
+  .hiddenDriversSection .featureVisual {
+    top: 100px;
+    left: 80px;
+    width: 624px;
+    height: 360px;
+  }
+
+  .hiddenDriversSection .featureCopy {
+    top: 100px;
+    left: 736px;
+    width: 624px;
+  }
+
+  .hiddenDriverEvidence {
+    margin-top: 24px !important;
+  }
+
+  .hiddenDriverEvidence > * {
+    margin-block: 0 !important;
+  }
+
+  .hiddenDriverEvidence > :last-child {
+    margin-top: 24px !important;
+  }
+
+  .recurringLoopsSection .featureCopy {
+    top: 100px;
+    left: 80px;
+    width: 624px;
+  }
+
+  .recurringLoopsSection .featureVisual {
+    top: 100px;
+    left: 736px;
+    width: 560px;
+    height: 460px;
+  }
+
+  .recurringLoopsSection .featureCopy > blockquote {
+    margin-top: 24px !important;
+  }
+
+  .recurringLoopsSection .featureCopy > blockquote + ul {
+    margin-top: 24px !important;
+  }
+
+  .innerTensionsSection .featureVisual {
+    top: 110.5px;
+    left: 80px;
+    width: 624px;
+    height: 360px;
+  }
+
+  .innerTensionsSection .featureCopy {
+    top: 100px;
+    left: 736px;
+    width: 624px;
+  }
+
+  .tensionDetails {
+    margin-top: 24px !important;
+  }
+
+  .tensionDetails > * {
+    margin-block: 0 !important;
+  }
+
+  .tensionDetails > p {
+    margin-top: 24px !important;
+  }
+
+  .tensionDetails > blockquote {
+    margin-top: 24px !important;
+  }
+
+  .insightsSection,
+  .insightsShell {
+    height: 788px;
+  }
+
+  .insightsShell > div:first-child {
+    position: absolute;
+    top: 120px;
+    left: 80px;
+    display: grid;
+    width: 1280px;
+    height: 164px;
+    grid-template-columns: 733px 515px;
+    gap: 32px;
+  }
+
+  .insightsShell > div:first-child > div:first-child {
+    width: 733px;
+    max-width: none;
+    margin: 0;
+    text-align: left;
+  }
+
+  .insightsShell > div:first-child > div:first-child > * {
+    margin-block: 0 !important;
+  }
+
+  .insightsShell h2 {
+    margin-top: 16px !important;
+  }
+
+  .insightsShell > div:first-child > div:first-child > p {
+    margin-top: 16px !important;
+    width: 733px;
+  }
+
+  .insightsShell > div:first-child > div:last-child {
+    padding-top: 48px;
+  }
+
+  .insightsShell > div:first-child > div:last-child > * {
+    margin-block: 0 !important;
+  }
+
+  .insightsShell li {
+    gap: 10px;
+  }
+
+  .insightsShell .bulletDot {
+    margin-top: 6px;
+  }
+
+  .insightsShell > div:first-child > div:last-child > :last-child {
+    margin-top: 8px !important;
+  }
+
+  .insightsShell > img:last-child {
+    position: absolute;
+    top: 348px;
+    left: 80px;
+    width: 1280px;
+    height: 320px;
+  }
+
+  .reflectionsSection,
+  .reflectionsShell {
+    height: 473px;
+  }
+
+  .reflectionsShell > div:first-child {
+    position: absolute;
+    top: 120px;
+    left: 320px;
+    width: 800px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .reflectionsShell > div:first-child > * {
+    margin-block: 0 !important;
+  }
+
+  .reflectionsShell > div:first-child > p {
+    width: 640px;
+    margin: 16px auto 0 !important;
+  }
+
+  .reflectionsShell > div:last-child {
+    position: absolute;
+    top: 344px;
+    left: 50%;
+    width: max-content;
+    max-width: calc(100% - 40px);
+    height: auto;
+    margin: 0;
+    padding: 5px;
+    border-radius: var(--orion-radius-md);
+    gap: 8px;
+    justify-content: center;
+    transform: translateX(-50%);
+  }
+
+  .reflectionsShell > div:last-child > a {
+    box-sizing: border-box;
+  }
+
+  .journeySection,
+  .journeyShell {
+    height: 1042px;
+  }
+
+  .journeyShell > div:first-child {
+    position: absolute;
+    top: 120px;
+    left: 80px;
+    width: 720px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .journeyShell > div:first-child > * {
+    margin-block: 0 !important;
+  }
+
+  .journeyShell > div:first-child h2 {
+    margin-top: 16px !important;
+  }
+
+  .journeyShell > div:first-child p {
+    margin-top: 16px !important;
+  }
+
+  .journeyLegend {
+    position: absolute;
+    top: 352px;
+    left: 80px;
+    width: 1280px;
+    height: 16px;
+    gap: 24px;
+  }
+
+  .journeyLegend li {
+    gap: 8px;
+  }
+
+  .journeyLegend li > span {
+    width: 10px;
+    height: 10px;
+  }
+
+  .journeyPreview {
+    position: absolute;
+    top: 410px;
+    left: 80px;
+    width: 1280px;
+    height: 420px;
+  }
+
+  .journeyFooter {
+    position: absolute;
+    top: 878px;
+    left: 80px;
+    width: 1280px;
+    height: 44px;
+    margin: 0;
+  }
+
+  .journeyFooter > p {
+    width: 640px;
+  }
+
+  .trustSection,
+  .trustShell {
+    height: 702px;
+  }
+
+  .trustShell > div:first-child {
+    position: absolute;
+    top: 120px;
+    left: 80px;
+    width: 640px;
+  }
+
+  .trustShell > div:first-child > div {
+    max-width: none;
+  }
+
+  .trustShell > div:first-child * {
+    margin-block: 0 !important;
+  }
+
+  .trustShell h2 {
+    margin-top: 16px !important;
+  }
+
+  .trustShell > div:last-child {
+    position: absolute;
+    top: 296px;
+    left: 80px;
+    display: grid;
+    width: 1280px;
+    height: 286px;
+    grid-template-columns: repeat(2, 624px);
+    gap: 32px;
+  }
+
+  .trustShell article {
+    height: 127px;
+    padding: 24px;
+  }
+
+  .trustShell article > * {
+    margin-block: 0 !important;
+  }
+
+  .trustShell article p {
+    margin-top: 16px !important;
+  }
+
+  .finalCtaSection,
+  .finalCtaShell {
+    height: 545px;
+  }
+
+  .finalCtaShell > div {
+    position: absolute;
+    top: 140px;
+    left: 320px;
+    width: 800px;
+    max-width: none;
+    margin: 0;
+  }
+
+  .finalCtaShell > div > * {
+    margin-block: 0 !important;
+  }
+
+  .finalCtaShell h2 + p {
+    width: 560px;
+    margin: 24px auto 0 !important;
+  }
+
+  .finalCtaShell h2 + p + div {
+    margin-top: 40px !important;
+  }
+
+  .finalCtaShell div + p {
+    margin-top: 16px !important;
+  }
+
+  .footerSection,
+  .footerShell {
+    height: 248px;
+  }
+
+  .footerShell > div:first-child {
+    position: absolute;
+    top: 80px;
+    left: 80px;
+    width: 1280px;
+    height: 28px;
+    margin: 0;
+  }
+
+  .footerShell nav {
+    gap: 24px;
+  }
+
+  .footerShell nav > * {
+    padding-inline: 0;
+  }
+
+  .footerShell > div:last-child {
+    position: absolute;
+    top: 152px;
+    left: 80px;
+    width: 1280px;
+    height: 48px;
+    margin: 0;
+    padding-top: 32px;
+  }
 }
 
 @keyframes landing-word-reveal {

@@ -39,6 +39,14 @@ describe('AppButton', () => {
     );
   });
 
+  it('sizes CTA width from its non-wrapping label', () => {
+    render(<AppButton>Start reflecting</AppButton>);
+
+    expect(
+      screen.getByRole('button', { name: 'Start reflecting' }),
+    ).toHaveClass('w-fit', 'max-w-full', 'whitespace-nowrap');
+  });
+
   it('exposes loading and disabled state without removing the button label', () => {
     render(
       <AppButton loading loadingLabel="Saving entry">
