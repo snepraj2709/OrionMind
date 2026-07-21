@@ -6,6 +6,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.modules.jobs.types import JobClaim
 from app.modules.processing.schemas import EntryExtraction
 
 
@@ -113,6 +114,39 @@ class ProcessingRepository:
                     "expected_version": expected_version,
                 },
             )
+        )
+
+    def apply_job_extraction(
+        self,
+        session: Session,
+        *,
+        claim: JobClaim,
+        worker_id: str,
+        theme_config_id: UUID,
+        extraction: EntryExtraction,
+    ) -> None:
+        session.execute(
+            text(
+                "SELECT public.apply_legacy_entry_processing_job("
+                ":job_id, :worker_id, :claim_token, :config_id, :mode, "
+                "CAST(:themes AS jsonb), CAST(:ideas AS jsonb), "
+                "CAST(:memories AS jsonb), CAST(:reflections AS jsonb))"
+            ),
+            {
+                "job_id": claim.job_id,
+                "worker_id": worker_id,
+                "claim_token": claim.claim_token,
+                "config_id": theme_config_id,
+                "mode": extraction.theme.mode,
+                "themes": json.dumps(
+                    [item.model_dump() for item in extraction.theme.themes]
+                ),
+                "ideas": json.dumps([item.model_dump() for item in extraction.ideas]),
+                "memories": json.dumps(
+                    [item.model_dump() for item in extraction.memories]
+                ),
+                "reflections": json.dumps(_reflection_rows(extraction)),
+            },
         )
 
 

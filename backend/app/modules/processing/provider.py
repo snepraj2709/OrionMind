@@ -34,6 +34,13 @@ def _retryable(exc: Exception) -> bool:
     }
 
 
+def provider_failure_is_retryable(exc: ProviderUnavailableError) -> bool:
+    cause = exc.__cause__
+    if cause is None:
+        return True
+    return _retryable(cause)
+
+
 class OpenAIExtractionProvider:
     def __init__(
         self,

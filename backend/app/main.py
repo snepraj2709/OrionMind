@@ -9,6 +9,9 @@ from sqlalchemy import text
 
 from app.contract import assert_public_contract
 from app.modules.health.routes import router as health_router
+from app.modules.jobs.repository import JobRepository
+from app.modules.jobs.service import JobService
+from app.modules.jobs.worker import ProcessingWorker
 from app.modules.entries.repository import EntryRepository
 from app.modules.entries.service import EntryService
 from app.modules.entries.audio import (
@@ -22,7 +25,7 @@ from app.modules.processing.provider import OpenAIExtractionProvider, Unavailabl
 from app.modules.processing.repository import ProcessingRepository
 from app.modules.processing.service import ProcessingService
 from app.modules.past_imports.repository import PastImportRepository
-from app.modules.past_imports.service import PastImportWorker
+from app.modules.past_imports.service import PastImportService
 from app.openapi_contract import install_local_openapi
 from app.router import router as api_router
 from app.shared.auth.service import AuthenticationService
@@ -156,18 +159,6 @@ def create_app(
                 asyncio.to_thread(check_database_readiness),
                 timeout=resolved_settings.STARTUP_READINESS_TIMEOUT_SECONDS,
             )
-            if sessions.worker is not None:
-                await asyncio.wait_for(
-                    asyncio.to_thread(
-                        _app.state.past_import_worker.recover_stale,
-                        stale_seconds=resolved_settings.PAST_IMPORT_STALE_SECONDS,
-                        uow=sessions.unit_of_work_factory,
-                        statement_timeout_seconds=(
-                            resolved_settings.STARTUP_READINESS_TIMEOUT_SECONDS
-                        ),
-                    ),
-                    timeout=resolved_settings.STARTUP_READINESS_TIMEOUT_SECONDS,
-                )
             yield
         finally:
             sessions.dispose()
@@ -204,18 +195,28 @@ def create_app(
     app.state.content_cipher = resolved_content_cipher
     app.state.entry_service = EntryService(
         repository=EntryRepository(),
+        past_imports=PastImportService(repository=PastImportRepository()),
         cipher=resolved_content_cipher,
-        processing=app.state.processing_service,
     )
     app.state.transcriber = resolved_transcriber
     app.state.rate_limiter = ProcessRateLimiter(
         enabled=resolved_settings.RATE_LIMITING_ENABLED
     )
-    app.state.past_import_worker = PastImportWorker(
-        repository=PastImportRepository(),
-        provider=resolved_extraction_provider,
+    app.state.job_service = JobService(
+        repository=JobRepository(),
+        processing=app.state.processing_service,
         cipher=resolved_content_cipher,
-        reflection_threshold=resolved_settings.REFLECTION_REVIEW_THRESHOLD,
+        heartbeat_interval_seconds=(
+            resolved_settings.PROCESSING_JOB_HEARTBEAT_SECONDS
+        ),
+    )
+    app.state.processing_worker = ProcessingWorker(
+        service=app.state.job_service,
+        poll_seconds=resolved_settings.PROCESSING_JOB_POLL_SECONDS,
+        stale_seconds=resolved_settings.PROCESSING_JOB_STALE_SECONDS,
+        recovery_interval_seconds=(
+            resolved_settings.PROCESSING_JOB_RECOVERY_INTERVAL_SECONDS
+        ),
     )
 
     install_error_handlers(app)

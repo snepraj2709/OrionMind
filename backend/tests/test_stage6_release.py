@@ -323,3 +323,19 @@ def test_production_cannot_disable_limits_or_scale_in_process_limiter() -> None:
 def test_openapi_artifact_is_packaged_under_the_repository() -> None:
     assert CONTRACT_PATH == Path(__file__).resolve().parents[1] / "docs/contracts/profile-entry-v1.openapi.json"
     assert CONTRACT_PATH.is_file()
+
+
+def test_shared_processing_worker_is_the_only_operational_entrypoint() -> None:
+    root = Path(__file__).resolve().parents[1]
+    retired_worker = "run_" + "past_import" + "_worker.py"
+    assert (root / "scripts/run_processing_worker.py").is_file()
+    assert not (root / f"scripts/{retired_worker}").exists()
+    for path in (root / "README.md", root / "docs/DEPLOYMENT.md"):
+        content = path.read_text(encoding="utf-8")
+        assert "run_processing_worker.py" in content
+        assert retired_worker not in content
+    configured = settings()
+    assert configured.PROCESSING_JOB_POLL_SECONDS == 1
+    assert configured.PROCESSING_JOB_HEARTBEAT_SECONDS == 30
+    assert configured.PROCESSING_JOB_STALE_SECONDS == 300
+    assert configured.PROCESSING_JOB_RECOVERY_INTERVAL_SECONDS == 60

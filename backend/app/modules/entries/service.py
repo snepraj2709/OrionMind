@@ -14,9 +14,7 @@ from app.modules.entries.types import (
     PastEntryAcceptedData,
     VoicePreparation,
 )
-from app.modules.processing.provider import ProviderUnavailableError
-from app.modules.processing.service import ProcessingService
-from app.modules.processing.types import ProcessingRequest
+from app.modules.past_imports.service import PastImportService
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 from app.shared.exceptions.domain import DomainError
 from app.shared.security.encryption import ContentCipher, ContentUnavailableError
@@ -27,12 +25,12 @@ class EntryService:
         self,
         *,
         repository: EntryRepository,
+        past_imports: PastImportService,
         cipher: ContentCipher,
-        processing: ProcessingService,
     ) -> None:
         self._repository = repository
+        self._past_imports = past_imports
         self._cipher = cipher
-        self._processing = processing
 
     def get_draft(self, *, user_id: UUID, uow: UnitOfWorkFactory) -> tuple[str | None, datetime | None]:
         with uow.for_user(user_id) as work:
@@ -140,15 +138,6 @@ class EntryService:
                     message="A matching saved draft is required.",
                 ) from exc
             raise
-        if claim.processing_token is not None:
-            self._run_processing(
-                user_id=user_id,
-                entry_id=claim.entry_id,
-                token=claim.processing_token,
-                config_id=config_id,
-                content=canonical,
-                uow=uow,
-            )
         operation = self.get_detail(user_id=user_id, entry_id=claim.entry_id, uow=uow)
         return EntryOperation(
             entry=operation.entry,
@@ -200,22 +189,13 @@ class EntryService:
                     error_code="NOT_FOUND",
                     message="The requested resource was not found.",
                 )
-            token = self._repository.claim_retry(work.session, user_id, entry_id)
-        if token is None:
+            retried = self._repository.retry_failed(work.session, user_id, entry_id)
+        if not retried:
             raise DomainError(
                 status_code=409,
                 error_code="INVALID_STATE",
                 message="Only a failed entry can be retried.",
             )
-        plaintext = self._decrypt_entry(entry.id, entry.envelope, user_id)
-        self._run_processing(
-            user_id=user_id,
-            entry_id=entry.id,
-            token=token,
-            config_id=entry.original_theme_config_id,
-            content=plaintext,
-            uow=uow,
-        )
         return self.get_detail(user_id=user_id, entry_id=entry_id, uow=uow)
 
     def prepare_voice(
@@ -289,14 +269,6 @@ class EntryService:
                 processing_token=processing_token,
                 claim_token=claim_token,
             )
-        self._run_processing(
-            user_id=user_id,
-            entry_id=entry_id,
-            token=processing_token,
-            config_id=config_id,
-            content=canonical,
-            uow=uow,
-        )
         detail = self.get_detail(user_id=user_id, entry_id=entry_id, uow=uow)
         return EntryOperation(detail.entry, detail.plaintext, 201)
 
@@ -325,7 +297,7 @@ class EntryService:
                 canonical, user_id=user_id, entry_date=entry_date.isoformat()
             )
             try:
-                return self._repository.queue_past(
+                return self._past_imports.queue(
                     work.session,
                     user_id=user_id,
                     entry_id=entry_id,
@@ -343,49 +315,6 @@ class EntryService:
                         "This historical entry has already been imported.",
                     ) from exc
                 raise
-
-    def _run_processing(
-        self,
-        *,
-        user_id: UUID,
-        entry_id: UUID,
-        token: UUID,
-        config_id: UUID,
-        content: str,
-        uow: UnitOfWorkFactory,
-    ) -> None:
-        try:
-            self._processing.process(
-                ProcessingRequest(
-                    user_id=user_id,
-                    entry_id=entry_id,
-                    processing_token=token,
-                    theme_config_id=config_id,
-                    content=content,
-                ),
-                uow,
-            )
-        except ProviderUnavailableError as exc:
-            raise DomainError(
-                status_code=502,
-                error_code="PROVIDER_UNAVAILABLE",
-                message="Could not complete this request right now.",
-            ) from exc
-        except ValueError as exc:
-            raise DomainError(
-                status_code=502,
-                error_code="PROVIDER_UNAVAILABLE",
-                message="Could not complete this request right now.",
-            ) from exc
-        except DomainError:
-            raise
-        except Exception as exc:
-            raise DomainError(
-                status_code=503,
-                error_code="SERVICE_UNAVAILABLE",
-                message="The service is temporarily unavailable.",
-                headers={"Retry-After": "30"},
-            ) from exc
 
     def _decrypt_entry(self, entry_id: UUID, envelope: dict, user_id: UUID) -> str:
         try:

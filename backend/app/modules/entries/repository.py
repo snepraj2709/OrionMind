@@ -12,7 +12,6 @@ from app.modules.entries.types import (
     ClassificationData,
     DraftData,
     EntryData,
-    PastEntryAcceptedData,
     ReflectionData,
     SubmissionClaim,
     ThemeData,
@@ -276,10 +275,15 @@ class EntryRepository:
                 )
         return entries, total, {key: tuple(value) for key, value in themes.items()}
 
-    def claim_retry(self, session: Session, user_id: UUID, entry_id: UUID) -> UUID | None:
-        return session.scalar(
-            text("SELECT public.claim_failed_entry_for_owner(:user_id, :entry_id)"),
-            {"user_id": user_id, "entry_id": entry_id},
+    def retry_failed(self, session: Session, user_id: UUID, entry_id: UUID) -> bool:
+        return bool(
+            session.scalar(
+                text(
+                    "SELECT public.retry_entry_processing_for_owner("
+                    ":user_id, :entry_id)"
+                ),
+                {"user_id": user_id, "entry_id": entry_id},
+            )
         )
 
     def create_voice(
@@ -356,37 +360,6 @@ class EntryRepository:
                 },
             )
         )
-
-    def queue_past(
-        self,
-        session: Session,
-        *,
-        user_id: UUID,
-        entry_id: UUID,
-        envelope: dict,
-        entry_date: date,
-        config_id: UUID,
-        fingerprint_key_id: str,
-        fingerprint: str,
-    ) -> PastEntryAcceptedData:
-        session.execute(
-            text(
-                "SELECT public.queue_past_entry_for_owner("
-                ":user_id, :entry_id, CAST(:envelope AS jsonb), :entry_date, :config_id, "
-                ":key_id, :fingerprint)"
-            ),
-            {
-                "user_id": user_id,
-                "entry_id": entry_id,
-                "envelope": json.dumps(envelope),
-                "entry_date": entry_date,
-                "config_id": config_id,
-                "key_id": fingerprint_key_id,
-                "fingerprint": fingerprint,
-            },
-        )
-        return PastEntryAcceptedData(entry_id=entry_id, entry_date=entry_date)
-
 
 def _entry(row) -> EntryData:
     return EntryData(

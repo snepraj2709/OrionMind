@@ -52,9 +52,12 @@ class Settings(BaseSettings):
     DATABASE_MAX_OVERFLOW: int = Field(default=5, ge=0, le=50)
     DATABASE_POOL_RECYCLE_SECONDS: int = Field(default=300, ge=30, le=3600)
     STARTUP_READINESS_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=60)
-    PAST_IMPORT_STALE_SECONDS: int = Field(default=120, ge=30, le=3600)
-    PAST_IMPORT_POLL_SECONDS: float = Field(default=1.0, ge=0.1, le=60)
-    PAST_IMPORT_RECOVERY_INTERVAL_SECONDS: float = Field(default=60.0, ge=10, le=3600)
+    PROCESSING_JOB_POLL_SECONDS: float = Field(default=1.0, ge=0.1, le=60)
+    PROCESSING_JOB_HEARTBEAT_SECONDS: float = Field(default=30.0, ge=1, le=120)
+    PROCESSING_JOB_STALE_SECONDS: int = Field(default=300, ge=60, le=3600)
+    PROCESSING_JOB_RECOVERY_INTERVAL_SECONDS: float = Field(
+        default=60.0, ge=10, le=3600
+    )
     WEB_CONCURRENCY: int = Field(default=1, ge=1, le=1)
     RATE_LIMITING_ENABLED: bool = True
     LOG_FORMAT: str = "json"

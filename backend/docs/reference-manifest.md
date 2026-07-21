@@ -70,3 +70,16 @@ Development and infrastructure:
 - Docker with Python 3.11 slim
 
 No dependency was upgraded during Stage 0.
+
+## P0-03 shared-queue artifacts
+
+Recorded after the P0-03 implementation and local verification on 2026-07-21. The generalized
+processing worker replaces the historical-import-only process; the web process no longer performs
+historical recovery.
+
+| Target-relative path                     | SHA-256                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------ |
+| `migrations/0006_shared_entry_queue.sql` | `a4e71e3376bcc0ecdf7c17d1dcefda1ef55afd4736e752c59041dea62fc200f4` |
+| `supabase_schema.sql`                    | `3f9380b597953afd1cc1d7b9ef85762c07ac924df2a68b467e3cfe6a560ca4f2` |
+| `scripts/run_processing_worker.py`       | `f37e3274667398a6cbcbce2bbc5a25d18946497028ebcfcac505f6e41547a78b` |
+| `app/modules/jobs/worker.py`             | `d0da2002bdcd90f277dfe20dce82fefeb79252685a384d214e70a6f55d818c24` |

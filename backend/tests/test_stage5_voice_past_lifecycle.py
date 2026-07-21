@@ -185,7 +185,7 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
         content_cipher=cipher,
         transcriber=transcriber,
     )
-    app.state.past_import_worker._heartbeat_interval = 0.01
+    app.state.job_service._heartbeat_interval = 0.01
     monkeypatch.setattr(audio.tempfile, "tempdir", str(tmp_path))
     wav = make_wav(tmp_path / "fixture.wav")
     headers = {"Authorization": "Bearer one", "Idempotency-Key": "voice-action-1"}
@@ -206,8 +206,17 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
         voice_id = UUID(created.json()["id"])
         assert created.json()["content"] == "Voice transcript should remain encrypted."
         assert created.json()["input_type"] == "audio"
+        assert created.json()["processing_status"] == "pending"
         assert transcriber.calls == 1
+        assert provider.calls == []
         assert not list(tmp_path.glob("orion-audio-*"))
+
+        assert app.state.processing_worker.run_one(
+            worker_id="shared-worker", uow=sessions.unit_of_work_factory
+        ) is True
+        assert client.get(
+            f"/api/v1/entries/{voice_id}", headers={"Authorization": "Bearer one"}
+        ).json()["processing_status"] == "completed"
 
         replay = client.post(
             "/api/v1/entries/voice",
@@ -285,7 +294,11 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
         )
         assert second.status_code == 201
         assert second.json()["id"] != str(voice_id)
+        assert second.json()["processing_status"] == "pending"
         assert transcriber.calls == 2
+        assert app.state.processing_worker.run_one(
+            worker_id="shared-worker", uow=sessions.unit_of_work_factory
+        ) is True
 
         mismatch = client.post(
             "/api/v1/entries/voice",
@@ -338,16 +351,32 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
             headers={**headers, "Idempotency-Key": "voice-provider-failure"},
             files={"audio": ("secret.wav", wav, "audio/wav")},
         )
-        assert_error(provider_failure, 502, "PROVIDER_UNAVAILABLE")
-        failed_voice_id = provider_failure.json().get("id")
-        assert failed_voice_id is None
+        assert provider_failure.status_code == 201
+        assert provider_failure.json()["processing_status"] == "pending"
+        failed_voice_id = UUID(provider_failure.json()["id"])
         calls_before_retry = transcriber.calls
+        assert app.state.processing_worker.run_one(
+            worker_id="shared-worker", uow=sessions.unit_of_work_factory
+        ) is True
         with psycopg.connect(value) as connection:
-            failed_voice_id = connection.execute(
-                "SELECT id FROM public.entries WHERE idempotency_key = 'voice-provider-failure'"
-            ).fetchone()[0]
-        retried = client.post(f"/api/v1/entries/{failed_voice_id}/retry", headers={"Authorization": "Bearer one"})
-        assert retried.status_code == 200
+            assert connection.execute(
+                "SELECT status, attempts FROM public.processing_jobs WHERE entry_id = %s",
+                (failed_voice_id,),
+            ).fetchone() == ("pending", 1)
+            connection.execute(
+                "UPDATE public.processing_jobs SET run_after = pg_catalog.now() "
+                "WHERE entry_id = %s",
+                (failed_voice_id,),
+            )
+            connection.commit()
+        assert app.state.processing_worker.run_one(
+            worker_id="shared-worker", uow=sessions.unit_of_work_factory
+        ) is True
+        retried = client.get(
+            f"/api/v1/entries/{failed_voice_id}",
+            headers={"Authorization": "Bearer one"},
+        )
+        assert retried.json()["processing_status"] == "completed"
         assert transcriber.calls == calls_before_retry
         assert not list(tmp_path.glob("orion-audio-*"))
 
@@ -397,8 +426,8 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
             "VALIDATION_ERROR",
         )
 
-        assert app.state.past_import_worker.run_one(
-            worker_id="worker-one", uow=sessions.unit_of_work_factory
+        assert app.state.processing_worker.run_one(
+            worker_id="shared-worker", uow=sessions.unit_of_work_factory
         ) is True
         detail = client.get(
             f"/api/v1/entries/{past_id}", headers={"Authorization": "Bearer one"}
@@ -420,82 +449,23 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
             "SELECT id, completed_processing_token FROM public.past_entry_imports WHERE entry_id = %s",
             (past_id,),
         ).fetchone()
+        assert completed_token is not None
+        assert connection.execute(
+            "SELECT status, claim_token FROM public.processing_jobs WHERE entry_id = %s",
+            (past_id,),
+        ).fetchone() == ("completed", completed_token)
         assert connection.execute(
             "SELECT count(*) FROM public.past_entry_imports WHERE user_id = %s", (USER_TWO,)
         ).fetchone() == (1,)
 
-    with sessions.unit_of_work_factory.for_worker() as work:
-        assert work.session.scalar(
-            text(
-                "SELECT public.apply_past_entry_extraction("
-                ":import_id, 'replacement-worker', :token, :config_id, NULL, "
-                "'[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)"
-            ),
-            {
-                "import_id": completed_import_id,
-                "token": completed_token,
-                "config_id": UUID("00000000-0000-0000-0000-000000000801"),
-            },
-        ) is True
-
-    # Claim, heartbeat, current-token rejection, stale recovery, and bounded retry proof.
-    with sessions.unit_of_work_factory.for_worker() as work:
-        claim = app.state.past_import_worker._repository.claim(work.session, "worker-two")
-    assert claim is not None
-    with sessions.unit_of_work_factory.for_worker() as work:
-        assert app.state.past_import_worker._repository.renew(work.session, claim, "worker-two")
-    with pytest.raises(Exception):
-        with sessions.unit_of_work_factory.for_worker() as work:
-            work.session.execute(
-                text(
-                    "SELECT public.apply_past_entry_extraction("
-                    ":import_id, :worker_id, gen_random_uuid(), :config_id, NULL, "
-                    "'[]'::jsonb, '[]'::jsonb, '[]'::jsonb, '[]'::jsonb)"
-                ),
-                {
-                    "import_id": claim.import_id,
-                    "worker_id": "worker-two",
-                    "config_id": claim.theme_config_id,
-                },
-            )
-    with psycopg.connect(value) as connection:
-        connection.execute(
-            "UPDATE public.past_entry_imports SET heartbeat_at = pg_catalog.now() - interval '1 hour' WHERE id = %s",
-            (claim.import_id,),
-        )
-        connection.commit()
-    assert app.state.past_import_worker.recover_stale(
-        stale_seconds=60, uow=sessions.unit_of_work_factory
-    ) == 1
+    # The other owner's historical entry uses the same queue and mirrors audit state.
+    assert app.state.processing_worker.run_one(
+        worker_id="shared-worker", uow=sessions.unit_of_work_factory
+    ) is True
     with psycopg.connect(value) as connection:
         assert connection.execute(
-            "SELECT status, attempts, last_error_code FROM public.past_entry_imports WHERE id = %s",
-            (claim.import_id,),
-        ).fetchone() == ("pending", 1, "WORKER_INTERRUPTED")
-
-    for attempt in (2, 3):
-        with sessions.unit_of_work_factory.for_worker() as work:
-            next_claim = app.state.past_import_worker._repository.claim(work.session, "worker-two")
-        assert next_claim is not None
-        with psycopg.connect(value) as connection:
-            connection.execute(
-                "UPDATE public.past_entry_imports SET heartbeat_at = pg_catalog.now() - interval '1 hour' WHERE id = %s",
-                (next_claim.import_id,),
-            )
-            connection.commit()
-        assert app.state.past_import_worker.recover_stale(
-            stale_seconds=60, uow=sessions.unit_of_work_factory
-        ) == 1
-        with psycopg.connect(value) as connection:
-            state = connection.execute(
-                "SELECT status, attempts, last_error_code FROM public.past_entry_imports WHERE id = %s",
-                (next_claim.import_id,),
-            ).fetchone()
-        assert state == (
-            "pending" if attempt < 3 else "failed",
-            attempt,
-            "WORKER_INTERRUPTED" if attempt < 3 else "WORKER_RETRIES_EXHAUSTED",
-        )
+            "SELECT count(*) FROM public.processing_jobs WHERE status = 'pending'"
+        ).fetchone() == (0,)
 
     with TestClient(app) as client:
         startup_item = client.post(
@@ -509,23 +479,39 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
         assert startup_item.status_code == 202
     startup_entry_id = UUID(startup_item.json()["entry_id"])
     with sessions.unit_of_work_factory.for_worker() as work:
-        startup_claim = app.state.past_import_worker._repository.claim(
-            work.session, "interrupted-worker"
+        startup_claim = app.state.job_service._repository.claim(
+            work.session, worker_id="interrupted-worker"
         )
     assert startup_claim is not None
     assert startup_claim.entry_id == startup_entry_id
     with psycopg.connect(value) as connection:
         connection.execute(
-            "UPDATE public.past_entry_imports SET heartbeat_at = pg_catalog.now() - interval '1 hour' WHERE id = %s",
-            (startup_claim.import_id,),
+            "UPDATE public.processing_jobs SET heartbeat_at = pg_catalog.now() - interval '1 hour' "
+            "WHERE id = %s",
+            (startup_claim.job_id,),
+        )
+        connection.execute(
+            "UPDATE public.past_entry_imports SET heartbeat_at = pg_catalog.now() - interval '1 hour' "
+            "WHERE entry_id = %s",
+            (startup_entry_id,),
         )
         connection.commit()
+    # Web startup performs readiness only; generalized recovery belongs to the worker.
     with TestClient(app) as client:
         assert client.get("/health").json() == {"status": "ok"}
     with psycopg.connect(value) as connection:
         assert connection.execute(
-            "SELECT status, attempts, last_error_code FROM public.past_entry_imports WHERE id = %s",
-            (startup_claim.import_id,),
+            "SELECT status FROM public.processing_jobs WHERE id = %s",
+            (startup_claim.job_id,),
+        ).fetchone() == ("running",)
+    assert app.state.processing_worker.recover_stale(
+        uow=sessions.unit_of_work_factory
+    ) == 1
+    with psycopg.connect(value) as connection:
+        assert connection.execute(
+            "SELECT status, attempts, last_error_code FROM public.past_entry_imports "
+            "WHERE entry_id = %s",
+            (startup_entry_id,),
         ).fetchone() == ("pending", 1, "WORKER_INTERRUPTED")
 
     # Authenticated users and workers cannot bypass their narrow capabilities.
@@ -533,7 +519,7 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             with connection.transaction():
                 connection.execute("SET LOCAL ROLE authenticated")
-                connection.execute("SELECT public.claim_past_entry_import('browser')")
+                connection.execute("SELECT public.claim_processing_job('browser')")
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             with connection.transaction():
                 connection.execute("SET LOCAL ROLE orion_worker")

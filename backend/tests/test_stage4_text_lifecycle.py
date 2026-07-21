@@ -87,14 +87,16 @@ class Provider:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.fail_next = False
+        self.failures_remaining = 0
         self.block_next = False
         self.entered = Event()
         self.release = Event()
 
     def extract(self, *, content: str, themes) -> ModelEntryExtraction:
         self.calls.append(content)
-        if self.fail_next:
+        if self.fail_next or self.failures_remaining:
             self.fail_next = False
+            self.failures_remaining = max(0, self.failures_remaining - 1)
             raise ProviderUnavailableError("private provider payload")
         if self.block_next:
             self.block_next = False
@@ -146,6 +148,7 @@ def test_encrypted_draft_text_replay_list_detail_and_retry_lifecycle() -> None:
             "ENVIRONMENT": "test",
             "ENABLE_API_DOCS": False,
             "APP_DATABASE_URL": SecretStr(sqlalchemy_url),
+            "WORKER_DATABASE_URL": SecretStr(sqlalchemy_url),
             "CORS_ALLOW_ORIGINS": "https://app.example.test",
             "LOG_FORMAT": "text",
             "RATE_LIMITING_ENABLED": False,
@@ -159,6 +162,7 @@ def test_encrypted_draft_text_replay_list_detail_and_retry_lifecycle() -> None:
         extraction_provider=provider,
         content_cipher=cipher,
     )
+    app.state.job_service._heartbeat_interval = 0.01
     one = {"Authorization": "Bearer one"}
     two = {"Authorization": "Bearer two"}
     content = "I should call my mentor. " + "😀" * 210
@@ -198,8 +202,21 @@ def test_encrypted_draft_text_replay_list_detail_and_retry_lifecycle() -> None:
         assert created.status_code == 201
         created_body = created.json()
         entry_id = created_body["id"]
-        assert created_body["processing_status"] == "completed"
-        assert created_body["classification"] == {
+        assert created_body["processing_status"] == "pending"
+        assert created_body["classification"] is None
+        assert provider.calls == []
+        with psycopg.connect(value) as connection:
+            assert connection.execute(
+                "SELECT count(*), min(status) FROM public.processing_jobs "
+                "WHERE entry_id = %s AND job_type = 'entry_processing'",
+                (entry_id,),
+            ).fetchone() == (1, "pending")
+        assert app.state.processing_worker.run_one(
+            worker_id="text-worker", uow=app.state.database_sessions.unit_of_work_factory
+        ) is True
+        completed_body = client.get(f"/api/v1/entries/{entry_id}", headers=one).json()
+        assert completed_body["processing_status"] == "completed"
+        assert completed_body["classification"] == {
             "theme_config_id": "00000000-0000-0000-0000-000000000801",
             "source": "initial",
             "mode": None,
@@ -249,47 +266,91 @@ def test_encrypted_draft_text_replay_list_detail_and_retry_lifecycle() -> None:
 
         concurrent_text = "One concurrent submission sentence."
         client.put("/api/v1/entry/draft", headers=one, json={"content": concurrent_text})
-        provider.block_next = True
         with ThreadPoolExecutor(max_workers=2) as executor:
             first_future = executor.submit(
                 client.post, "/api/v1/entry", headers=one, json={"content": concurrent_text}
             )
-            assert provider.entered.wait(timeout=5)
-            second = client.post("/api/v1/entry", headers=one, json={"content": concurrent_text})
-            provider.release.set()
+            second_future = executor.submit(
+                client.post, "/api/v1/entry", headers=one, json={"content": concurrent_text}
+            )
             first = first_future.result(timeout=5)
+            second = second_future.result(timeout=5)
         assert sorted([first.status_code, second.status_code]) == [200, 201]
         assert first.json()["id"] == second.json()["id"]
+        assert provider.calls.count(concurrent_text) == 0
+        concurrent_id = first.json()["id"]
+        with psycopg.connect(value) as connection:
+            assert connection.execute(
+                "SELECT count(*) FROM public.processing_jobs WHERE entry_id = %s",
+                (concurrent_id,),
+            ).fetchone() == (1,)
+        assert app.state.processing_worker.run_one(
+            worker_id="text-worker", uow=app.state.database_sessions.unit_of_work_factory
+        ) is True
         assert provider.calls.count(concurrent_text) == 1
         client.put("/api/v1/entry/draft", headers=one, json={"content": " \t\r\n "})
         assert client.get("/api/v1/entry/draft", headers=one).json()["content"] is None
 
-        provider.fail_next = True
+        provider.failures_remaining = 3
         failing_text = "A provider-safe failure sentence."
         client.put("/api/v1/entry/draft", headers=one, json={"content": failing_text})
         failed = client.post("/api/v1/entry", headers=one, json={"content": failing_text})
-        assert_error(failed, 502, "PROVIDER_UNAVAILABLE")
+        assert failed.status_code == 201
+        assert failed.json()["processing_status"] == "pending"
+        failed_id = UUID(failed.json()["id"])
+        for attempt in range(1, 4):
+            assert app.state.processing_worker.run_one(
+                worker_id="text-worker", uow=app.state.database_sessions.unit_of_work_factory
+            ) is True
+            with psycopg.connect(value) as connection:
+                state = connection.execute(
+                    "SELECT status, attempts, last_error_code FROM public.processing_jobs "
+                    "WHERE entry_id = %s",
+                    (failed_id,),
+                ).fetchone()
+                assert state == (
+                    "pending" if attempt < 3 else "failed",
+                    attempt,
+                    "PROVIDER_UNAVAILABLE",
+                )
+                if attempt < 3:
+                    connection.execute(
+                        "UPDATE public.processing_jobs SET run_after = pg_catalog.now() "
+                        "WHERE entry_id = %s",
+                        (failed_id,),
+                    )
+                    connection.commit()
         with psycopg.connect(value) as connection:
-            failed_id = connection.execute(
-                "SELECT id FROM public.entries WHERE user_id = %s AND processing_status = 'failed'",
-                (USER_ONE,),
-            ).fetchone()[0]
-        provider.entered.clear()
-        provider.release.clear()
-        provider.block_next = True
+            assert connection.execute(
+                "SELECT processing_status, processing_error_code FROM public.entries "
+                "WHERE id = %s",
+                (failed_id,),
+            ).fetchone() == ("failed", "PROCESSING_FAILED")
         with ThreadPoolExecutor(max_workers=2) as executor:
             retry_future = executor.submit(
                 client.post, f"/api/v1/entries/{failed_id}/retry", headers=one
             )
-            assert provider.entered.wait(timeout=5)
-            concurrent_retry = client.post(
-                f"/api/v1/entries/{failed_id}/retry", headers=one
+            concurrent_future = executor.submit(
+                client.post, f"/api/v1/entries/{failed_id}/retry", headers=one
             )
-            provider.release.set()
             retried = retry_future.result(timeout=5)
-        assert retried.status_code == 200
-        assert retried.json()["processing_status"] == "completed"
-        assert_error(concurrent_retry, 409, "INVALID_STATE")
+            concurrent_retry = concurrent_future.result(timeout=5)
+        successful_retry = retried if retried.status_code == 200 else concurrent_retry
+        rejected_retry = concurrent_retry if retried.status_code == 200 else retried
+        assert successful_retry.json()["processing_status"] == "pending"
+        assert_error(rejected_retry, 409, "INVALID_STATE")
+        with psycopg.connect(value) as connection:
+            assert connection.execute(
+                "SELECT status, attempts, claim_token FROM public.processing_jobs "
+                "WHERE entry_id = %s",
+                (failed_id,),
+            ).fetchone() == ("pending", 0, None)
+        assert app.state.processing_worker.run_one(
+            worker_id="text-worker", uow=app.state.database_sessions.unit_of_work_factory
+        ) is True
+        assert client.get(
+            f"/api/v1/entries/{failed_id}", headers=one
+        ).json()["processing_status"] == "completed"
         assert_error(
             client.post(f"/api/v1/entries/{failed_id}/retry", headers=one),
             409,

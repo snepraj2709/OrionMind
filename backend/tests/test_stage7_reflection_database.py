@@ -55,19 +55,24 @@ NEW_TABLES = (
     "reflection_feedback",
 )
 NEW_FUNCTIONS = (
+    "apply_legacy_entry_processing_job",
     "apply_entry_analysis",
     "apply_reflection_snapshot",
     "claim_processing_job",
     "complete_processing_job",
+    "complete_materialized_entry_processing_job",
     "delete_entry_with_reflection_for_owner",
     "enqueue_processing_job",
+    "enqueue_entry_processing_backfill",
     "enqueue_processing_job_for_owner",
     "fail_processing_job",
     "get_user_pii_vault_for_update",
+    "get_entry_processing_payload",
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
     "put_reflection_feedback_for_owner",
     "recover_stale_processing_jobs",
+    "retry_entry_processing_for_owner",
     "renew_processing_job",
     "save_user_pii_vault",
     "schedule_reflection_jobs",
@@ -254,7 +259,10 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
             (USER_ONE, entry_id),
         ).fetchone()[0]
         connection.commit()
-    assert apply_migrations(value, migrations) == ("0005_reflection_engine.sql",)
+    assert apply_migrations(value, migrations) == (
+        "0005_reflection_engine.sql",
+        "0006_shared_entry_queue.sql",
+    )
     with psycopg.connect(value) as connection:
         assert connection.execute(
             "SELECT reflection_type, activity FROM public.reflections WHERE id = %s",

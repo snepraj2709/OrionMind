@@ -6,7 +6,7 @@ Live Supabase/RLS proof remains waived and pending.
 ## Process topology
 
 - Run the API as exactly one instance and one Uvicorn worker while rate limiting is in process.
-- Run `python scripts/run_past_import_worker.py` as a separate worker process.
+- Run `python scripts/run_processing_worker.py` as the separate shared processing worker.
 - The API connects through the restricted application login; the worker connects through a distinct
   login that can assume only `orion_worker`.
 - Before adding an API replica or Uvicorn worker, replace the process limiter with a shared
@@ -42,9 +42,10 @@ settings validation.
 
 ## Startup and health
 
-Startup performs a bounded `SELECT 1` through every configured database engine and recovers stale
-historical-import claims through the worker RPC. A failed readiness check prevents startup. It never
-runs migrations. `/health` remains an opaque liveness response: `{"status":"ok"}`.
+Web startup performs only a bounded `SELECT 1` through every configured database engine. A failed
+readiness check prevents startup. The processing worker—not the web process—recovers stale shared
+queue claims on worker startup and every configured recovery interval. Neither process runs
+migrations. `/health` remains an opaque liveness response: `{"status":"ok"}`.
 
 ## Observability
 

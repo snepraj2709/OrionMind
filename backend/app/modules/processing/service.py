@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from uuid import UUID
+
+from app.modules.jobs.types import JobClaim
 from app.modules.processing.repository import ProcessingRepository
 from app.modules.processing.schemas import EntryExtraction, ModelEntryExtraction
 from app.modules.processing.source_segments import SourceSegment, create_source_segments
@@ -68,6 +71,45 @@ class ProcessingService:
             except Exception:
                 pass
             raise
+
+    def extract(
+        self,
+        *,
+        user_id: UUID,
+        theme_config_id: UUID,
+        content: str,
+        uow: UnitOfWorkFactory,
+    ) -> EntryExtraction:
+        with uow.for_user(user_id) as work:
+            raw_themes = self._repository.fixed_themes(work.session, theme_config_id)
+        themes = tuple(ThemeDefinition(key=key, name=name) for key, name in raw_themes)
+        if len(themes) != 8:
+            raise RuntimeError("fixed theme catalog invariant failed")
+        provider_content = _provider_content(content)
+        return materialize_extraction(
+            self._provider.extract(content=provider_content, themes=themes),
+            content=provider_content,
+            allowed_keys={theme.key for theme in themes},
+            reflection_threshold=self._reflection_threshold,
+        )
+
+    def apply_job_extraction(
+        self,
+        *,
+        claim: JobClaim,
+        worker_id: str,
+        theme_config_id: UUID,
+        extraction: EntryExtraction,
+        uow: UnitOfWorkFactory,
+    ) -> None:
+        with uow.for_worker() as work:
+            self._repository.apply_job_extraction(
+                work.session,
+                claim=claim,
+                worker_id=worker_id,
+                theme_config_id=theme_config_id,
+                extraction=extraction,
+            )
 
 
 def _provider_content(content: str) -> str:

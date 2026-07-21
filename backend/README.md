@@ -35,11 +35,18 @@ ORION_MIGRATION_DATABASE_URL='postgresql://migration-role:secret@host/database' 
   .venv/bin/python scripts/migrate.py
 ```
 
-Run the durable historical-import worker as a separate process using the restricted worker database
-role:
+Run the durable shared processing worker as a separate process using the restricted worker database
+role. Text, voice, historical imports, retries, and operator backfill batches all use the same
+`processing_jobs` queue:
 
 ```bash
-.venv/bin/python scripts/run_past_import_worker.py
+.venv/bin/python scripts/run_processing_worker.py
+```
+
+To enqueue one idempotent, low-priority batch of up to 100 already-materialized legacy entries:
+
+```bash
+.venv/bin/python scripts/run_processing_worker.py --backfill-batch 100
 ```
 
 The API uses in-process rate limiting and must run as exactly one instance with one Uvicorn worker.
