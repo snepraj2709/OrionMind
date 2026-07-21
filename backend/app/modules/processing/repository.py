@@ -76,6 +76,45 @@ class ProcessingRepository:
             )
         )
 
+    def load_pii_vault_for_update(
+        self, session: Session, *, user_id: UUID
+    ) -> tuple[dict | None, int]:
+        row = session.execute(
+            text(
+                "SELECT mapping_envelope, mapping_version "
+                "FROM public.get_user_pii_vault_for_update(:user_id)"
+            ),
+            {"user_id": user_id},
+        ).one_or_none()
+        if row is None:
+            return None, 0
+        envelope = row[0]
+        if not isinstance(envelope, dict):
+            raise RuntimeError("PII vault envelope is invalid")
+        return envelope, int(row[1])
+
+    def save_pii_vault(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        mapping_envelope: dict,
+        expected_version: int,
+    ) -> int:
+        return int(
+            session.scalar(
+                text(
+                    "SELECT public.save_user_pii_vault("
+                    ":user_id, CAST(:mapping_envelope AS jsonb), :expected_version)"
+                ),
+                {
+                    "user_id": user_id,
+                    "mapping_envelope": json.dumps(mapping_envelope),
+                    "expected_version": expected_version,
+                },
+            )
+        )
+
 
 def _reflection_rows(extraction: EntryExtraction) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []

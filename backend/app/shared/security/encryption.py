@@ -5,8 +5,10 @@ import binascii
 import hashlib
 import hmac
 import json
+import math
+import re
 import unicodedata
-from typing import Protocol
+from typing import Literal, Protocol, TypeAlias, cast
 from uuid import UUID
 
 from Crypto.Cipher import AES
@@ -15,6 +17,27 @@ from Crypto.Random import get_random_bytes
 
 class ContentUnavailableError(ValueError):
     pass
+
+
+EnvelopePurpose: TypeAlias = Literal[
+    "pii_vault",
+    "entry_redacted_text",
+    "entry_offset_map",
+    "entry_signal_payload",
+    "reflection_candidate_payload",
+    "reflection_insight_payload",
+]
+
+ENVELOPE_PURPOSES = frozenset(
+    {
+        "pii_vault",
+        "entry_redacted_text",
+        "entry_offset_map",
+        "entry_signal_payload",
+        "reflection_candidate_payload",
+        "reflection_insight_payload",
+    }
+)
 
 
 class ContentCipher(Protocol):
@@ -30,6 +53,28 @@ class ContentCipher(Protocol):
         self, plaintext: str, *, user_id: UUID, entry_date: str
     ) -> tuple[str, str]: ...
 
+    def encrypt_json(
+        self,
+        value: object,
+        *,
+        user_id: UUID,
+        record_id: UUID,
+        purpose: EnvelopePurpose,
+    ) -> dict: ...
+
+    def decrypt_json(
+        self,
+        envelope: dict,
+        *,
+        user_id: UUID,
+        record_id: UUID,
+        purpose: EnvelopePurpose,
+    ) -> object: ...
+
+    def entity_fingerprint(
+        self, value: str, *, user_id: UUID, entity_type: str
+    ) -> tuple[str, str]: ...
+
 
 class AesGcmContentCipher:
     ENVELOPE_KEYS = {
@@ -43,6 +88,7 @@ class AesGcmContentCipher:
         "tag",
     }
     EDGE_WHITESPACE = "\t\n\v\f\r "
+    MAX_GENERIC_JSON_BYTES = 700_000
 
     def __init__(
         self,
@@ -174,6 +220,135 @@ class AesGcmContentCipher:
         digest = hmac.new(self._fingerprint_keys[key_id], payload, hashlib.sha256).hexdigest()
         return key_id, digest
 
+    @staticmethod
+    def _derive_generic(master_key: bytes, salt: bytes) -> bytes:
+        pseudorandom_key = hmac.new(salt, master_key, hashlib.sha256).digest()
+        return hmac.new(
+            pseudorandom_key,
+            b"orion/generic-json/v1\x01",
+            hashlib.sha256,
+        ).digest()
+
+    @staticmethod
+    def _generic_aad(
+        *,
+        key_id: str,
+        user_id: UUID,
+        record_id: UUID,
+        purpose: EnvelopePurpose,
+    ) -> bytes:
+        return "\n".join(
+            (
+                "orion-json-envelope",
+                "version=1",
+                "algorithm=AES-256-GCM",
+                "kdf=HKDF-SHA256",
+                f"key_id={key_id}",
+                f"user_id={user_id}",
+                f"record_id={record_id}",
+                f"purpose={purpose}",
+            )
+        ).encode("utf-8")
+
+    def encrypt_json(
+        self,
+        value: object,
+        *,
+        user_id: UUID,
+        record_id: UUID,
+        purpose: EnvelopePurpose,
+    ) -> dict:
+        validated_purpose = _validate_purpose(purpose)
+        plaintext = _canonical_json_bytes(value, maximum=self.MAX_GENERIC_JSON_BYTES)
+        key_id = self._active_encryption_key_id
+        salt = get_random_bytes(32)
+        nonce = get_random_bytes(12)
+        cipher = AES.new(
+            self._derive_generic(self._encryption_keys[key_id], salt),
+            AES.MODE_GCM,
+            nonce=nonce,
+        )
+        cipher.update(
+            self._generic_aad(
+                key_id=key_id,
+                user_id=user_id,
+                record_id=record_id,
+                purpose=validated_purpose,
+            )
+        )
+        ciphertext, tag = cipher.encrypt_and_digest(plaintext)
+        return {
+            "version": 1,
+            "algorithm": "AES-256-GCM",
+            "key_id": key_id,
+            "kdf": "HKDF-SHA256",
+            "salt": _encode(salt),
+            "nonce": _encode(nonce),
+            "ciphertext": _encode(ciphertext),
+            "tag": _encode(tag),
+        }
+
+    def decrypt_json(
+        self,
+        envelope: dict,
+        *,
+        user_id: UUID,
+        record_id: UUID,
+        purpose: EnvelopePurpose,
+    ) -> object:
+        try:
+            validated_purpose = _validate_purpose(purpose)
+            if not isinstance(envelope, dict) or set(envelope) != self.ENVELOPE_KEYS:
+                raise ValueError
+            if (
+                envelope["version"] != 1
+                or isinstance(envelope["version"], bool)
+                or envelope["algorithm"] != "AES-256-GCM"
+                or envelope["kdf"] != "HKDF-SHA256"
+            ):
+                raise ValueError
+            key_id = envelope["key_id"]
+            master = self._encryption_keys[key_id]
+            salt = _decode(envelope["salt"], length=32)
+            nonce = _decode(envelope["nonce"], length=12)
+            ciphertext = _decode(envelope["ciphertext"])
+            tag = _decode(envelope["tag"], length=16)
+            if not ciphertext or len(ciphertext) > self.MAX_GENERIC_JSON_BYTES:
+                raise ValueError
+            cipher = AES.new(self._derive_generic(master, salt), AES.MODE_GCM, nonce=nonce)
+            cipher.update(
+                self._generic_aad(
+                    key_id=key_id,
+                    user_id=user_id,
+                    record_id=record_id,
+                    purpose=validated_purpose,
+                )
+            )
+            plaintext = cipher.decrypt_and_verify(ciphertext, tag)
+            decoded = plaintext.decode("utf-8", errors="strict")
+            value = json.loads(decoded)
+            if _canonical_json_bytes(value, maximum=self.MAX_GENERIC_JSON_BYTES) != plaintext:
+                raise ValueError
+            return value
+        except Exception as exc:
+            raise ContentUnavailableError("encrypted data is unavailable") from exc
+
+    def entity_fingerprint(
+        self, value: str, *, user_id: UUID, entity_type: str
+    ) -> tuple[str, str]:
+        if (
+            not isinstance(value, str)
+            or not value
+            or not isinstance(entity_type, str)
+            or not re.fullmatch(r"[A-Z][A-Z0-9_]{1,63}", entity_type)
+        ):
+            raise ValueError("invalid entity fingerprint input")
+        return self._fingerprint(
+            b"orion/pii-entity-fingerprint/v1\n" + entity_type.encode("ascii"),
+            value.encode("utf-8", errors="strict"),
+            user_id,
+        )
+
 
 class UnavailableContentCipher:
     def __getattr__(self, _name: str):
@@ -201,3 +376,39 @@ def _decode_key_map(serialized: str) -> dict[str, bytes]:
     if not isinstance(parsed, dict):
         raise ValueError("key map must be an object")
     return {str(key): _decode(value, length=32) for key, value in parsed.items()}
+
+
+def _validate_purpose(value: object) -> EnvelopePurpose:
+    if not isinstance(value, str) or value not in ENVELOPE_PURPOSES:
+        raise ValueError("invalid encryption purpose")
+    return cast(EnvelopePurpose, value)
+
+
+def _reject_nonfinite(value: object) -> None:
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError("JSON numbers must be finite")
+    if isinstance(value, dict):
+        if not all(isinstance(key, str) for key in value):
+            raise ValueError("JSON object keys must be strings")
+        for item in value.values():
+            _reject_nonfinite(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_nonfinite(item)
+
+
+def _canonical_json_bytes(value: object, *, maximum: int) -> bytes:
+    _reject_nonfinite(value)
+    try:
+        encoded = json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8", errors="strict")
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise ValueError("value is not canonical JSON") from exc
+    if not encoded or len(encoded) > maximum:
+        raise ValueError("JSON payload is too large")
+    return encoded
