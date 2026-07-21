@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
-from uuid import UUID
-
 from datetime import date
+from typing import Protocol
 
 from app.modules.processing.schemas import (
     DeterministicQualityFeatures,
@@ -29,16 +27,6 @@ class EntryAnalysisProvider(Protocol):
         entry_date: date,
         safety_identifier: str,
     ) -> ModelEntryAnalysis: ...
-
-
-@dataclass(frozen=True, slots=True)
-class ProcessingRequest:
-    user_id: UUID
-    entry_id: UUID
-    processing_token: UUID
-    theme_config_id: UUID
-    content: str
-    past_import: bool = False
 
 
 @dataclass(frozen=True, slots=True)

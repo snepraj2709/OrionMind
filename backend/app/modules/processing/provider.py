@@ -147,8 +147,3 @@ class OpenAIEntryAnalysisProvider:
             round((time.monotonic() - started) * 1000),
         )
         return result
-
-
-# Retained as a narrow import alias while callers move to the combined analyzer name.
-OpenAIExtractionProvider = OpenAIEntryAnalysisProvider
-UnavailableExtractionProvider = UnavailableEntryAnalysisProvider

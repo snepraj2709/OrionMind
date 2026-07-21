@@ -28,62 +28,6 @@ class ProcessingRepository:
         ).all()
         return tuple((str(row[0]), str(row[1])) for row in rows)
 
-    def apply_extraction(
-        self,
-        session: Session,
-        *,
-        user_id: UUID,
-        entry_id: UUID,
-        processing_token: UUID,
-        theme_config_id: UUID,
-        extraction: EntryExtraction,
-        past_import: bool,
-    ) -> None:
-        session.execute(
-            text(
-                "SELECT public.apply_entry_extraction_for_owner("
-                ":user_id, :entry_id, :processing_token, :config_id, :mode, "
-                "CAST(:themes AS jsonb), CAST(:ideas AS jsonb), CAST(:memories AS jsonb), "
-                "CAST(:reflections AS jsonb), :past_import)"
-            ),
-            {
-                "user_id": user_id,
-                "entry_id": entry_id,
-                "processing_token": processing_token,
-                "config_id": theme_config_id,
-                "mode": extraction.theme.mode,
-                "themes": json.dumps([item.model_dump() for item in extraction.theme.themes]),
-                "ideas": json.dumps([item.model_dump() for item in extraction.ideas]),
-                "memories": json.dumps([item.model_dump() for item in extraction.memories]),
-                "reflections": json.dumps(_reflection_rows(extraction)),
-                "past_import": past_import,
-            },
-        )
-
-    def mark_failed(
-        self,
-        session: Session,
-        *,
-        user_id: UUID,
-        entry_id: UUID,
-        processing_token: UUID,
-        error_code: str,
-    ) -> bool:
-        return bool(
-            session.scalar(
-                text(
-                    "SELECT public.mark_entry_processing_failed_for_owner("
-                    ":user_id, :entry_id, :processing_token, :error_code)"
-                ),
-                {
-                    "user_id": user_id,
-                    "entry_id": entry_id,
-                    "processing_token": processing_token,
-                    "error_code": error_code,
-                },
-            )
-        )
-
     def load_pii_vault_for_update(
         self, session: Session, *, user_id: UUID
     ) -> tuple[dict | None, int]:
@@ -200,39 +144,6 @@ class ProcessingRepository:
             if getattr(exc.orig, "sqlstate", None) == "P0001":
                 raise StaleAnalysisClaimError("processing claim is no longer current") from exc
             raise
-
-    def apply_job_extraction(
-        self,
-        session: Session,
-        *,
-        claim: JobClaim,
-        worker_id: str,
-        theme_config_id: UUID,
-        extraction: EntryExtraction,
-    ) -> None:
-        session.execute(
-            text(
-                "SELECT public.apply_legacy_entry_processing_job("
-                ":job_id, :worker_id, :claim_token, :config_id, :mode, "
-                "CAST(:themes AS jsonb), CAST(:ideas AS jsonb), "
-                "CAST(:memories AS jsonb), CAST(:reflections AS jsonb))"
-            ),
-            {
-                "job_id": claim.job_id,
-                "worker_id": worker_id,
-                "claim_token": claim.claim_token,
-                "config_id": theme_config_id,
-                "mode": extraction.theme.mode,
-                "themes": json.dumps(
-                    [item.model_dump() for item in extraction.theme.themes]
-                ),
-                "ideas": json.dumps([item.model_dump() for item in extraction.ideas]),
-                "memories": json.dumps(
-                    [item.model_dump() for item in extraction.memories]
-                ),
-                "reflections": json.dumps(_reflection_rows(extraction)),
-            },
-        )
 
 
 def _reflection_rows(extraction: EntryExtraction) -> list[dict[str, object]]:

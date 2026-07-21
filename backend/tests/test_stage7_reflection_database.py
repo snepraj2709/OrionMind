@@ -55,7 +55,6 @@ NEW_TABLES = (
     "reflection_feedback",
 )
 NEW_FUNCTIONS = (
-    "apply_legacy_entry_processing_job",
     "apply_combined_entry_processing_job",
     "apply_entry_analysis",
     "apply_reflection_snapshot",
@@ -77,6 +76,10 @@ NEW_FUNCTIONS = (
     "renew_processing_job",
     "save_user_pii_vault",
     "schedule_reflection_jobs",
+)
+RETIRED_ENTRY_APPLY_SIGNATURE = (
+    "public.apply_legacy_entry_processing_job("
+    "uuid,text,uuid,uuid,text,jsonb,jsonb,jsonb,jsonb)"
 )
 
 
@@ -270,12 +273,20 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
             "SELECT reflection_type, activity FROM public.reflections WHERE id = %s",
             (reflection_id,),
         ).fetchone() == ("learned_about_self", "I value focus")
+        assert connection.execute(
+            "SELECT pg_catalog.to_regprocedure(%s)",
+            (RETIRED_ENTRY_APPLY_SIGNATURE,),
+        ).fetchone() == (None,)
         upgraded = schema_signature(connection)
 
     reset(value)
     with psycopg.connect(value) as connection:
         connection.execute((ROOT / "tests/sql/bootstrap_auth.sql").read_text(), prepare=False)
         connection.execute((ROOT / "supabase_schema.sql").read_text(), prepare=False)
+        assert connection.execute(
+            "SELECT pg_catalog.to_regprocedure(%s)",
+            (RETIRED_ENTRY_APPLY_SIGNATURE,),
+        ).fetchone() == (None,)
         fresh = schema_signature(connection)
     assert fresh == upgraded
 

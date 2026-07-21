@@ -83,3 +83,24 @@ historical recovery.
 | `supabase_schema.sql`                    | `3f9380b597953afd1cc1d7b9ef85762c07ac924df2a68b467e3cfe6a560ca4f2` |
 | `scripts/run_processing_worker.py`       | `f37e3274667398a6cbcbce2bbc5a25d18946497028ebcfcac505f6e41547a78b` |
 | `app/modules/jobs/worker.py`             | `d0da2002bdcd90f277dfe20dce82fefeb79252685a384d214e70a6f55d818c24` |
+
+## P0-04 combined entry-analysis artifacts
+
+Recorded after the P0-04 implementation and local verification on 2026-07-21. The combined analyzer
+replaces the legacy-only entry-worker success path while retaining its user-visible extraction
+outputs. The P0-03 schema checksum above remains historical; the checksum below is the current exact
+ordered fresh-install schema through migration 0007.
+
+| Target-relative path                          | SHA-256                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `migrations/0007_combined_entry_analysis.sql` | `fb9275b2219477dca38301832603d6726a2298ff17f91198303c8178fa8506be` |
+| `supabase_schema.sql`                         | `1c9b7c6b97de54b14df9ea7c8c96bba12429747351fbf449522737bb29bf5b07` |
+| `app/modules/processing/quality.py`           | `ef5aa76789a39c47c3de5c42c4a7416a4568fa97837451096b560b6079c25fe5` |
+| `app/modules/processing/prompts.py`           | `e2a6d26d0732f391a891fe0d473f965cefe04bfa37c078baa7210dad246c20df` |
+| `app/modules/processing/provider.py`          | `09556b8a9f55a8f1d494dee5e74e21a484ce0dafecca805b7ea5390086180764` |
+| `app/modules/processing/schemas.py`           | `8d03f69737225fd3edd737186d4e6592a27d34938eea8d2b01fa799940d7d8e7` |
+| `app/modules/processing/service.py`           | `1c8d0276d614f1026e10675666d0367f8ddc57d7de0a7a72e3bcc3963782e47f` |
+| `app/modules/processing/repository.py`        | `bc5c04be35eb637a9aeaa5f3de0b874a2db2ef0076c0872454056e0ff815d48c` |
+| `app/modules/jobs/service.py`                 | `fb97c8fcfbade4bb562a29f6349334556302cf30c5fef6ca2694891b0364bb1b` |
+| `tests/test_stage7_entry_analysis.py`         | `493e52372ad2b7da4491f97808c84aaf93740e3b2392f8543aab5b74e41c031d` |
+| `tests/test_stage7_reflection_quality.py`     | `a50b69bfb61929ec00400a6da01c4f38a82bae15aaca5bf494513160e6c07ffb` |

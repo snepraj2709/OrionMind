@@ -129,9 +129,13 @@ def test_repetition_rule_does_not_reject_causal_or_emotional_short_text() -> Non
     [
         ({}, "accepted"),
         ({"confidence": 0.69}, "uncertain"),
+        ({"entry_kind": "test_or_noise", "confidence": 0.9}, "excluded"),
         ({"entry_kind": "informational_text", "confidence": 0.9}, "excluded"),
+        ({"entry_kind": "copied_or_quoted_text", "confidence": 0.9}, "excluded"),
+        ({"entry_kind": "task_or_note", "confidence": 0.9}, "excluded"),
         (
             {
+                "entry_kind": "unclear",
                 "lived_experience_score": 0.45,
                 "self_reference_score": 0.4,
                 "emotional_information_score": 0.4,
@@ -143,6 +147,7 @@ def test_repetition_rule_does_not_reject_causal_or_emotional_short_text() -> Non
         ),
         (
             {
+                "entry_kind": "creative_writing",
                 "lived_experience_score": 0.1,
                 "self_reference_score": 0.1,
                 "emotional_information_score": 0.1,

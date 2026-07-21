@@ -43,6 +43,11 @@ role. Text, voice, historical imports, retries, and operator backfill batches al
 .venv/bin/python scripts/run_processing_worker.py
 ```
 
+Entry jobs decrypt and redact locally, then make one strict combined Responses API analysis call
+with provider storage disabled. Configure that call with `OPENAI_ENTRY_ANALYSIS_MODEL` (default
+`gpt-5.6-luna`). Deterministic exclusions make no provider call, while accepted analysis, legacy
+extraction, entry completion, signals, and reflection counters commit atomically.
+
 To enqueue one idempotent, low-priority batch of up to 100 already-materialized legacy entries:
 
 ```bash

@@ -36,6 +36,12 @@ credentials out of image layers and logs. Provision distinct login roles outside
 migrations, grant the application login the required `authenticated` role membership, and grant the
 worker login only the `orion_worker` capability.
 
+Set `OPENAI_ENTRY_ANALYSIS_MODEL` to an available structured-output model; the committed default is
+`gpt-5.6-luna`. Entry analysis uses one Responses API call with provider storage and SDK retries
+disabled. The worker retries only the durable queue's allowlisted transient failures. Local Presidio
+redaction must load the bundled `en_core_web_sm` model at startup and must not download models at
+runtime.
+
 Use HTTPS Supabase and CORS origins. Keep API docs disabled. Retain the fixed reflection threshold,
 request limits, one-worker setting, and separate application/worker URLs enforced by production
 settings validation.
@@ -56,6 +62,7 @@ SQLAlchemy traces. No public metrics route exists.
 
 ## Release blockers
 
-Before calling the service production-ready, run the waived two-account Supabase API/direct-RLS proof,
-Auth deletion/cascade proof, and cross-user ciphertext/decryption proof against an authorized disposable
+Before calling the service production-ready, implement KMS-backed key wrapping and its rotation and
+recovery runbook, then run the waived two-account Supabase API/direct-RLS proof, Auth
+deletion/cascade proof, and cross-user ciphertext/decryption proof against an authorized disposable
 Supabase project. Deployment itself also requires explicit authorization.

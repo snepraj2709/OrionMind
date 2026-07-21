@@ -324,6 +324,9 @@ BEGIN
 END
 $function$;
 
+DROP FUNCTION public.apply_legacy_entry_processing_job(
+    uuid, text, uuid, uuid, text, jsonb, jsonb, jsonb, jsonb
+);
 DROP FUNCTION public.complete_materialized_entry_processing_job(uuid, text, uuid);
 
 REVOKE ALL ON FUNCTION public.get_entry_processing_payload(uuid, text, uuid)
