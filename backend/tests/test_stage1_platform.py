@@ -117,7 +117,7 @@ def assert_error(response, status: int, code: str) -> dict:
     return body
 
 
-def test_health_is_exact_and_only_stage_two_operations_are_registered() -> None:
+def test_health_is_exact_and_only_stage_four_operations_are_registered() -> None:
     app = create_app(
         settings=settings(), database_sessions=empty_sessions(), token_verifier=ValidVerifier()
     )
@@ -135,6 +135,13 @@ def test_health_is_exact_and_only_stage_two_operations_are_registered() -> None:
         ("GET", "/api/v1/profile"),
         ("PATCH", "/api/v1/profile"),
         ("DELETE", "/api/v1/account"),
+        ("GET", "/api/v1/entry/draft"),
+        ("PUT", "/api/v1/entry/draft"),
+        ("DELETE", "/api/v1/entry/draft"),
+        ("POST", "/api/v1/entry"),
+        ("GET", "/api/v1/entries"),
+        ("GET", "/api/v1/entries/{entry_id}"),
+        ("POST", "/api/v1/entries/{entry_id}/retry"),
         ("GET", "/health"),
     ]
 

@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.modules.health.routes import router as health_router
+from app.modules.entries.repository import EntryRepository
+from app.modules.entries.service import EntryService
 from app.modules.profile.repository import ProfileRepository
 from app.modules.profile.service import ProfileService
 from app.modules.processing.provider import OpenAIExtractionProvider, UnavailableExtractionProvider
@@ -26,6 +28,7 @@ from app.shared.integrations.supabase_auth import (
 )
 from app.shared.integrations.openai import build_openai_client
 from app.shared.observability.logging import configure_logging
+from app.shared.security.encryption import AesGcmContentCipher, UnavailableContentCipher
 
 
 def _build_token_verifier(settings: Settings):
@@ -74,6 +77,15 @@ def _build_extraction_provider(settings: Settings):
     )
 
 
+def _build_content_cipher(settings: Settings):
+    try:
+        return AesGcmContentCipher.from_settings(settings)
+    except Exception:
+        if settings.ENVIRONMENT == "production":
+            raise
+        return UnavailableContentCipher()
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -81,6 +93,7 @@ def create_app(
     token_verifier=None,
     account_auth=None,
     extraction_provider=None,
+    content_cipher=None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     configure_logging(json_logs=resolved_settings.LOG_FORMAT == "json")
@@ -90,6 +103,7 @@ def create_app(
     resolved_extraction_provider = extraction_provider or _build_extraction_provider(
         resolved_settings
     )
+    resolved_content_cipher = content_cipher or _build_content_cipher(resolved_settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -121,6 +135,12 @@ def create_app(
         repository=ProcessingRepository(),
         provider=resolved_extraction_provider,
         reflection_threshold=resolved_settings.REFLECTION_REVIEW_THRESHOLD,
+    )
+    app.state.content_cipher = resolved_content_cipher
+    app.state.entry_service = EntryService(
+        repository=EntryRepository(),
+        cipher=resolved_content_cipher,
+        processing=app.state.processing_service,
     )
 
     install_error_handlers(app)

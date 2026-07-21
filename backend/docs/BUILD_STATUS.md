@@ -8,7 +8,7 @@
 | 1 — Shared platform               | Verified complete                    | HTTP/auth/config/UoW/health platform                    |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass               | None                                                                 |
 | 2 — Database/profile/account      | Verified complete; live proof waived | Fresh schema, migration runner, profile/account feature |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | User explicitly waived unavailable live Supabase proof on 2026-07-21 |
 | 3 — Processing core               | Verified complete                    | Strict extraction, bounded provider, atomic RPCs        |             3 | 61 full tests; structured validation, fallback ceiling, source spans, threshold, rollback, stale-token and concurrency pass   | None                                                                 |
-| 4 — Drafts/text/list/detail/retry | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
+| 4 — Drafts/text/list/detail/retry | Verified complete                    | AES-GCM drafts and complete owner text lifecycle        |             3 | 70 full tests; encryption, replay, concurrency, pagination, detail, retry, RLS and privacy proofs pass                        | None                                                                 |
 | 5 — Voice/past imports            | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
 | 6 — Contract freeze/release proof | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
 
@@ -321,6 +321,68 @@ Status: fixed
 - Provider and source privacy scan: no journal text, prompts, parsed output, token, or provider payload logging.
 - Runtime inventory remains the four Stage 2 operations; Stage 3 adds no public routes.
 - Final Stage 3 findings-first review: zero open actionable findings.
+
+## Stage 4 findings
+
+### ST4-001
+
+Finding ID: ST4-001
+Severity: High
+Requirement: Internal list results must carry decrypted page content through a declared typed boundary.
+Evidence: The first list implementation attempted to attach plaintext dynamically to a frozen slotted
+summary dataclass.
+Impact: Every non-empty list request would fail at runtime before response mapping.
+Fix: Added an explicit internal-only `plaintext` field to `EntrySummaryData`; public views expose only
+the exact unsuffixed 200-code-point preview.
+Regression test: Unicode preview and empty/one/two/three-theme page mapping plus the real database list pass.
+Status: fixed
+
+### ST4-002
+
+Finding ID: ST4-002
+Severity: Medium
+Requirement: Text submission accepts no idempotency header or caller-owned operational identity.
+Evidence: Strict JSON rejected operational fields, but the initial controller silently ignored an
+`Idempotency-Key` header.
+Impact: Clients could incorrectly infer that the key controlled text-entry replay semantics.
+Fix: Reject `Idempotency-Key` on `POST /api/v1/entry` with the canonical validation error; replay remains
+exclusively the saved-draft fingerprint and source-draft transition.
+Regression test: Header rejection occurs without entry creation or provider invocation.
+Status: fixed
+
+### ST4-003
+
+Finding ID: ST4-003
+Severity: High
+Requirement: Malformed provider output and persistence failures must use safe stable boundary errors.
+Evidence: Only the provider adapter's explicit unavailable exception was translated; materialization
+validation could fall through as a generic 500.
+Impact: The response code diverged from the provider-failure contract and obscured retry semantics.
+Fix: Map structured-output validation to safe `502 PROVIDER_UNAVAILABLE`, map internal processing
+dependency failures to retryable `503 SERVICE_UNAVAILABLE`, and preserve typed domain errors.
+Regression test: Provider failure marks the exact token failed, returns a sanitized 502, and retry succeeds.
+Status: fixed
+
+## Stage 4 verification evidence
+
+- Full non-live plus PostgreSQL 15 disposable suite: 70 passed; one expected pinned-Starlette warning.
+- Canonicalization proves Unicode 14 NFC, CR/CRLF to LF, strict UTF-8, frozen six-character edge trim,
+  exact 200,000-scalar bound, and non-ASCII whitespace preservation.
+- AES-256-GCM/HKDF envelope round-trip passes; wrong user, record, key, tag, shape, or decode produces
+  one content-unavailable result; owner/date fingerprints are deterministic and scoped.
+- Active draft ciphertext contains no plaintext, repeated save retains backend identity, blank PUT and
+  DELETE clear only active rows, submitted ciphertext is null, malformed draft returns safe 503.
+- Matching text creates once; concurrent lost-response submission returns one 201 and one 200 with one
+  provider call; completed replay calls no provider; new identical draft creates a distinct entry.
+- Missing/mismatched draft returns 409 without mutation; text rejects operational body fields and
+  `Idempotency-Key`.
+- User-timezone date derivation, stable pagination, exact multibyte preview, batch theme loading, cache
+  header, full detail, empty and one/two/three-theme shapes, and list zero-AI behavior pass.
+- Foreign/missing detail is 404 before decrypt; malformed owner envelope is one safe 500.
+- Failed replay and explicit retry share token claim semantics; concurrent retry has one claimant and
+  one provider call; stale/current processing-token database proofs remain green.
+- Runtime inventory is exactly the Stage 4 eleven operations; no review/library/theme/journey routes.
+- Final Stage 4 findings-first review: zero open actionable findings.
 
 ## Final route evidence
 

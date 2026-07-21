@@ -1,0 +1,1 @@
+"""Encrypted journal-entry feature."""

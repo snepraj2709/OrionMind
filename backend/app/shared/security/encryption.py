@@ -1,12 +1,203 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import hmac
+import json
+import unicodedata
 from typing import Protocol
 from uuid import UUID
 
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+
+
+class ContentUnavailableError(ValueError):
+    pass
+
 
 class ContentCipher(Protocol):
-    """Feature-facing seam for versioned authenticated content encryption."""
+    def canonicalize(self, plaintext: str) -> str: ...
 
     def encrypt(self, plaintext: str, *, user_id: UUID, record_id: UUID) -> dict: ...
 
     def decrypt(self, envelope: dict, *, user_id: UUID, record_id: UUID) -> str: ...
+
+    def draft_fingerprint(self, plaintext: str, *, user_id: UUID) -> tuple[str, str]: ...
+
+    def past_fingerprint(
+        self, plaintext: str, *, user_id: UUID, entry_date: str
+    ) -> tuple[str, str]: ...
+
+
+class AesGcmContentCipher:
+    ENVELOPE_KEYS = {
+        "version",
+        "algorithm",
+        "key_id",
+        "kdf",
+        "salt",
+        "nonce",
+        "ciphertext",
+        "tag",
+    }
+    EDGE_WHITESPACE = "\t\n\v\f\r "
+
+    def __init__(
+        self,
+        *,
+        encryption_keys: dict[str, bytes],
+        active_encryption_key_id: str,
+        fingerprint_keys: dict[str, bytes],
+        active_fingerprint_key_id: str,
+    ) -> None:
+        if encryption_keys.get(active_encryption_key_id) is None:
+            raise ValueError("active encryption key is unavailable")
+        if fingerprint_keys.get(active_fingerprint_key_id) is None:
+            raise ValueError("active fingerprint key is unavailable")
+        if any(len(value) != 32 for value in (*encryption_keys.values(), *fingerprint_keys.values())):
+            raise ValueError("all content keys must be 32 bytes")
+        self._encryption_keys = dict(encryption_keys)
+        self._active_encryption_key_id = active_encryption_key_id
+        self._fingerprint_keys = dict(fingerprint_keys)
+        self._active_fingerprint_key_id = active_fingerprint_key_id
+
+    @classmethod
+    def from_settings(cls, settings) -> "AesGcmContentCipher":
+        return cls(
+            encryption_keys=_decode_key_map(settings.ENTRY_ENCRYPTION_KEYS.get_secret_value()),
+            active_encryption_key_id=settings.ENTRY_ENCRYPTION_ACTIVE_KEY_ID,
+            fingerprint_keys=_decode_key_map(settings.ENTRY_FINGERPRINT_KEYS.get_secret_value()),
+            active_fingerprint_key_id=settings.ENTRY_FINGERPRINT_ACTIVE_KEY_ID,
+        )
+
+    def canonicalize(self, plaintext: str) -> str:
+        if unicodedata.unidata_version != "14.0.0" or not isinstance(plaintext, str):
+            raise ValueError("invalid entry content")
+        value = unicodedata.normalize(
+            "NFC", plaintext.replace("\r\n", "\n").replace("\r", "\n")
+        ).strip(self.EDGE_WHITESPACE)
+        if not value or len(value) > 200_000:
+            raise ValueError("invalid entry content")
+        value.encode("utf-8", errors="strict")
+        return value
+
+    @staticmethod
+    def _derive(master_key: bytes, salt: bytes) -> bytes:
+        pseudorandom_key = hmac.new(salt, master_key, hashlib.sha256).digest()
+        return hmac.new(
+            pseudorandom_key,
+            b"orion/entry-content/v2\x01",
+            hashlib.sha256,
+        ).digest()
+
+    @staticmethod
+    def _aad(*, key_id: str, user_id: UUID, record_id: UUID) -> bytes:
+        return "\n".join(
+            (
+                "orion-entry-envelope",
+                "version=2",
+                "algorithm=AES-256-GCM",
+                "kdf=HKDF-SHA256",
+                f"key_id={key_id}",
+                f"user_id={user_id}",
+                f"entry_id={record_id}",
+                "field=content",
+            )
+        ).encode("utf-8")
+
+    def encrypt(self, plaintext: str, *, user_id: UUID, record_id: UUID) -> dict:
+        canonical = self.canonicalize(plaintext).encode("utf-8")
+        key_id = self._active_encryption_key_id
+        salt = get_random_bytes(32)
+        nonce = get_random_bytes(12)
+        cipher = AES.new(self._derive(self._encryption_keys[key_id], salt), AES.MODE_GCM, nonce=nonce)
+        cipher.update(self._aad(key_id=key_id, user_id=user_id, record_id=record_id))
+        ciphertext, tag = cipher.encrypt_and_digest(canonical)
+        return {
+            "version": 2,
+            "algorithm": "AES-256-GCM",
+            "key_id": key_id,
+            "kdf": "HKDF-SHA256",
+            "salt": _encode(salt),
+            "nonce": _encode(nonce),
+            "ciphertext": _encode(ciphertext),
+            "tag": _encode(tag),
+        }
+
+    def decrypt(self, envelope: dict, *, user_id: UUID, record_id: UUID) -> str:
+        try:
+            if not isinstance(envelope, dict) or set(envelope) != self.ENVELOPE_KEYS:
+                raise ValueError
+            if (
+                envelope["version"] != 2
+                or isinstance(envelope["version"], bool)
+                or envelope["algorithm"] != "AES-256-GCM"
+                or envelope["kdf"] != "HKDF-SHA256"
+            ):
+                raise ValueError
+            key_id = envelope["key_id"]
+            master = self._encryption_keys[key_id]
+            salt = _decode(envelope["salt"], length=32)
+            nonce = _decode(envelope["nonce"], length=12)
+            ciphertext = _decode(envelope["ciphertext"])
+            tag = _decode(envelope["tag"], length=16)
+            if not ciphertext:
+                raise ValueError
+            cipher = AES.new(self._derive(master, salt), AES.MODE_GCM, nonce=nonce)
+            cipher.update(self._aad(key_id=key_id, user_id=user_id, record_id=record_id))
+            return cipher.decrypt_and_verify(ciphertext, tag).decode("utf-8", errors="strict")
+        except Exception as exc:
+            raise ContentUnavailableError("entry content is unavailable") from exc
+
+    def draft_fingerprint(self, plaintext: str, *, user_id: UUID) -> tuple[str, str]:
+        return self._fingerprint(
+            b"orion/entry-draft-fingerprint/v1",
+            self.canonicalize(plaintext).encode("utf-8"),
+            user_id,
+        )
+
+    def past_fingerprint(
+        self, plaintext: str, *, user_id: UUID, entry_date: str
+    ) -> tuple[str, str]:
+        canonical = self.canonicalize(plaintext).encode("utf-8")
+        return self._fingerprint(
+            b"orion/past-entry-import/v1",
+            entry_date.encode("ascii") + b"\n" + canonical,
+            user_id,
+        )
+
+    def _fingerprint(self, domain: bytes, value: bytes, user_id: UUID) -> tuple[str, str]:
+        key_id = self._active_fingerprint_key_id
+        payload = b"\n".join((domain, str(user_id).encode("ascii"), value))
+        digest = hmac.new(self._fingerprint_keys[key_id], payload, hashlib.sha256).hexdigest()
+        return key_id, digest
+
+
+class UnavailableContentCipher:
+    def __getattr__(self, _name: str):
+        raise RuntimeError("content encryption is unavailable")
+
+
+def _encode(value: bytes) -> str:
+    return base64.b64encode(value).decode("ascii")
+
+
+def _decode(value: object, *, length: int | None = None) -> bytes:
+    if not isinstance(value, str):
+        raise ValueError
+    try:
+        decoded = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError from exc
+    if _encode(decoded) != value or (length is not None and len(decoded) != length):
+        raise ValueError
+    return decoded
+
+
+def _decode_key_map(serialized: str) -> dict[str, bytes]:
+    parsed = json.loads(serialized)
+    if not isinstance(parsed, dict):
+        raise ValueError("key map must be an object")
+    return {str(key): _decode(value, length=32) for key, value in parsed.items()}
