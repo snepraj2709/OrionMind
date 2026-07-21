@@ -8,9 +8,18 @@ import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface InnerTensionCardProps {
   tension: InnerTension;
-  response?: ReflectionResponse;
+  response: ReflectionResponse | null;
   onResponseChange: (response: ReflectionResponse) => void;
   onViewEvidence: () => void;
+  pending?: boolean;
+  error?: string;
+}
+
+function formatNeed(value: string) {
+  return value
+    .split('_')
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(' ');
 }
 
 function TensionConnector() {
@@ -29,13 +38,19 @@ function TensionConnector() {
 }
 
 export function InnerTensionCard({
+  error,
   onResponseChange,
   onViewEvidence,
+  pending = false,
   response,
   tension,
 }: InnerTensionCardProps) {
   return (
-    <ReflectionFeedbackSurface className="p-6" response={response}>
+    <ReflectionFeedbackSurface
+      className="p-6"
+      pending={pending}
+      response={response}
+    >
       <div className="sidebar:grid-cols-[minmax(0,1fr)_minmax(12rem,0.8fr)_minmax(0,1fr)] grid grid-cols-1 gap-6">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
@@ -48,7 +63,7 @@ export function InnerTensionCard({
               className="text-primary"
               variant="componentTitle"
             >
-              {tension.leftTitle}
+              {formatNeed(tension.leftTitle)}
             </Typography>
           </div>
           <Typography variant="body">{tension.leftBody}</Typography>
@@ -65,7 +80,7 @@ export function InnerTensionCard({
               className="text-counterpoint"
               variant="componentTitle"
             >
-              {tension.rightTitle}
+              {formatNeed(tension.rightTitle)}
             </Typography>
           </div>
           <Typography variant="body">{tension.rightBody}</Typography>
@@ -86,10 +101,12 @@ export function InnerTensionCard({
       </div>
 
       <ReflectionResponseBar
-        ariaLabel={`${tension.leftTitle} and ${tension.rightTitle} feedback`}
+        ariaLabel={`${formatNeed(tension.leftTitle)} and ${formatNeed(tension.rightTitle)} feedback`}
         className="border-border border-t pt-6"
+        error={error}
         onResponseChange={onResponseChange}
         onViewEvidence={onViewEvidence}
+        pending={pending}
         response={response}
       />
     </ReflectionFeedbackSurface>

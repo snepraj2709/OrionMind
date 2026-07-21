@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MockReflectionsRepository } from '@/features/reflections';
+import { MockReflectionsRepository } from '@/features/reflections/mock-repository';
 
 import { MockOrionStore } from './mock-orion-store';
 
@@ -49,21 +49,23 @@ describe('MockOrionStore', () => {
   it('can expose approved reflection evidence through an injected mock repository', async () => {
     const store = new MockOrionStore();
     store.decideExtractedItem({ itemId: 'r1', status: 'approved' });
-    const repository = new MockReflectionsRepository([], 0, store);
+    const repository = new MockReflectionsRepository({
+      delay: 0,
+      evidenceSource: store,
+    });
 
     const result = await repository.getReflection({
       range: 'all',
-      reflectionTab: 'hiddenDriver',
-      userId: 'reader-id',
     });
 
-    expect(result.reflectionTab).toBe('hiddenDriver');
-    if (result.reflectionTab !== 'hiddenDriver') return;
-    expect(result.data.evidence).toEqual([
+    expect(result.data.hiddenDriver.status).toBe('available');
+    if (result.data.hiddenDriver.status !== 'available') return;
+    expect(result.data.hiddenDriver.evidence).toEqual([
       expect.objectContaining({
-        date: '2025-07-10',
-        source: 'Self-knowledge',
-        text: 'Slow, unstructured mornings help me hear what I need before the day starts asking things of me.',
+        entryDate: '2025-07-10',
+        sourceLabel: 'Self-knowledge',
+        quote:
+          'Slow, unstructured mornings help me hear what I need before the day starts asking things of me.',
       }),
     ]);
   });

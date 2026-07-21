@@ -1,173 +1,148 @@
-import type { JournalEntry } from './model';
+/** Test-only aggregate fixtures. Production code must use the HTTP repository. */
+import type { EvidenceItem, ReflectionApiResponse } from './api-schema';
 
-export const reflectionCopyFixture = {
-  evidence: {
-    interpretation:
-      'This sentence contributes to a pattern only when it appears alongside related journal evidence across the period.',
-    sources: {
-      addedEnergy: 'Energizing',
-      drainedEnergy: 'Draining',
-      selfKnowledge: 'Self-knowledge',
-    },
-  },
-  hiddenDriver: {
-    statement:
-      'You appear most energised when curiosity becomes something tangible—understanding a difficult subject, making something, helping someone learn or developing a capability of your own.',
-    underlyingNeed:
-      'To experience yourself as capable, original and actively growing.',
-    drivers: [
-      'Curiosity and mastery',
-      'Autonomy',
-      'Meaningful connection',
-      'Creative and physical vitality',
-    ],
-    evidenceStrength: [
-      'Repeated across multiple entries',
-      'Present across energising, draining and self-knowledge reflections',
-      'Observed throughout this period',
-    ],
-  },
-  loop: {
-    title: 'A loop that may be keeping you stuck',
-    description:
-      'A possible pattern — offered as something to notice, not a conclusion.',
-    steps: [
-      {
-        id: 'loop-1',
-        text: 'A new idea or possibility creates energy.',
-        entryCount: 4,
-      },
-      {
-        id: 'loop-2',
-        text: 'You begin exploring several directions.',
-        entryCount: 5,
-      },
-      {
-        id: 'loop-3',
-        text: 'Your attention becomes fragmented.',
-        entryCount: 6,
-      },
-      {
-        id: 'loop-4',
-        text: 'Progress starts feeling insufficient.',
-        entryCount: 3,
-      },
-      {
-        id: 'loop-5',
-        text: 'Self-doubt or urgency appears.',
-        entryCount: 4,
-      },
-      {
-        id: 'loop-6',
-        text: 'You seek more inspiration and new possibilities.',
-        entryCount: 5,
-      },
-    ],
-    protection:
-      'The excitement of possibility without requiring you to risk choosing one direction.',
-    interruption:
-      'Turn one curiosity into one visible output before adding another.',
-  },
-  innerTension: {
-    title: 'Needs you may be trying to hold at the same time',
-    tensions: [
-      {
-        id: 'novelty-focus',
-        leftTitle: 'Novelty and exploration',
-        leftBody:
-          'You gain energy from discovering new ideas and possibilities.',
-        rightTitle: 'Focus and completion',
-        rightBody:
-          'You also want evidence that your effort is producing something real.',
-        integration:
-          'Keep a place for new ideas, while letting only one become active work.',
-      },
-      {
-        id: 'belonging-autonomy',
-        leftTitle: 'Recognition and belonging',
-        leftBody: 'You want to feel seen, valued and connected.',
-        rightTitle: 'Autonomy and distinctiveness',
-        rightBody:
-          'You resist groups or expectations that do not feel true to you.',
-        integration:
-          'Seek recognition through work and relationships you genuinely respect.',
-      },
-    ],
-  },
+export const reflectionFixtureIds = {
+  snapshot: '10000000-0000-4000-8000-000000000001',
+  hiddenDriver: '10000000-0000-4000-8000-000000000002',
+  recurringLoop: '10000000-0000-4000-8000-000000000003',
+  tensionOne: '10000000-0000-4000-8000-000000000004',
+  tensionTwo: '10000000-0000-4000-8000-000000000005',
 } as const;
 
-const entryDates = [
-  '2025-04-14',
-  '2025-04-18',
-  '2025-04-22',
-  '2025-04-26',
-  '2025-04-30',
-  '2025-05-03',
-  '2025-05-06',
-  '2025-05-08',
-] as const;
-
-const entryPatterns: JournalEntry['content'][] = [
+export const reflectionEvidenceFixture: EvidenceItem[] = [
   {
-    added_energy: [
+    id: '20000000-0000-4000-8000-000000000001',
+    entryDate: '2026-07-14',
+    sourceLabel: 'Self-knowledge',
+    quote:
       'Explaining a difficult idea to someone else made the whole subject click for me.',
-    ],
-    drained_energy: [
+    interpretation:
+      'Curiosity becomes energizing when it turns into something tangible and shared.',
+    theme: 'personal_growth',
+    supports: 'Curiosity becoming something tangible',
+  },
+  {
+    id: '20000000-0000-4000-8000-000000000002',
+    entryDate: '2026-07-18',
+    sourceLabel: 'Draining',
+    quote:
       'I kept opening new directions before finishing the one in front of me.',
-    ],
-    self_knowledge: [
-      'I feel most capable when curiosity becomes something I can make or share.',
-    ],
+    interpretation:
+      'New possibilities can interrupt progress on the direction already chosen.',
+    theme: 'career',
+    supports: 'The exploration-to-fragmentation transition',
   },
   {
-    added_energy: [
-      'The open afternoon gave me room to follow one question all the way through.',
-    ],
-    drained_energy: [
-      'By evening I was measuring progress against every idea I had not chosen.',
-    ],
-    self_knowledge: [
-      'Autonomy matters, but I still want visible proof that my effort is becoming real.',
-    ],
-  },
-  {
-    added_energy: [
-      'A long run and an hour of painting left me feeling alert and fully present.',
-    ],
-    drained_energy: [
-      'Pushing through poor sleep made even simple decisions feel heavy.',
-    ],
-    self_knowledge: [
-      'Intensity gives me momentum, but consistency is what keeps me able to continue.',
-    ],
-  },
-  {
-    added_energy: [
-      'A thoughtful conversation made me feel seen without needing to perform.',
-    ],
-    drained_energy: [
-      'Trying to fit the group expectation made me feel less like myself.',
-    ],
-    self_knowledge: [
-      'Recognition only restores me when it comes from people and work I respect.',
-    ],
-  },
-  {
-    added_energy: [
-      'Turning a loose thought into a small working sketch gave the day a clear shape.',
-    ],
-    drained_energy: [
-      'I searched for more inspiration when the current project became uncertain.',
-    ],
-    self_knowledge: [
-      'Possibility feels safe because choosing one direction makes failure more visible.',
-    ],
+    id: '20000000-0000-4000-8000-000000000003',
+    entryDate: '2026-07-21',
+    sourceLabel: 'Self-knowledge',
+    quote:
+      'Recognition restores me only when it comes from people and work I respect.',
+    interpretation:
+      'Belonging and autonomy both matter in the conditions you choose.',
+    theme: 'family_friends',
+    supports: 'The tension between belonging and autonomy',
   },
 ];
 
-export const reflectionEntryFixtures: JournalEntry[] = entryDates.map(
-  (entry_date, index) => ({
-    entry_date,
-    content: entryPatterns[index % entryPatterns.length]!,
-  }),
-);
+export const reflectionApiFixture: ReflectionApiResponse = {
+  range: 'all',
+  reflectionState: 'available',
+  processingState: 'idle',
+  snapshot: {
+    id: reflectionFixtureIds.snapshot,
+    version: 4,
+    generatedAt: '2026-07-21T12:35:00Z',
+    sourceVersion: 148,
+    isStale: false,
+  },
+  analysisBasis: {
+    window: '90d',
+    validEntryCount: 8,
+    excludedEntryCount: 1,
+    distinctEntryDates: 8,
+    reflectiveWordCount: 940,
+    currentRangeFrom: '2026-07-14',
+    currentRangeTo: '2026-07-21',
+    excludedReasons: { test_or_noise: 1 },
+  },
+  data: {
+    hiddenDriver: {
+      status: 'available',
+      id: reflectionFixtureIds.hiddenDriver,
+      confidence: 'emerging',
+      score: 0.74,
+      evidence: reflectionEvidenceFixture.slice(0, 2),
+      feedback: null,
+      statement:
+        'You appear most energised when curiosity becomes something tangible.',
+      underlyingNeed: 'To experience yourself as capable and actively growing.',
+      drivers: ['Curiosity and mastery', 'Autonomy', 'Meaningful connection'],
+    },
+    recurringLoop: {
+      status: 'available',
+      id: reflectionFixtureIds.recurringLoop,
+      confidence: 'recurring',
+      score: 0.82,
+      evidence: reflectionEvidenceFixture.slice(1),
+      feedback: 'partly',
+      title: 'A loop that may be keeping you stuck',
+      description:
+        'A possible pattern — offered as something to notice, not a conclusion.',
+      steps: [
+        {
+          id: '30000000-0000-4000-8000-000000000001',
+          text: 'A new idea or possibility creates energy.',
+          evidence: reflectionEvidenceFixture.slice(0, 1),
+        },
+        {
+          id: '30000000-0000-4000-8000-000000000002',
+          text: 'You begin exploring several directions.',
+          evidence: reflectionEvidenceFixture.slice(1, 2),
+        },
+        {
+          id: '30000000-0000-4000-8000-000000000003',
+          text: 'Your attention becomes fragmented.',
+          evidence: reflectionEvidenceFixture.slice(1, 2),
+        },
+      ],
+      protection:
+        'The excitement of possibility without requiring you to risk choosing one direction.',
+      interruption:
+        'Turn one curiosity into one visible output before adding another.',
+    },
+    innerTensions: {
+      status: 'available',
+      tensions: [
+        {
+          id: reflectionFixtureIds.tensionOne,
+          confidence: 'emerging',
+          score: 0.71,
+          leftTitle: 'novelty',
+          leftBody: 'You gain energy from discovering new possibilities.',
+          rightTitle: 'mastery',
+          rightBody: 'You also want effort to become something complete.',
+          integration:
+            'Keep a place for new ideas while letting one become active work.',
+          dates: ['2026-07-14', '2026-07-18'],
+          evidence: reflectionEvidenceFixture.slice(0, 2),
+          feedback: null,
+        },
+        {
+          id: reflectionFixtureIds.tensionTwo,
+          confidence: 'preliminary',
+          score: 0.63,
+          leftTitle: 'belonging',
+          leftBody: 'You want to feel seen, valued and connected.',
+          rightTitle: 'autonomy',
+          rightBody: 'You resist expectations that do not feel true to you.',
+          integration:
+            'Seek recognition through work and relationships you respect.',
+          dates: ['2026-07-21'],
+          evidence: reflectionEvidenceFixture.slice(2),
+          feedback: 'rejected',
+        },
+      ],
+    },
+  },
+};

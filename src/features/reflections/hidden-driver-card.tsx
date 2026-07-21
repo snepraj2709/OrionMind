@@ -3,25 +3,37 @@ import { BarChart3 } from 'lucide-react';
 import { Typography } from '@/components/design-system';
 import { ContentGrid } from '@/components/layout';
 
-import type { HiddenDriverData, ReflectionResponse } from './model';
+import type { AvailableHiddenDriver, ReflectionResponse } from './model';
 import { ReflectionFeedbackSurface } from './reflection-feedback-surface';
 import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface HiddenDriverCardProps {
-  driver: HiddenDriverData;
-  response?: ReflectionResponse;
+  driver: AvailableHiddenDriver;
+  response: ReflectionResponse | null;
   onResponseChange: (value: ReflectionResponse) => void;
   onViewEvidence: () => void;
+  pending?: boolean;
+  error?: string;
 }
 
 export function HiddenDriverCard({
   driver,
+  error,
   onResponseChange,
   onViewEvidence,
+  pending = false,
   response,
 }: HiddenDriverCardProps) {
+  const supportingEntryCount = new Set(
+    driver.evidence.map((item) => item.entryDate),
+  ).size;
+
   return (
-    <ReflectionFeedbackSurface className="sidebar:p-8 p-6" response={response}>
+    <ReflectionFeedbackSurface
+      className="sidebar:p-8 p-6"
+      pending={pending}
+      response={response}
+    >
       <ContentGrid columns="reflectionSplit">
         <div className="sidebar:pr-8 space-y-6">
           <Typography as="h2" variant="reflectiveStatement">
@@ -43,13 +55,16 @@ export function HiddenDriverCard({
         </div>
         <div className="space-y-6">
           <Typography variant="eyebrow">
-            Evidence from your reflections
+            Signals across your reflections
           </Typography>
           <ul className="divide-border divide-y">
-            {driver.evidenceStrength.map((item) => (
-              <li className="type-body flex gap-3 py-4 first:pt-0" key={item}>
+            {driver.evidence.slice(0, 3).map((item) => (
+              <li
+                className="type-body flex gap-3 py-4 first:pt-0"
+                key={item.id}
+              >
                 <span aria-hidden="true">•</span>
-                <span>{item}</span>
+                <span>{item.interpretation}</span>
               </li>
             ))}
           </ul>
@@ -59,8 +74,8 @@ export function HiddenDriverCard({
               className="text-selection-strong size-6"
             />
             <Typography variant="body">
-              Observed across {driver.observedEntryCount}{' '}
-              {driver.observedEntryCount === 1 ? 'entry' : 'entries'}
+              Supported by {supportingEntryCount}{' '}
+              {supportingEntryCount === 1 ? 'entry' : 'entries'}
             </Typography>
           </div>
         </div>
@@ -68,8 +83,10 @@ export function HiddenDriverCard({
       <ReflectionResponseBar
         ariaLabel="Hidden driver feedback"
         className="border-border mt-8 border-t pt-6"
+        error={error}
         onResponseChange={onResponseChange}
         onViewEvidence={onViewEvidence}
+        pending={pending}
         response={response}
       />
     </ReflectionFeedbackSurface>

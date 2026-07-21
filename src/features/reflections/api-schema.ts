@@ -1,129 +1,249 @@
 import { z } from 'zod';
 
-export const reflectionTabSchema = z.enum([
-  'all',
-  'hiddenDriver',
-  'innerTension',
-  'recurringLoop',
-]);
-
 export const reflectionRangeSchema = z.enum(['7d', '30d', 'all']);
+export const reflectionRequestSchema = z
+  .object({ range: reflectionRangeSchema })
+  .strict();
 
-export const reflectionRequestSchema = z.object({
-  userId: z.string().trim().min(1),
-  reflectionTab: reflectionTabSchema,
-  range: reflectionRangeSchema,
-});
+export const reflectionStateSchema = z.enum([
+  'available',
+  'first_reflection_pending',
+  'stale',
+  'insufficient_reflective_content',
+  'technical_failure',
+]);
+export const reflectionProcessingStateSchema = z.enum([
+  'idle',
+  'pending',
+  'failed',
+]);
+export const reflectionFeedbackResponseSchema = z.enum([
+  'resonates',
+  'partly',
+  'rejected',
+]);
+export const reflectionConfidenceSchema = z.enum([
+  'preliminary',
+  'emerging',
+  'recurring',
+]);
+export const reflectionReasonCodeSchema = z.enum([
+  'NOT_ENOUGH_REFLECTIVE_CONTENT',
+  'DRIVER_NOT_REPEATED',
+  'LOOP_NOT_REPEATED',
+  'BOTH_SIDES_NOT_SUPPORTED',
+  'INSUFFICIENT_EVIDENCE',
+]);
 
 const themeKeySchema = z.enum([
   'career',
   'money',
   'health',
-  'loveLife',
-  'familyAndFriends',
-  'personalGrowth',
-  'funAndRecreation',
-  'homeAndLifestyle',
+  'love_life',
+  'family_friends',
+  'personal_growth',
+  'fun_recreation',
+  'home_lifestyle',
 ]);
 
-export const evidenceItemSchema = z.object({
-  id: z.string().min(1),
-  date: z.iso.date(),
-  source: z.string().min(1),
-  text: z.string().min(1),
-  interpretation: z.string().min(1).optional(),
-  theme: themeKeySchema.optional(),
-  rank: z.enum(['primary', 'secondary', 'tertiary']).optional(),
-  supports: z.string().min(1).optional(),
-});
+const needTagSchema = z.enum([
+  'autonomy',
+  'competence',
+  'mastery',
+  'belonging',
+  'recognition',
+  'security',
+  'stability',
+  'novelty',
+  'exploration',
+  'meaning',
+  'contribution',
+  'creative_expression',
+  'rest',
+  'physical_vitality',
+  'clarity',
+  'control',
+]);
 
-export const hiddenDriverDataSchema = z.object({
-  statement: z.string().min(1),
-  underlyingNeed: z.string().min(1),
-  drivers: z.array(z.string().min(1)),
-  evidenceStrength: z.array(z.string().min(1)),
-  observedEntryCount: z.number().int().nonnegative(),
+const entryKindSchema = z.enum([
+  'personal_reflection',
+  'personal_event',
+  'personal_observation',
+  'task_or_note',
+  'informational_text',
+  'creative_writing',
+  'test_or_noise',
+  'copied_or_quoted_text',
+  'unclear',
+]);
+
+export const evidenceItemSchema = z
+  .object({
+    id: z.uuid(),
+    entryDate: z.iso.date(),
+    sourceLabel: z.string().trim().min(1).max(80),
+    quote: z.string().trim().min(1).max(4000),
+    interpretation: z.string().trim().min(1).max(1000),
+    theme: themeKeySchema.nullable(),
+    supports: z.string().trim().min(1).max(200),
+  })
+  .strict();
+
+export const insufficientInsightSchema = z
+  .object({
+    status: z.literal('insufficient_evidence'),
+    reasonCode: reflectionReasonCodeSchema,
+    message: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+const availableInsightFields = {
+  status: z.literal('available'),
+  id: z.uuid(),
+  confidence: reflectionConfidenceSchema,
+  score: z.number().finite().min(0).max(1),
   evidence: z.array(evidenceItemSchema),
-});
+  feedback: reflectionFeedbackResponseSchema.nullable(),
+} as const;
 
-export const recurringLoopStepSchema = z.object({
-  id: z.string().min(1),
-  text: z.string().min(1),
-  entryCount: z.number().int().nonnegative(),
-  evidence: z.array(evidenceItemSchema),
-});
+export const availableHiddenDriverSchema = z
+  .object({
+    ...availableInsightFields,
+    statement: z.string().trim().min(1).max(1000),
+    underlyingNeed: z.string().trim().min(1).max(200),
+    drivers: z.array(z.string().trim().min(1)).max(5),
+  })
+  .strict();
 
-export const recurringLoopDataSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().min(1),
-  steps: z.array(recurringLoopStepSchema),
-  protection: z.string().min(1),
-  interruption: z.string().min(1),
-  evidence: z.array(evidenceItemSchema),
-});
+export const hiddenDriverSectionSchema = z.discriminatedUnion('status', [
+  availableHiddenDriverSchema,
+  insufficientInsightSchema,
+]);
 
-export const innerTensionItemSchema = z.object({
-  id: z.string().min(1),
-  leftTitle: z.string().min(1),
-  leftBody: z.string().min(1),
-  rightTitle: z.string().min(1),
-  rightBody: z.string().min(1),
-  integration: z.string().min(1),
-  dates: z.array(z.iso.date()),
-  evidence: z.array(evidenceItemSchema),
-});
+export const recurringLoopStepSchema = z
+  .object({
+    id: z.uuid(),
+    text: z.string().trim().min(1).max(1000),
+    evidence: z.array(evidenceItemSchema),
+  })
+  .strict();
 
-export const innerTensionDataSchema = z.object({
-  title: z.string().min(1),
-  tensions: z.array(innerTensionItemSchema),
-});
+export const availableRecurringLoopSchema = z
+  .object({
+    ...availableInsightFields,
+    title: z.string().trim().min(1).max(300),
+    description: z.string().trim().min(1).max(1000),
+    steps: z.array(recurringLoopStepSchema).min(3).max(6),
+    protection: z.string().trim().min(1).max(1000),
+    interruption: z.string().trim().min(1).max(1000),
+  })
+  .strict();
 
-export const reflectionPeriodSchema = z.object({
-  entryCount: z.number().int().nonnegative(),
-  totalAvailable: z.number().int().nonnegative(),
-  from: z.iso.date().nullable(),
-  to: z.iso.date().nullable(),
-});
+export const recurringLoopSectionSchema = z.discriminatedUnion('status', [
+  availableRecurringLoopSchema,
+  insufficientInsightSchema,
+]);
 
-const envelopeSchema = z.object({
-  userId: z.string().min(1),
-  range: reflectionRangeSchema,
-  period: reflectionPeriodSchema,
-});
+export const innerTensionSchema = z
+  .object({
+    id: z.uuid(),
+    confidence: reflectionConfidenceSchema,
+    score: z.number().finite().min(0).max(1),
+    leftTitle: needTagSchema,
+    leftBody: z.string().trim().min(1).max(1000),
+    rightTitle: needTagSchema,
+    rightBody: z.string().trim().min(1).max(1000),
+    integration: z.string().trim().min(1).max(1000),
+    dates: z.array(z.iso.date()),
+    evidence: z.array(evidenceItemSchema),
+    feedback: reflectionFeedbackResponseSchema.nullable(),
+  })
+  .strict();
 
-export const reflectionApiResponseSchema = z.discriminatedUnion(
-  'reflectionTab',
-  [
-    envelopeSchema.extend({
-      reflectionTab: z.literal('all'),
-      data: z.object({
-        hiddenDriver: hiddenDriverDataSchema,
-        innerTension: innerTensionDataSchema,
-        recurringLoop: recurringLoopDataSchema,
-      }),
-    }),
-    envelopeSchema.extend({
-      reflectionTab: z.literal('hiddenDriver'),
-      data: hiddenDriverDataSchema,
-    }),
-    envelopeSchema.extend({
-      reflectionTab: z.literal('innerTension'),
-      data: innerTensionDataSchema,
-    }),
-    envelopeSchema.extend({
-      reflectionTab: z.literal('recurringLoop'),
-      data: recurringLoopDataSchema,
-    }),
-  ],
-);
+export const availableInnerTensionsSchema = z
+  .object({
+    status: z.literal('available'),
+    tensions: z.array(innerTensionSchema).min(1).max(5),
+  })
+  .strict();
 
-export type ReflectionTab = z.infer<typeof reflectionTabSchema>;
+export const innerTensionsSectionSchema = z.discriminatedUnion('status', [
+  availableInnerTensionsSchema,
+  insufficientInsightSchema,
+]);
+
+export const reflectionSnapshotSchema = z
+  .object({
+    id: z.uuid(),
+    version: z.number().int().min(1),
+    generatedAt: z.iso.datetime({ offset: true }),
+    sourceVersion: z.number().int().min(1),
+    isStale: z.boolean(),
+  })
+  .strict();
+
+export const reflectionAnalysisBasisSchema = z
+  .object({
+    window: z.literal('90d'),
+    validEntryCount: z.number().int().nonnegative(),
+    excludedEntryCount: z.number().int().nonnegative(),
+    distinctEntryDates: z.number().int().nonnegative(),
+    reflectiveWordCount: z.number().int().nonnegative(),
+    currentRangeFrom: z.iso.date().nullable(),
+    currentRangeTo: z.iso.date().nullable(),
+    excludedReasons: z
+      .partialRecord(entryKindSchema, z.number().int().positive())
+      .nullable(),
+  })
+  .strict();
+
+export const reflectionApiResponseSchema = z
+  .object({
+    range: reflectionRangeSchema,
+    reflectionState: reflectionStateSchema,
+    processingState: reflectionProcessingStateSchema,
+    snapshot: reflectionSnapshotSchema.nullable(),
+    analysisBasis: reflectionAnalysisBasisSchema,
+    data: z
+      .object({
+        hiddenDriver: hiddenDriverSectionSchema,
+        recurringLoop: recurringLoopSectionSchema,
+        innerTensions: innerTensionsSectionSchema,
+      })
+      .strict(),
+  })
+  .strict();
+
+export const reflectionFeedbackRequestSchema = z
+  .object({ response: reflectionFeedbackResponseSchema })
+  .strict();
+
+export const reflectionFeedbackResultSchema = z
+  .object({
+    snapshotId: z.uuid(),
+    insightId: z.uuid(),
+    response: reflectionFeedbackResponseSchema,
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
 export type ReflectionRange = z.infer<typeof reflectionRangeSchema>;
 export type ReflectionRequest = z.infer<typeof reflectionRequestSchema>;
-export type HiddenDriverData = z.infer<typeof hiddenDriverDataSchema>;
+export type ReflectionFeedbackResponse = z.infer<
+  typeof reflectionFeedbackResponseSchema
+>;
+export type EvidenceItem = z.infer<typeof evidenceItemSchema>;
+export type InsufficientInsight = z.infer<typeof insufficientInsightSchema>;
+export type HiddenDriverSection = z.infer<typeof hiddenDriverSectionSchema>;
+export type AvailableHiddenDriver = z.infer<typeof availableHiddenDriverSchema>;
 export type RecurringLoopStep = z.infer<typeof recurringLoopStepSchema>;
-export type RecurringLoopData = z.infer<typeof recurringLoopDataSchema>;
-export type InnerTension = z.infer<typeof innerTensionItemSchema>;
-export type InnerTensionData = z.infer<typeof innerTensionDataSchema>;
-export type ReflectionPeriod = z.infer<typeof reflectionPeriodSchema>;
+export type RecurringLoopSection = z.infer<typeof recurringLoopSectionSchema>;
+export type AvailableRecurringLoop = z.infer<
+  typeof availableRecurringLoopSchema
+>;
+export type InnerTension = z.infer<typeof innerTensionSchema>;
+export type InnerTensionsSection = z.infer<typeof innerTensionsSectionSchema>;
 export type ReflectionApiResponse = z.infer<typeof reflectionApiResponseSchema>;
+export type ReflectionFeedbackResult = z.infer<
+  typeof reflectionFeedbackResultSchema
+>;

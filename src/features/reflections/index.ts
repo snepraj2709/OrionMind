@@ -1,49 +1,38 @@
-export { deriveReflectionEvidence, deriveReflectionViewModel } from './adapter';
 export {
   evidenceItemSchema,
-  hiddenDriverDataSchema,
-  innerTensionDataSchema,
-  recurringLoopDataSchema,
+  hiddenDriverSectionSchema,
+  innerTensionsSectionSchema,
+  recurringLoopSectionSchema,
+  reflectionAnalysisBasisSchema,
   reflectionApiResponseSchema,
-  reflectionPeriodSchema,
+  reflectionFeedbackRequestSchema,
+  reflectionFeedbackResponseSchema,
+  reflectionFeedbackResultSchema,
   reflectionRangeSchema,
   reflectionRequestSchema,
-  reflectionTabSchema,
+  reflectionSnapshotSchema,
 } from './api-schema';
 export type {
-  HiddenDriverData,
-  InnerTensionData,
-  RecurringLoopData,
-  ReflectionApiResponse,
-  ReflectionPeriod,
-  ReflectionRequest,
-  ReflectionTab,
-} from './api-schema';
-export {
-  MockReflectionJournalService,
-  MockReflectionsRepository,
-  reflectionEntryFixtures,
-} from './mock-repository';
-export { reflectionCopyFixture } from './fixtures';
-export {
-  buildReflectionApiResponse,
-  reflectionEntriesForRange,
-} from './response-builder';
-export type {
+  AvailableHiddenDriver,
+  AvailableRecurringLoop,
+  EvidenceItem,
+  HiddenDriverSection,
   InnerTension,
-  JournalEntry,
-  RecurringLoopStep,
+  InnerTensionsSection,
+  RecurringLoopSection,
+  ReflectionApiResponse,
+  ReflectionFeedbackResponse,
+  ReflectionFeedbackResult,
   ReflectionRange,
-  ReflectionResponse,
-  ReflectionView,
-  ReflectionViewModel,
-} from './model';
+  ReflectionRequest,
+} from './api-schema';
+export type { ReflectionResponse, ReflectionView } from './model';
 export {
   ReflectionsScreen,
   type ReflectionsScreenProps,
 } from './reflections-screen';
 export type {
-  ReflectionJournalService,
+  PutReflectionFeedbackInput,
   ReflectionsRepository,
 } from './repository';
 export { HttpReflectionsRepository, reflectionsRepository } from './repository';

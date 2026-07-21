@@ -3,37 +3,40 @@
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
-import { AppButton, Typography } from '@/components/design-system';
+import { AppButton } from '@/components/design-system';
 import {
   DataViewStatus,
   EmptyState,
   InlineError,
   NoResultsState,
+  ProcessingState,
 } from '@/components/feedback';
 import { PageHeader, PageShell, Section } from '@/components/layout';
 import { AppLink, SegmentedControl } from '@/components/navigation';
 import { EvidenceDrawer, RefreshButton } from '@/components/shared';
 import { dataViewMessages } from '@/config/messages';
+import type { ThemeKey } from '@/config/design-system';
 import { routes } from '@/config/routes';
 import { useAuth } from '@/features/auth';
 import { useOnlineStatus } from '@/hooks';
-import type { EvidenceItem } from '@/types/evidence';
+import type { EvidenceItem as DrawerEvidenceItem } from '@/types/evidence';
 
+import type {
+  EvidenceItem,
+  InsufficientInsight,
+  ReflectionFeedbackResponse,
+  ReflectionRange,
+} from './api-schema';
 import { HiddenDriverCard } from './hidden-driver-card';
 import { InnerTensionCard } from './inner-tension-card';
-import { MockReflectionsRepository } from './mock-repository';
-import type {
-  ReflectionRange,
-  ReflectionResponse,
-  ReflectionView,
-} from './model';
-import { reflectionTabByView } from './model';
-import { useReflectionQuery } from './queries';
+import type { ReflectionView } from './model';
+import { useReflectionFeedbackMutation, useReflectionQuery } from './queries';
 import { RecurringLoop } from './recurring-loop';
 import { ReflectionTabs } from './reflection-tabs';
-import type { ReflectionsRepository } from './repository';
-
-const mockReflectionsRepository = new MockReflectionsRepository();
+import {
+  reflectionsRepository,
+  type ReflectionsRepository,
+} from './repository';
 
 const rangeDateFormatter = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
@@ -41,116 +44,152 @@ const rangeDateFormatter = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'UTC',
 });
 
+const drawerThemeByApiTheme = {
+  career: 'career',
+  money: 'money',
+  health: 'health',
+  love_life: 'loveLife',
+  family_friends: 'familyAndFriends',
+  personal_growth: 'personalGrowth',
+  fun_recreation: 'funAndRecreation',
+  home_lifestyle: 'homeAndLifestyle',
+} satisfies Record<NonNullable<EvidenceItem['theme']>, ThemeKey>;
+
+function toDrawerEvidence(item: EvidenceItem): DrawerEvidenceItem {
+  return {
+    id: item.id,
+    date: item.entryDate,
+    source: item.sourceLabel,
+    text: item.quote,
+    interpretation: item.interpretation,
+    theme: item.theme ? drawerThemeByApiTheme[item.theme] : undefined,
+    supports: item.supports,
+  };
+}
+
+function InsufficientSection({ insight }: { insight: InsufficientInsight }) {
+  return (
+    <NoResultsState
+      description={insight.message}
+      title="Not enough evidence in this range"
+    />
+  );
+}
+
 export interface ReflectionsScreenProps {
   repository?: ReflectionsRepository;
 }
 
 export function ReflectionsScreen({
-  repository = mockReflectionsRepository,
+  repository = reflectionsRepository,
 }: ReflectionsScreenProps) {
   const { user } = useAuth();
   const [range, setRange] = useState<ReflectionRange>('all');
   const [activeView, setActiveView] =
     useState<ReflectionView>('hidden-drivers');
-  const [responses, setResponses] = useState<
-    Record<string, ReflectionResponse>
-  >({});
-  const [drawerItems, setDrawerItems] = useState<EvidenceItem[]>([]);
+  const [drawerItems, setDrawerItems] = useState<DrawerEvidenceItem[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isOnline = useOnlineStatus();
 
   const { query: reflectionQuery, viewStatus } = useReflectionQuery(
-    user
-      ? {
-          userId: user.id,
-          reflectionTab: reflectionTabByView[activeView],
-          range,
-        }
-      : undefined,
+    user?.id,
+    { range },
+    repository,
+  );
+  const feedbackMutation = useReflectionFeedbackMutation(
+    user?.id,
+    range,
     repository,
   );
 
   function openEvidence(items: EvidenceItem[]) {
-    setDrawerItems(items);
+    setDrawerItems(items.map(toDrawerEvidence));
     setDrawerOpen(true);
   }
 
   function handleRangeChange(nextRange: ReflectionRange) {
     setRange(nextRange);
-    setResponses({});
     setDrawerOpen(false);
   }
 
-  function setResponse(key: string, response: ReflectionResponse) {
-    setResponses((current) => ({ ...current, [key]: response }));
+  function submitFeedback(
+    insightId: string,
+    response: ReflectionFeedbackResponse,
+  ) {
+    const snapshotId = reflectionQuery.data?.snapshot?.id;
+    if (!snapshotId) return;
+    feedbackMutation.submitFeedback({ insightId, response, snapshotId });
   }
 
   const response = reflectionQuery.data;
-  const period = response?.period;
-  let activeEvidence: EvidenceItem[] = [];
+  const basis = response?.analysisBasis;
   let activePanel: ReactNode = null;
 
-  if (response?.reflectionTab === 'hiddenDriver') {
-    activeEvidence = response.data.evidence;
-    activePanel = (
-      <HiddenDriverCard
-        driver={response.data}
-        onResponseChange={(nextResponse) =>
-          setResponse('hidden-drivers', nextResponse)
-        }
-        onViewEvidence={() => openEvidence(response.data.evidence)}
-        response={responses['hidden-drivers']}
-      />
-    );
+  if (response && activeView === 'hidden-drivers') {
+    const insight = response.data.hiddenDriver;
+    activePanel =
+      insight.status === 'insufficient_evidence' ? (
+        <InsufficientSection insight={insight} />
+      ) : (
+        <HiddenDriverCard
+          driver={insight}
+          error={feedbackMutation.errors[insight.id]}
+          onResponseChange={(nextResponse) =>
+            submitFeedback(insight.id, nextResponse)
+          }
+          onViewEvidence={() => openEvidence(insight.evidence)}
+          pending={feedbackMutation.pendingInsightIds.has(insight.id)}
+          response={insight.feedback}
+        />
+      );
   }
 
-  if (response?.reflectionTab === 'recurringLoop') {
-    activeEvidence = response.data.evidence;
+  if (response && activeView === 'recurring-loops') {
+    const insight = response.data.recurringLoop;
     activePanel =
-      response.data.steps.length === 0 ? (
-        <NoResultsState
-          description="No recurring loop was returned for the selected period."
-          title="No recurring loops in this range"
-        />
+      insight.status === 'insufficient_evidence' ? (
+        <InsufficientSection insight={insight} />
       ) : (
         <Section
-          description={response.data.description}
+          description={insight.description}
           headingId="recurring-loops-heading"
-          title={response.data.title}
+          title={insight.title}
         >
           <RecurringLoop
-            loop={response.data}
+            error={feedbackMutation.errors[insight.id]}
+            loop={insight}
             onResponseChange={(nextResponse) =>
-              setResponse('recurring-loops', nextResponse)
+              submitFeedback(insight.id, nextResponse)
             }
-            onViewEvidence={() => openEvidence(response.data.evidence)}
-            response={responses['recurring-loops']}
+            onViewEvidence={() => openEvidence(insight.evidence)}
+            pending={feedbackMutation.pendingInsightIds.has(insight.id)}
+            response={insight.feedback}
           />
         </Section>
       );
   }
 
-  if (response?.reflectionTab === 'innerTension') {
-    activeEvidence = response.data.tensions.flatMap(
-      (tension) => tension.evidence,
-    );
+  if (response && activeView === 'inner-tensions') {
+    const insight = response.data.innerTensions;
     activePanel =
-      response.data.tensions.length === 0 ? (
-        <NoResultsState
-          description="No inner tension was returned for the selected period."
-          title="No inner tensions in this range"
-        />
+      insight.status === 'insufficient_evidence' ? (
+        <InsufficientSection insight={insight} />
       ) : (
-        <Section headingId="inner-tensions-heading" title={response.data.title}>
+        <Section
+          headingId="inner-tensions-heading"
+          title="Needs you may be trying to hold at the same time"
+        >
           <div className="space-y-4">
-            {response.data.tensions.map((tension) => (
+            {insight.tensions.map((tension) => (
               <InnerTensionCard
+                error={feedbackMutation.errors[tension.id]}
                 key={tension.id}
                 onResponseChange={(nextResponse) =>
-                  setResponse(tension.id, nextResponse)
+                  submitFeedback(tension.id, nextResponse)
                 }
                 onViewEvidence={() => openEvidence(tension.evidence)}
-                response={responses[tension.id]}
+                pending={feedbackMutation.pendingInsightIds.has(tension.id)}
+                response={tension.feedback}
                 tension={tension}
               />
             ))}
@@ -159,10 +198,20 @@ export function ReflectionsScreen({
       );
   }
 
-  const subtitle =
-    period && period.entryCount > 0 && period.from && period.to
-      ? `Patterns taking shape across ${period.entryCount} entries from ${rangeDateFormatter.format(new Date(`${period.from}T00:00:00Z`))}–${rangeDateFormatter.format(new Date(`${period.to}T00:00:00Z`))}.`
-      : 'A connected view of patterns across your journal history.';
+  let subtitle =
+    'A connected view of patterns within your latest 90-day reflection window.';
+  if (basis?.currentRangeFrom && basis.currentRangeTo) {
+    const dates = `${rangeDateFormatter.format(new Date(`${basis.currentRangeFrom}T00:00:00Z`))}–${rangeDateFormatter.format(new Date(`${basis.currentRangeTo}T00:00:00Z`))}`;
+    subtitle =
+      range === 'all'
+        ? `Patterns taking shape across ${basis.validEntryCount} reflective ${basis.validEntryCount === 1 ? 'entry' : 'entries'} in your latest 90-day reflection window (${dates}).`
+        : `Patterns shown for ${dates}, drawn from your latest 90-day reflection window.`;
+  }
+
+  const showTabs =
+    viewStatus === 'loading' ||
+    (response !== undefined &&
+      response.reflectionState !== 'insufficient_reflective_content');
 
   return (
     <PageShell className="space-y-8">
@@ -174,7 +223,7 @@ export function ReflectionsScreen({
               items={[
                 { label: 'Last 7 days', value: '7d' },
                 { label: 'Last 30 days', value: '30d' },
-                { label: 'All entries', value: 'all' },
+                { label: 'Latest 90 days', value: 'all' },
               ]}
               onValueChange={(value) =>
                 handleRangeChange(value as ReflectionRange)
@@ -182,15 +231,6 @@ export function ReflectionsScreen({
               value={range}
               variant="strong"
             />
-            {period && period.entryCount >= 5 && activeEvidence.length > 0 ? (
-              <AppButton
-                onClick={() => openEvidence(activeEvidence)}
-                size="compact"
-                variant="link"
-              >
-                Why am I seeing this?
-              </AppButton>
-            ) : null}
             <RefreshButton
               aria-label="Refresh reflections"
               disabled={!isOnline}
@@ -216,55 +256,64 @@ export function ReflectionsScreen({
         status={viewStatus}
       />
 
-      {!isOnline && reflectionQuery.data ? (
+      {!isOnline && response ? (
         <InlineError>
           You are offline. Orion is showing the last available reflections;
           refresh will resume when your connection returns.
         </InlineError>
       ) : null}
 
-      {period?.entryCount === 0 && period.totalAvailable === 0 ? (
-        <EmptyState
-          action={
-            <AppButton asChild>
-              <AppLink href={routes.newEntry.path}>
-                Write your first entry
-              </AppLink>
-            </AppButton>
-          }
-          description="Longitudinal patterns begin with the moments you choose to record."
-          title="Your reflection history is ready to begin"
+      {response?.reflectionState === 'first_reflection_pending' ? (
+        <ProcessingState
+          description="Orion is looking across your reflective entries. You can keep journaling while this finishes."
+          title="Your first reflection is taking shape"
         />
       ) : null}
 
-      {period?.entryCount === 0 && period.totalAvailable > 0 ? (
-        <NoResultsState
+      {response?.reflectionState === 'stale' &&
+      response.processingState === 'pending' ? (
+        <ProcessingState
+          description="Your last reflection remains available while Orion considers newer entries."
+          title="Updating your reflections"
+        />
+      ) : null}
+
+      {response?.reflectionState === 'stale' &&
+      response.processingState === 'failed' ? (
+        <InlineError
           action={
             <AppButton
-              onClick={() => handleRangeChange('all')}
-              variant="secondary"
+              disabled={!isOnline}
+              onClick={() => void reflectionQuery.refetch()}
+              size="compact"
+              variant="ghost"
             >
-              Show all entries
+              Retry
             </AppButton>
           }
-          description="There are journal entries outside this period. Choose a wider range to look for connected patterns."
-          title="No entries in this date range"
-        />
+        >
+          Orion could not refresh these reflections. The last successful view is
+          still shown.
+        </InlineError>
       ) : null}
 
-      {period && period.entryCount > 0 && period.entryCount < 5 ? (
+      {response?.reflectionState === 'insufficient_reflective_content' ? (
         <EmptyState
           action={
             <AppButton asChild variant="secondary">
-              <AppLink href={routes.newEntry.path}>Add another entry</AppLink>
+              <AppLink href={routes.newEntry.path}>Write a new entry</AppLink>
             </AppButton>
           }
-          description="Orion needs at least five entries across several days before suggesting patterns over time."
-          title="A little more history is needed"
+          description={
+            response.data.hiddenDriver.status === 'insufficient_evidence'
+              ? response.data.hiddenDriver.message
+              : 'There is not enough personal reflection to identify a meaningful pattern yet.'
+          }
+          title="More personal reflection is needed"
         />
       ) : null}
 
-      {period && period.entryCount >= 5 && activePanel ? (
+      {showTabs ? (
         <ReflectionTabs
           onValueChange={(nextView) => {
             setActiveView(nextView);
@@ -274,12 +323,6 @@ export function ReflectionsScreen({
           value={activeView}
         />
       ) : null}
-
-      <Typography aria-live="polite" className="sr-only" variant="bodySmall">
-        {Object.entries(responses).map(
-          ([key, response]) => `${key} feedback saved: ${response}. `,
-        )}
-      </Typography>
 
       <EvidenceDrawer
         items={drawerItems}

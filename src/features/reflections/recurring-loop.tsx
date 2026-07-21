@@ -4,26 +4,31 @@ import { Typography } from '@/components/design-system';
 import { ContentGrid } from '@/components/layout';
 
 import { LoopOverviewDiagram } from './loop-overview-diagram';
-import type { RecurringLoopData, ReflectionResponse } from './model';
+import type { AvailableRecurringLoop, ReflectionResponse } from './model';
 import { ReflectionFeedbackSurface } from './reflection-feedback-surface';
 import { ReflectionResponseBar } from './reflection-response-bar';
 
 export interface RecurringLoopProps {
-  loop: RecurringLoopData;
-  response?: ReflectionResponse;
+  loop: AvailableRecurringLoop;
+  response: ReflectionResponse | null;
   onResponseChange: (value: ReflectionResponse) => void;
   onViewEvidence: () => void;
+  pending?: boolean;
+  error?: string;
 }
 
 export function RecurringLoop({
+  error,
   loop,
   onResponseChange,
   onViewEvidence,
+  pending = false,
   response,
 }: RecurringLoopProps) {
   return (
     <ReflectionFeedbackSurface
       className="overflow-hidden p-0"
+      pending={pending}
       response={response}
     >
       <ContentGrid columns="reflectionTriptych">
@@ -43,13 +48,6 @@ export function RecurringLoop({
                   </span>
                   <span className="min-w-0">
                     <Typography variant="bodySmall">{step.text}</Typography>
-                    <Typography
-                      className="text-muted-foreground underline"
-                      variant="bodySmall"
-                    >
-                      {step.entryCount}{' '}
-                      {step.entryCount === 1 ? 'entry' : 'entries'}
-                    </Typography>
                   </span>
                 </div>
                 {index < loop.steps.length - 1 ? (
@@ -85,8 +83,10 @@ export function RecurringLoop({
       <ReflectionResponseBar
         ariaLabel="Recurring loop feedback"
         className="border-border border-t p-6"
+        error={error}
         onResponseChange={onResponseChange}
         onViewEvidence={onViewEvidence}
+        pending={pending}
         response={response}
       />
     </ReflectionFeedbackSurface>

@@ -1,56 +1,75 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { reflectionEntryFixtures } from './fixtures';
+import { reflectionApiFixture, reflectionFixtureIds } from './fixtures';
 import { HttpReflectionsRepository } from './repository';
-import { buildReflectionApiResponse } from './response-builder';
 
 describe('HttpReflectionsRepository', () => {
-  it('sends the user, active tab, and range to the endpoint', async () => {
-    const body = buildReflectionApiResponse({
-      entries: reflectionEntryFixtures,
-      range: '30d',
-      reflectionTab: 'recurringLoop',
-      totalAvailable: reflectionEntryFixtures.length,
-      userId: 'reader id',
-    });
+  it('sends only range to the plural aggregate endpoint', async () => {
     const request = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(Response.json(body));
+      .mockResolvedValue(Response.json(reflectionApiFixture));
     const repository = new HttpReflectionsRepository(request);
 
-    await repository.getReflection({
-      userId: 'reader id',
-      reflectionTab: 'recurringLoop',
-      range: '30d',
-    });
+    await repository.getReflection({ range: '30d' });
 
-    const requestUrl = new URL(
-      String(request.mock.calls[0]?.[0]),
-      'http://localhost',
-    );
-    expect(requestUrl.pathname).toBe('/api/v1/reflection');
-    expect(Object.fromEntries(requestUrl.searchParams)).toEqual({
-      userId: 'reader id',
-      reflectionTab: 'recurringLoop',
-      range: '30d',
-    });
+    const url = new URL(String(request.mock.calls[0]?.[0]), 'http://localhost');
+    expect(url.pathname).toBe('/api/v1/reflections');
+    expect(Object.fromEntries(url.searchParams)).toEqual({ range: '30d' });
+    expect(url.searchParams.has('userId')).toBe(false);
+    expect(url.searchParams.has('reflectionTab')).toBe(false);
   });
 
-  it('rejects failed and malformed responses', async () => {
+  it('writes strict feedback to the owner-derived insight endpoint', async () => {
+    const result = {
+      snapshotId: reflectionFixtureIds.snapshot,
+      insightId: reflectionFixtureIds.hiddenDriver,
+      response: 'rejected' as const,
+      updatedAt: '2026-07-21T12:42:00Z',
+    };
     const request = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(null, { status: 403 }))
-      .mockResolvedValueOnce(Response.json({ reflectionTab: 'hiddenDriver' }));
+      .mockResolvedValue(Response.json(result));
     const repository = new HttpReflectionsRepository(request);
-    const input = {
-      userId: 'reader-id',
-      reflectionTab: 'hiddenDriver',
-      range: 'all',
-    } as const;
 
-    await expect(repository.getReflection(input)).rejects.toThrow(
-      'Reflection request failed: 403',
+    await expect(
+      repository.putFeedback({
+        snapshotId: result.snapshotId,
+        insightId: result.insightId,
+        response: result.response,
+      }),
+    ).resolves.toEqual(result);
+
+    expect(request).toHaveBeenCalledWith(
+      `/api/v1/reflections/${result.snapshotId}/insights/${result.insightId}/feedback`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response: 'rejected' }),
+      },
     );
-    await expect(repository.getReflection(input)).rejects.toThrow();
+  });
+
+  it('rejects failed and malformed GET and feedback responses', async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ range: 'all' }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(Response.json({ response: 'rejected' }));
+    const repository = new HttpReflectionsRepository(request);
+    const feedbackInput = {
+      snapshotId: reflectionFixtureIds.snapshot,
+      insightId: reflectionFixtureIds.hiddenDriver,
+      response: 'rejected' as const,
+    };
+
+    await expect(repository.getReflection({ range: 'all' })).rejects.toThrow(
+      'Reflection request failed: 503',
+    );
+    await expect(repository.getReflection({ range: 'all' })).rejects.toThrow();
+    await expect(repository.putFeedback(feedbackInput)).rejects.toThrow(
+      'Reflection feedback failed: 404',
+    );
+    await expect(repository.putFeedback(feedbackInput)).rejects.toThrow();
   });
 });

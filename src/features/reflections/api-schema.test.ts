@@ -2,68 +2,136 @@ import { describe, expect, it } from 'vitest';
 
 import {
   reflectionApiResponseSchema,
+  reflectionFeedbackRequestSchema,
+  reflectionFeedbackResultSchema,
   reflectionRequestSchema,
-  type ReflectionTab,
 } from './api-schema';
-import { reflectionEntryFixtures } from './fixtures';
-import { buildReflectionApiResponse } from './response-builder';
-
-const tabs: ReflectionTab[] = [
-  'all',
-  'hiddenDriver',
-  'recurringLoop',
-  'innerTension',
-];
+import { reflectionApiFixture } from './fixtures';
 
 describe('reflection wire schemas', () => {
-  it.each(tabs)('parses the %s response variant', (reflectionTab) => {
-    const response = buildReflectionApiResponse({
-      entries: reflectionEntryFixtures,
-      range: 'all',
-      reflectionTab,
-      totalAvailable: reflectionEntryFixtures.length,
-      userId: 'reader-id',
-    });
-
-    expect(reflectionApiResponseSchema.parse(response)).toEqual(response);
+  it('parses the frozen aggregate response and feedback contracts', () => {
+    expect(reflectionApiResponseSchema.parse(reflectionApiFixture)).toEqual(
+      reflectionApiFixture,
+    );
+    expect(
+      reflectionFeedbackRequestSchema.parse({ response: 'rejected' }),
+    ).toEqual({ response: 'rejected' });
+    expect(
+      reflectionFeedbackResultSchema.parse({
+        snapshotId: reflectionApiFixture.snapshot?.id,
+        insightId:
+          reflectionApiFixture.data.hiddenDriver.status === 'available'
+            ? reflectionApiFixture.data.hiddenDriver.id
+            : '',
+        response: 'partly',
+        updatedAt: '2026-07-21T12:42:00Z',
+      }),
+    ).toMatchObject({ response: 'partly' });
   });
 
-  it('requires every request parameter and exact enum casing', () => {
+  it.each([
+    ['hiddenDriver', 'DRIVER_NOT_REPEATED'],
+    ['recurringLoop', 'LOOP_NOT_REPEATED'],
+    ['innerTensions', 'BOTH_SIDES_NOT_SUPPORTED'],
+  ] as const)(
+    'parses the valid %s insufficient union',
+    (section, reasonCode) => {
+      const response = structuredClone(reflectionApiFixture);
+      const insufficient = {
+        status: 'insufficient_evidence' as const,
+        reasonCode,
+        message: 'There is not enough repeated evidence yet.',
+      };
+      switch (section) {
+        case 'hiddenDriver':
+          response.data.hiddenDriver = insufficient;
+          break;
+        case 'recurringLoop':
+          response.data.recurringLoop = insufficient;
+          break;
+        case 'innerTensions':
+          response.data.innerTensions = insufficient;
+          break;
+      }
+
+      expect(reflectionApiResponseSchema.parse(response)).toEqual(response);
+    },
+  );
+
+  it('accepts only the closed range request and no owner or tab fields', () => {
+    expect(reflectionRequestSchema.parse({ range: '30d' })).toEqual({
+      range: '30d',
+    });
+    expect(reflectionRequestSchema.safeParse({ range: '30D' }).success).toBe(
+      false,
+    );
     expect(
       reflectionRequestSchema.safeParse({
-        userId: 'reader-id',
-        reflectionTab: 'hiddenDriver',
         range: '30d',
-      }).success,
-    ).toBe(true);
-    expect(
-      reflectionRequestSchema.safeParse({
         userId: 'reader-id',
-        reflectionTab: 'All',
-        range: '30d',
       }).success,
     ).toBe(false);
     expect(
       reflectionRequestSchema.safeParse({
-        userId: 'reader-id',
+        range: '30d',
         reflectionTab: 'hiddenDriver',
       }).success,
     ).toBe(false);
   });
 
-  it('rejects a malformed tab payload', () => {
-    const malformed = buildReflectionApiResponse({
-      entries: reflectionEntryFixtures,
-      range: 'all',
-      reflectionTab: 'hiddenDriver',
-      totalAvailable: reflectionEntryFixtures.length,
-      userId: 'reader-id',
-    });
-
+  it('rejects unknown fields, unknown enums, and malformed insight variants', () => {
     expect(
       reflectionApiResponseSchema.safeParse({
-        ...malformed,
-        data: { statement: 'Incomplete hidden driver' },
+        ...reflectionApiFixture,
+        unexpected: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      reflectionApiResponseSchema.safeParse({
+        ...reflectionApiFixture,
+        processingState: 'running',
+      }).success,
+    ).toBe(false);
+    expect(
+      reflectionApiResponseSchema.safeParse({
+        ...reflectionApiFixture,
+        data: {
+          ...reflectionApiFixture.data,
+          hiddenDriver: {
+            status: 'available',
+            reasonCode: 'DRIVER_NOT_REPEATED',
+            message: 'Mixed union fields are invalid.',
+          },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      reflectionFeedbackRequestSchema.safeParse({ response: 'accepted' })
+        .success,
+    ).toBe(false);
+  });
+
+  it('rejects unknown nested evidence fields and invalid bounded values', () => {
+    const hidden = reflectionApiFixture.data.hiddenDriver;
+    if (hidden.status !== 'available') throw new Error('Fixture invariant');
+    const malformed = structuredClone(reflectionApiFixture);
+    if (malformed.data.hiddenDriver.status !== 'available') {
+      throw new Error('Fixture invariant');
+    }
+    malformed.data.hiddenDriver.score = 1.1;
+    expect(reflectionApiResponseSchema.safeParse(malformed).success).toBe(
+      false,
+    );
+    expect(
+      reflectionApiResponseSchema.safeParse({
+        ...reflectionApiFixture,
+        data: {
+          ...reflectionApiFixture.data,
+          hiddenDriver: {
+            ...hidden,
+            evidence: [{ ...hidden.evidence[0], rawOffset: 12 }],
+          },
+        },
       }).success,
     ).toBe(false);
   });

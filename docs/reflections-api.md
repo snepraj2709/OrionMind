@@ -1,44 +1,64 @@
-# Reflections screen-data API
+# Reflections API
 
-## Endpoint
+## Aggregate read
 
-`GET /api/v1/reflection?userId={id}&reflectionTab={tab}&range={range}`
+`GET /api/v1/reflections?range=7d|30d|all`
 
-The endpoint requires the mock authenticated session and accepts:
+`range` is required and closed to `7d`, `30d`, or `all`. The request has no
+client-supplied owner and no active-tab parameter. Ownership comes only from
+the authenticated Supabase bearer token. The client keeps the user ID in its
+TanStack Query key (`['reflections', user.id, range]`) to isolate browser cache
+state, but never sends it in the URL.
 
-- `reflectionTab`: `all`, `hiddenDriver`, `recurringLoop`, or `innerTension`.
-- `range`: `7d`, `30d`, or `all`.
-- `userId`: the authenticated user's ID. A different ID receives `403`.
+The response is one strict aggregate containing:
 
-Missing or invalid parameters receive `400`; an unauthenticated request receives `401`.
+- `range`, `reflectionState`, and `processingState`;
+- nullable immutable snapshot metadata;
+- the capped 90-day `analysisBasis`;
+- hidden-driver, recurring-loop, and inner-tensions sections.
 
-## Response contract
+Each section is a closed discriminated union: `available` or
+`insufficient_evidence`. Available insights carry opaque IDs, confidence,
+score, persisted feedback, and their own evidence. Inner tensions contain one
+to five available tension insights; zero tensions use the insufficient union.
+Unknown fields and enum values are rejected by the client schema.
 
-Every response contains the authenticated `userId`, requested `reflectionTab`, requested `range`, a `period`, and `data`:
+The screen requests the aggregate once per range. Switching Reflection tabs is
+local UI state and makes no request. `all` means all eligible evidence within
+the bounded 90-day basis, not lifetime history.
 
-```ts
-interface ReflectionPeriod {
-  entryCount: number;
-  totalAvailable: number;
-  from: string | null;
-  to: string | null;
-}
+## Feedback write
+
+`PUT /api/v1/reflections/{snapshotId}/insights/{insightId}/feedback`
+
+```json
+{ "response": "resonates" }
 ```
 
-Specific-tab requests return that tab's screen-ready payload directly. `all` returns `{ hiddenDriver, recurringLoop, innerTension }`. The discriminated Zod union in `src/features/reflections/api-schema.ts` is the executable wire contract.
+`response` is closed to `resonates`, `partly`, or `rejected`. Success returns
+`snapshotId`, `insightId`, `response`, and `updatedAt`. Repeating the same
+selection is idempotent; a different valid selection replaces it. The client
+optimistically updates only that insight, suppresses duplicate submissions
+while it is pending, rolls back on failure, and then reconciles the current
+user/range cache.
 
-The current Reflections screen intentionally requests only its active tab. Its TanStack Query key contains the user ID, API tab, and date range. Feedback selections, labels, icons, and diagram geometry remain client-owned UI state and are not part of this read endpoint.
+The server verifies ownership from authentication and returns an opaque `404`
+for a cross-owner or mismatched snapshot/insight pair. Feedback is preference
+and correction context; it is never journal evidence.
 
-## Client configuration and authentication
+## States and caching
 
-`src/config/api.ts` is the single backend-base configuration. It reads `NEXT_PUBLIC_API_BASE_URL`; an empty value keeps requests on the same origin and therefore uses this Next.js fixture route. Setting the variable to a backend origin sends the unchanged `/api/v1/reflection` request to that origin. Restart or rebuild Next.js after changing a public environment value.
+- `available`: render the latest snapshot.
+- `first_reflection_pending`: keep controls and show a calm processing state.
+- `stale` plus `pending` or `failed`: keep the last snapshot visible with an
+  update or failure status.
+- `insufficient_reflective_content`: show the server-safe message and a New
+  Entry action.
+- no-snapshot technical failure: the server returns `503`; the client shows its
+  technical error and retry state without fabricating insufficiency.
 
-The shared API request includes browser session credentials and never sends a body with `GET`. The current contract explicitly requires `userId` as a query parameter, but the endpoint still derives the authenticated user from the signed session and rejects a mismatched ID. The query parameter is not trusted as authorization.
-
-For a cross-origin backend, that backend must allow the frontend origin with credentialed CORS and the `Authorization` header. The shared API client reads the current Supabase session and supplies its access token as a bearer credential; Reflection components and schemas do not own authentication details.
-
-## Temporary fixture boundary
-
-The handler derives its response from the eight static entries and screenshot copy in `src/features/reflections/fixtures.ts`. Authentication and user matching are production-shaped, but every authenticated user currently receives the same fixture content.
-
-Approved items in Review do not update this endpoint. Review still records approved reflection evidence in the local mock store, but Reflections remains static until a persistent backend connects both features. The injectable mock repository can supply alternate data in unit tests; it is not the default screen data path.
+Both operations are authenticated, return `Cache-Control: private, no-store`,
+and perform no synchronous model or provider call. The removed singular
+`/api/v1/reflection` Next.js fixture route is not a fallback. Static reflection
+copy, builders, adapters, and mock repositories remain test-only infrastructure
+and are not exported through the production feature entrypoint.

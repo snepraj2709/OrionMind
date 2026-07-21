@@ -7,9 +7,11 @@ import type { ReflectionResponse } from './model';
 
 export interface ReflectionResponseBarProps {
   ariaLabel: string;
-  response?: ReflectionResponse;
+  response: ReflectionResponse | null;
   onResponseChange: (response: ReflectionResponse) => void;
   onViewEvidence: () => void;
+  pending?: boolean;
+  error?: string;
   className?: string;
 }
 
@@ -42,14 +44,17 @@ const responseOptions = [
 export function ReflectionResponseBar({
   ariaLabel,
   className,
+  error,
   onResponseChange,
   onViewEvidence,
+  pending = false,
   response,
 }: ReflectionResponseBarProps) {
   return (
     <div className={cn('space-y-3', className)}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div
+          aria-busy={pending}
           aria-label={ariaLabel}
           className="flex flex-wrap gap-3"
           role="group"
@@ -58,6 +63,7 @@ export function ReflectionResponseBar({
             <AppButton
               aria-pressed={response === option.value}
               className={option.hoverClassName}
+              disabled={pending}
               key={option.value}
               leftIcon={option.icon}
               onClick={() => onResponseChange(option.value)}
@@ -79,13 +85,19 @@ export function ReflectionResponseBar({
         </AppButton>
       </div>
       {response === 'rejected' ? (
-        <Typography
-          aria-live="polite"
-          className="text-muted-foreground"
-          variant="bodySmall"
-        >
+        <Typography className="text-muted-foreground" variant="bodySmall">
           Marked as not true for you. Orion will not treat this as an accepted
           self-pattern.
+        </Typography>
+      ) : null}
+      {error ? (
+        <Typography
+          aria-live="polite"
+          className="text-destructive"
+          role="status"
+          variant="bodySmall"
+        >
+          {error}
         </Typography>
       ) : null}
     </div>

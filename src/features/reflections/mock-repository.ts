@@ -1,103 +1,96 @@
+/** Test-only repository. Production ReflectionsScreen defaults to HTTP. */
 import { simulateLatency } from '@/services/mock-delay';
-import type { ApprovedReflectionEvidence } from '@/types/records';
 
-import type { ReflectionApiResponse, ReflectionRequest } from './api-schema';
-import { reflectionEntryFixtures } from './fixtures';
-import type { JournalEntry } from './model';
+import { approvedEvidenceToReflectionEvidence } from './adapter';
+import type {
+  ReflectionApiResponse,
+  ReflectionFeedbackResponse,
+  ReflectionFeedbackResult,
+  ReflectionRequest,
+} from './api-schema';
 import { buildReflectionApiResponse } from './response-builder';
 import type {
-  ReflectionJournalService,
+  PutReflectionFeedbackInput,
   ReflectionsRepository,
 } from './repository';
 
-export { reflectionEntryFixtures } from './fixtures';
-
-function cloneEntries(entries: JournalEntry[]) {
-  return entries.map((entry) => ({
-    entry_date: entry.entry_date,
-    content: {
-      added_energy: [...entry.content.added_energy],
-      drained_energy: [...entry.content.drained_energy],
-      self_knowledge: [...entry.content.self_knowledge],
-    },
-  }));
-}
-
 interface ReflectionEvidenceSource {
-  listApprovedReflectionEvidence(): ApprovedReflectionEvidence[];
+  listApprovedReflectionEvidence(): Array<{
+    content: string;
+    entryDate: string;
+  }>;
 }
 
-function mergeApprovedEvidence(
-  entries: JournalEntry[],
-  evidence: ApprovedReflectionEvidence[],
+interface MockReflectionsRepositoryOptions {
+  response?: ReflectionApiResponse;
+  delay?: number;
+  evidenceSource?: ReflectionEvidenceSource;
+}
+
+function updateFeedback(
+  aggregate: ReflectionApiResponse,
+  insightId: string,
+  response: ReflectionFeedbackResponse,
 ) {
-  const merged = cloneEntries(entries);
-
-  evidence.forEach((item) => {
-    const existing = merged.find(
-      (entry) => entry.entry_date === item.entryDate,
+  if (
+    aggregate.data.hiddenDriver.status === 'available' &&
+    aggregate.data.hiddenDriver.id === insightId
+  ) {
+    aggregate.data.hiddenDriver.feedback = response;
+  }
+  if (
+    aggregate.data.recurringLoop.status === 'available' &&
+    aggregate.data.recurringLoop.id === insightId
+  ) {
+    aggregate.data.recurringLoop.feedback = response;
+  }
+  if (aggregate.data.innerTensions.status === 'available') {
+    const tension = aggregate.data.innerTensions.tensions.find(
+      (item) => item.id === insightId,
     );
-    if (existing) {
-      if (!existing.content.self_knowledge.includes(item.content)) {
-        existing.content.self_knowledge.push(item.content);
-      }
-      return;
-    }
-
-    merged.push({
-      entry_date: item.entryDate,
-      content: {
-        added_energy: [],
-        drained_energy: [],
-        self_knowledge: [item.content],
-      },
-    });
-  });
-
-  return merged.sort((left, right) =>
-    left.entry_date.localeCompare(right.entry_date),
-  );
-}
-
-export class MockReflectionJournalService implements ReflectionJournalService {
-  constructor(
-    private readonly entries: JournalEntry[] = reflectionEntryFixtures,
-    private readonly delay = 260,
-    private readonly evidenceSource?: ReflectionEvidenceSource,
-  ) {}
-
-  async getJournalEntries(): Promise<JournalEntry[]> {
-    await simulateLatency(this.delay);
-    return mergeApprovedEvidence(
-      this.entries,
-      this.evidenceSource?.listApprovedReflectionEvidence() ?? [],
-    );
+    if (tension) tension.feedback = response;
   }
 }
 
 export class MockReflectionsRepository implements ReflectionsRepository {
-  private readonly service: ReflectionJournalService;
+  private readonly delay: number;
+  private readonly evidenceSource?: ReflectionEvidenceSource;
+  private response: ReflectionApiResponse;
 
-  constructor(
-    entries: JournalEntry[] = reflectionEntryFixtures,
-    delay = 260,
-    evidenceSource?: ReflectionEvidenceSource,
-  ) {
-    this.service = new MockReflectionJournalService(
-      entries,
-      delay,
-      evidenceSource,
+  constructor(options: MockReflectionsRepositoryOptions = {}) {
+    this.delay = options.delay ?? 0;
+    this.evidenceSource = options.evidenceSource;
+    this.response = structuredClone(
+      options.response ?? buildReflectionApiResponse(),
     );
   }
 
-  async getReflection(
-    input: ReflectionRequest,
-  ): Promise<ReflectionApiResponse> {
-    const entries = await this.service.getJournalEntries();
-    return buildReflectionApiResponse({
-      ...input,
-      entries,
-      totalAvailable: entries.length,
-    });
+  async getReflection(input: ReflectionRequest) {
+    await simulateLatency(this.delay);
+    const result = structuredClone(this.response);
+    result.range = input.range;
+    const approvedEvidence = approvedEvidenceToReflectionEvidence(
+      this.evidenceSource?.listApprovedReflectionEvidence() ?? [],
+    );
+    if (
+      approvedEvidence.length > 0 &&
+      result.data.hiddenDriver.status === 'available'
+    ) {
+      result.data.hiddenDriver.evidence = approvedEvidence;
+    }
+    return result;
+  }
+
+  async putFeedback(
+    input: PutReflectionFeedbackInput,
+  ): Promise<ReflectionFeedbackResult> {
+    await simulateLatency(this.delay);
+    updateFeedback(this.response, input.insightId, input.response);
+    return {
+      snapshotId: input.snapshotId,
+      insightId: input.insightId,
+      response: input.response,
+      updatedAt: '2026-07-21T12:42:00Z',
+    };
   }
 }
