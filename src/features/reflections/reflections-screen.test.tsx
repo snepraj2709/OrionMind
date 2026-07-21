@@ -63,7 +63,7 @@ function emptyArrayResult(input: ReflectionRequest): ReflectionApiResponse {
   }
 }
 
-function renderReflections(repository: ReflectionsRepository) {
+function renderReflections(repository?: ReflectionsRepository) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -82,6 +82,17 @@ function renderReflections(repository: ReflectionsRepository) {
 }
 
 describe('ReflectionsScreen', () => {
+  it('loads the local reflection fixtures by default', async () => {
+    renderReflections();
+
+    expect(
+      await screen.findByText(
+        'Patterns taking shape across 8 entries from 14 Apr–8 May.',
+      ),
+    ).toBeVisible();
+    expect(screen.getByText('Observed across 8 entries')).toBeVisible();
+  });
+
   it('shows an editorial loading state while entries are gathered', () => {
     renderReflections(
       new MockReflectionsRepository(reflectionEntryFixtures, 50),

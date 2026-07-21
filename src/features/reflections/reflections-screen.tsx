@@ -21,6 +21,7 @@ import type { EvidenceItem } from '@/types/evidence';
 
 import { HiddenDriverCard } from './hidden-driver-card';
 import { InnerTensionCard } from './inner-tension-card';
+import { MockReflectionsRepository } from './mock-repository';
 import type {
   ReflectionRange,
   ReflectionResponse,
@@ -30,10 +31,9 @@ import { reflectionTabByView } from './model';
 import { useReflectionQuery } from './queries';
 import { RecurringLoop } from './recurring-loop';
 import { ReflectionTabs } from './reflection-tabs';
-import {
-  reflectionsRepository,
-  type ReflectionsRepository,
-} from './repository';
+import type { ReflectionsRepository } from './repository';
+
+const mockReflectionsRepository = new MockReflectionsRepository();
 
 const rangeDateFormatter = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
@@ -46,7 +46,7 @@ export interface ReflectionsScreenProps {
 }
 
 export function ReflectionsScreen({
-  repository = reflectionsRepository,
+  repository = mockReflectionsRepository,
 }: ReflectionsScreenProps) {
   const { user } = useAuth();
   const [range, setRange] = useState<ReflectionRange>('all');
