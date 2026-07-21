@@ -46,12 +46,48 @@ Use HTTPS Supabase and CORS origins. Keep API docs disabled. Retain the fixed re
 request limits, one-worker setting, and separate application/worker URLs enforced by production
 settings validation.
 
-Keep `REFLECTION_ENGINE_ENABLED=false`, `REFLECTION_SCHEDULER_ENABLED=false`, and
-`REFLECTION_API_ENABLED=false` in production until all Reflection release blockers are closed. The
-scheduler and public API each require the engine when enabled; the API remains independent of the
-scheduler so an existing internal snapshot can be read without scheduling new synthesis. Frontend
-production builds must likewise keep `NEXT_PUBLIC_REFLECTIONS_ENABLED=false`. These flags are
-release controls, not substitutes for KMS readiness.
+Keep `REFLECTION_ENGINE_ENABLED=false`, `REFLECTION_SCHEDULER_ENABLED=false`,
+`REFLECTION_API_ENABLED=false`, `REFLECTION_ROLLOUT_MODE=off`, and
+`REFLECTION_ROLLOUT_USER_IDS` empty in production until all Reflection release blockers are closed.
+The scheduler requires the engine plus `shadow` or `publish` mode. Any active mode requires an
+explicit UUID cohort. The public API additionally requires `publish`; enabled requests from users
+outside the cohort receive the same opaque unavailable response as a disabled API. Frontend
+production builds must likewise keep `NEXT_PUBLIC_REFLECTIONS_ENABLED=false`. These controls are
+not substitutes for KMS readiness.
+
+## Controlled Reflection rollout and backfill
+
+Use a fixed internal cohort and begin in `shadow`. Shadow jobs execute the real synthesis and local
+validation path, then atomically persist only non-content counts in `reflection_shadow_runs`; they
+do not create candidates, insights, evidence, or snapshots. Moving the same cohort to `publish`
+promotes eligible shadow jobs through the scheduler. Reverting `REFLECTION_ROLLOUT_MODE=off` and
+disabling the scheduler stops new synthesis; the worker also fails any mismatched claimed synthesis
+job closed.
+
+Backfill is a separate, persisted operator workflow and may be prepared before synthesis is enabled.
+It selects only completed, already-materialized entries owned by `REFLECTION_ROLLOUT_USER_IDS`, never
+loads their content in the operator process, and advances idempotently in ascending
+`(created_at, id)` order. User-created entry work has priority 100; backfill has priority 10.
+
+```bash
+# 1. Create one plan and copy only the logged run_id.
+python scripts/run_processing_worker.py --backfill-plan --backfill-batch-size 100
+
+# 2. Inspect or advance one bounded batch.
+python scripts/run_processing_worker.py --backfill-action status --backfill-run-id RUN_UUID
+python scripts/run_processing_worker.py --backfill-action batch --backfill-run-id RUN_UUID
+
+# 3. Pause safely, then resume from the persisted cursor.
+python scripts/run_processing_worker.py --backfill-action pause --backfill-run-id RUN_UUID
+python scripts/run_processing_worker.py --backfill-action resume --backfill-run-id RUN_UUID
+```
+
+`PROCESSING_BACKFILL_MAX_QUEUE_DEPTH` and
+`PROCESSING_BACKFILL_MAX_OLDEST_PENDING_SECONDS` are captured in each plan. A batch that reaches
+either budget enqueues nothing and reports `QUEUE_DEPTH` or `OLDEST_PENDING_AGE`; inspect queue
+health, let foreground work drain, then run the same batch command again. Only one unfinished plan
+may exist. Status output contains the opaque run ID, counts, state, queue budgets, and throttle code,
+never user IDs, journal content, ciphertext, prompts, or provider payloads.
 
 ## Startup and health
 

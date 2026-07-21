@@ -161,6 +161,8 @@ class ReflectionEngineService:
     ) -> UUID:
         if claim.job_type != "reflection_synthesis" or claim.entry_id is not None:
             raise SnapshotValidationError("job is not reflection synthesis")
+        if claim.execution_mode not in {"shadow", "publish"}:
+            raise SnapshotValidationError("synthesis execution mode is invalid")
         try:
             source_version = int(claim.source_version)
         except ValueError as exc:
@@ -309,6 +311,15 @@ class ReflectionEngineService:
         ]
         candidate_evidence = [link.model_dump(mode="json") for link in batch.evidence]
         with uow.for_worker() as work:
+            if claim.execution_mode == "shadow":
+                return self._repository.complete_shadow(
+                    work.session,
+                    claim=claim,
+                    worker_id=worker_id,
+                    candidate_count=len(batch.candidates),
+                    selected_count=len(selected),
+                    provider_called=bool(publishable),
+                )
             return self._repository.apply_snapshot(
                 work.session,
                 claim=claim,

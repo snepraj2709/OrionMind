@@ -48,11 +48,27 @@ with provider storage disabled. Configure that call with `OPENAI_ENTRY_ANALYSIS_
 `gpt-5.6-luna`). Deterministic exclusions make no provider call, while accepted analysis, legacy
 extraction, entry completion, signals, and reflection counters commit atomically.
 
-To enqueue one idempotent, low-priority batch of up to 100 already-materialized legacy entries:
+Reflection rollout is cohort-scoped and defaults off. Set `REFLECTION_ROLLOUT_MODE=shadow` with an
+explicit comma-separated `REFLECTION_ROLLOUT_USER_IDS` cohort to run full synthesis without creating
+snapshots or candidates. `publish` is the only mode that may serve the Reflections API. The worker
+rejects synthesis jobs whose persisted mode or owner no longer matches the configured rollout.
+
+Historical analysis backfill is a persisted operator workflow. It scans only the configured cohort,
+in ascending `(created_at, id)` order, and enqueues priority-10 jobs. New user-created entry jobs use
+priority 100 and are always claimed first. Create a plan, retain the returned safe run ID from the
+structured log, and advance it one bounded batch at a time:
 
 ```bash
-.venv/bin/python scripts/run_processing_worker.py --backfill-batch 100
+.venv/bin/python scripts/run_processing_worker.py --backfill-plan --backfill-batch-size 100
+.venv/bin/python scripts/run_processing_worker.py --backfill-action status --backfill-run-id RUN_UUID
+.venv/bin/python scripts/run_processing_worker.py --backfill-action batch --backfill-run-id RUN_UUID
+.venv/bin/python scripts/run_processing_worker.py --backfill-action pause --backfill-run-id RUN_UUID
+.venv/bin/python scripts/run_processing_worker.py --backfill-action resume --backfill-run-id RUN_UUID
 ```
+
+Each batch stops before enqueueing when the configured total queue-depth or oldest-pending-age budget
+is reached. Commands and logs expose counts, state, budgets, and opaque IDs only; they never load or
+print raw journal content.
 
 The API uses in-process rate limiting and must run as exactly one instance with one Uvicorn worker.
 Before horizontal scale, replace it with a shared Redis-compatible limiter. See

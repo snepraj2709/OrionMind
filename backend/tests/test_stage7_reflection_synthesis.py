@@ -241,6 +241,7 @@ class Repository:
     def __init__(self, raw: dict[str, object]) -> None:
         self.raw = raw
         self.applied: dict[str, object] | None = None
+        self.shadow: dict[str, object] | None = None
 
     def load_synthesis_basis(self, _session, **_kwargs) -> dict[str, object]:
         return self.raw
@@ -248,6 +249,10 @@ class Repository:
     def apply_snapshot(self, _session, **kwargs):
         self.applied = kwargs
         return UUID(str(kwargs["snapshot"]["id"]))
+
+    def complete_shadow(self, _session, **kwargs):
+        self.shadow = kwargs
+        return kwargs["claim"].job_id
 
 
 class UnitOfWork:
@@ -286,7 +291,11 @@ class JobRepository:
         self.failures.append((error_code, retryable))
         return "pending" if retryable else "failed"
 
-    def schedule_reflections(self, _session, *, now: datetime) -> int:
+    def schedule_reflections(
+        self, _session, *, now: datetime, execution_mode: str, user_ids
+    ) -> int:
+        assert execution_mode == "publish"
+        assert set(user_ids) == {USER_ID}
         self.scheduler_calls.append(now)
         return 2
 
@@ -309,6 +318,7 @@ def job_claim() -> JobClaim:
         user_id=USER_ID,
         entry_id=None,
         job_type="reflection_synthesis",
+        execution_mode="publish",
         source_version="10",
         claim_token=uuid4(),
         attempts=1,
@@ -326,6 +336,8 @@ def test_scheduler_flag_and_synthesis_dispatch_stay_in_worker_service() -> None:
         cipher=cipher(),
         reflection_engine_enabled=True,
         reflection_scheduler_enabled=True,
+        reflection_rollout_mode="publish",
+        reflection_rollout_user_ids={USER_ID},
         heartbeat_interval_seconds=0.01,
     )
     now = datetime(2026, 7, 21, 12, 30, tzinfo=timezone.utc)
@@ -345,6 +357,35 @@ def test_scheduler_flag_and_synthesis_dispatch_stay_in_worker_service() -> None:
     )
     assert disabled.schedule_reflections(uow=UnitOfWork(), now=now) == 0
     assert disabled_repository.scheduler_calls == []
+
+
+@pytest.mark.parametrize(
+    ("rollout_mode", "rollout_users"),
+    [
+        ("shadow", {USER_ID}),
+        ("publish", {UUID("a2222222-2222-4222-8222-222222222222")}),
+    ],
+)
+def test_synthesis_claims_fail_closed_when_rollout_no_longer_matches(
+    rollout_mode: str,
+    rollout_users: set[UUID],
+) -> None:
+    repository = JobRepository(job_claim())
+    runner = ReflectionRunner()
+    service = JobService(
+        repository=repository,
+        processing=object(),  # type: ignore[arg-type]
+        reflection=runner,  # type: ignore[arg-type]
+        cipher=cipher(),
+        reflection_engine_enabled=True,
+        reflection_rollout_mode=rollout_mode,  # type: ignore[arg-type]
+        reflection_rollout_user_ids=rollout_users,
+    )
+    assert service.run_one(
+        worker_id="reflection-worker", uow=UnitOfWork()
+    ) is True
+    assert runner.calls == 0
+    assert repository.failures == [("REFLECTION_ROLLOUT_BLOCKED", False)]
 
 
 class RateLimited(Exception):
@@ -383,6 +424,8 @@ def test_synthesis_retry_terminal_and_stale_claim_classification(
         reflection=ReflectionRunner(error),  # type: ignore[arg-type]
         cipher=cipher(),
         reflection_engine_enabled=True,
+        reflection_rollout_mode="publish",
+        reflection_rollout_user_ids={USER_ID},
         heartbeat_interval_seconds=0.01,
     )
     assert service.run_one(
@@ -546,6 +589,7 @@ def test_synthesis_uses_minimum_context_and_discards_invalid_output(
         user_id=USER_ID,
         entry_id=None,
         job_type="reflection_synthesis",
+        execution_mode="publish",
         source_version="10",
         claim_token=uuid4(),
         attempts=1,
@@ -573,6 +617,38 @@ def test_synthesis_uses_minimum_context_and_discards_invalid_output(
     assert "chose focused work" not in caplog.text
 
 
+def test_shadow_synthesis_runs_full_validation_without_applying_a_snapshot() -> None:
+    repository = Repository(synthesis_basis())
+    provider = SynthesisProvider()
+    service = ReflectionEngineService(
+        repository=repository,
+        provider=provider,
+        cipher=cipher(),
+    )
+    claim = JobClaim(
+        job_id=uuid4(),
+        user_id=USER_ID,
+        entry_id=None,
+        job_type="reflection_synthesis",
+        execution_mode="shadow",
+        source_version="10",
+        claim_token=uuid4(),
+        attempts=1,
+    )
+
+    assert service.run_synthesis_job(
+        claim=claim,
+        worker_id="reflection-worker",
+        uow=UnitOfWork(),
+    ) == claim.job_id
+    assert len(provider.synthesis_payloads) == 1
+    assert repository.applied is None
+    assert repository.shadow is not None
+    assert repository.shadow["candidate_count"] >= 1
+    assert repository.shadow["selected_count"] == 1
+    assert repository.shadow["provider_called"] is True
+
+
 def test_snapshot_selection_supports_zero_one_and_multiple_inner_tensions() -> None:
     first = tension_candidate(key="b", score=0.80)
     second = tension_candidate(key="c", score=0.90)
@@ -596,6 +672,7 @@ def test_contradiction_boundary_invokes_sol_once_after_local_validation() -> Non
             user_id=USER_ID,
             entry_id=None,
             job_type="reflection_synthesis",
+            execution_mode="publish",
             source_version="10",
             claim_token=uuid4(),
             attempts=1,

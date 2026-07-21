@@ -146,3 +146,39 @@ class ReflectionEngineRepository:
         if not isinstance(value, UUID):
             raise RuntimeError("reflection snapshot apply result is invalid")
         return value
+
+    def complete_shadow(
+        self,
+        session: Session,
+        *,
+        claim: JobClaim,
+        worker_id: str,
+        candidate_count: int,
+        selected_count: int,
+        provider_called: bool,
+    ) -> UUID:
+        try:
+            value = session.scalar(
+                text(
+                    "SELECT public.complete_reflection_shadow("
+                    ":job_id, :worker_id, :claim_token, :candidate_count, "
+                    ":selected_count, :provider_called)"
+                ),
+                {
+                    "job_id": claim.job_id,
+                    "worker_id": worker_id,
+                    "claim_token": claim.claim_token,
+                    "candidate_count": candidate_count,
+                    "selected_count": selected_count,
+                    "provider_called": provider_called,
+                },
+            )
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "P0001":
+                raise StaleSynthesisClaimError(
+                    "reflection shadow claim is no longer current"
+                ) from exc
+            raise
+        if not isinstance(value, UUID):
+            raise RuntimeError("reflection shadow completion result is invalid")
+        return value

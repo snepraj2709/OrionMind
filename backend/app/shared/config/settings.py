@@ -5,7 +5,9 @@ import binascii
 import json
 import math
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import urlparse
+from uuid import UUID
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -59,9 +61,15 @@ class Settings(BaseSettings):
     PROCESSING_JOB_RECOVERY_INTERVAL_SECONDS: float = Field(
         default=60.0, ge=10, le=3600
     )
+    PROCESSING_BACKFILL_MAX_QUEUE_DEPTH: int = Field(default=1000, ge=1, le=100_000)
+    PROCESSING_BACKFILL_MAX_OLDEST_PENDING_SECONDS: int = Field(
+        default=300, ge=30, le=86_400
+    )
     REFLECTION_ENGINE_ENABLED: bool = False
     REFLECTION_SCHEDULER_ENABLED: bool = False
     REFLECTION_API_ENABLED: bool = False
+    REFLECTION_ROLLOUT_MODE: Literal["off", "shadow", "publish"] = "off"
+    REFLECTION_ROLLOUT_USER_IDS: str = ""
     REFLECTION_SCHEDULER_POLL_SECONDS: float = Field(default=60.0, ge=1, le=3600)
     REFLECTION_BASIS_DAYS: int = Field(default=90, ge=90, le=90)
     WEB_CONCURRENCY: int = Field(default=1, ge=1, le=1)
@@ -106,9 +114,28 @@ class Settings(BaseSettings):
             raise ValueError("model name must be between 1 and 100 characters")
         return normalized
 
+    @field_validator("REFLECTION_ROLLOUT_USER_IDS")
+    @classmethod
+    def validate_reflection_rollout_user_ids(cls, value: str) -> str:
+        raw = [item.strip() for item in value.split(",") if item.strip()]
+        try:
+            identifiers = [UUID(item) for item in raw]
+        except ValueError as exc:
+            raise ValueError("reflection rollout user IDs must be UUIDs") from exc
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("reflection rollout user IDs must be unique")
+        if len(identifiers) > 1000:
+            raise ValueError("reflection rollout cohort cannot exceed 1000 users")
+        return ",".join(str(item) for item in identifiers)
+
     def cors_origins(self) -> tuple[str, ...]:
         values = tuple(dict.fromkeys(v.strip() for v in self.CORS_ALLOW_ORIGINS.split(",") if v.strip()))
         return values
+
+    def reflection_rollout_user_ids(self) -> frozenset[UUID]:
+        return frozenset(
+            UUID(item) for item in self.REFLECTION_ROLLOUT_USER_IDS.split(",") if item
+        )
 
     @staticmethod
     def _secret_present(value: SecretStr) -> bool:
@@ -139,6 +166,13 @@ class Settings(BaseSettings):
             raise ValueError("reflection scheduler requires the reflection engine")
         if self.REFLECTION_API_ENABLED and not self.REFLECTION_ENGINE_ENABLED:
             raise ValueError("reflection API requires the reflection engine")
+        rollout_users = self.reflection_rollout_user_ids()
+        if self.REFLECTION_ROLLOUT_MODE != "off" and not rollout_users:
+            raise ValueError("active reflection rollout requires a non-empty cohort")
+        if self.REFLECTION_SCHEDULER_ENABLED and self.REFLECTION_ROLLOUT_MODE == "off":
+            raise ValueError("reflection scheduler requires an active rollout mode")
+        if self.REFLECTION_API_ENABLED and self.REFLECTION_ROLLOUT_MODE != "publish":
+            raise ValueError("reflection API requires publish rollout mode")
         if self.ENVIRONMENT != "production":
             return self
         if self.ENABLE_API_DOCS:

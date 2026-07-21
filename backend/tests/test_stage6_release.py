@@ -19,6 +19,7 @@ from app.openapi_contract import CONTRACT_PATH
 from app.shared.config import Settings
 from app.shared.database.session import DatabaseSessions
 from app.shared.http.rate_limits import ProcessRateLimiter, RULES, request_class
+from scripts.run_processing_worker import parse_args as parse_worker_args
 
 
 USER_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
@@ -388,6 +389,8 @@ def test_reflection_release_flags_default_off_and_require_the_engine() -> None:
     assert configured.REFLECTION_ENGINE_ENABLED is False
     assert configured.REFLECTION_SCHEDULER_ENABLED is False
     assert configured.REFLECTION_API_ENABLED is False
+    assert configured.REFLECTION_ROLLOUT_MODE == "off"
+    assert configured.reflection_rollout_user_ids() == frozenset()
 
     with pytest.raises(
         ValidationError, match="reflection scheduler requires the reflection engine"
@@ -399,12 +402,56 @@ def test_reflection_release_flags_default_off_and_require_the_engine() -> None:
     ):
         Settings.model_validate({"REFLECTION_API_ENABLED": True})
 
+    with pytest.raises(
+        ValidationError, match="reflection scheduler requires an active rollout mode"
+    ):
+        Settings.model_validate(
+            {
+                "REFLECTION_ENGINE_ENABLED": True,
+                "REFLECTION_SCHEDULER_ENABLED": True,
+            }
+        )
+
+    with pytest.raises(
+        ValidationError, match="active reflection rollout requires a non-empty cohort"
+    ):
+        Settings.model_validate(
+            {
+                "REFLECTION_ENGINE_ENABLED": True,
+                "REFLECTION_ROLLOUT_MODE": "shadow",
+            }
+        )
+
     enabled = Settings.model_validate(
         {
             "REFLECTION_ENGINE_ENABLED": True,
             "REFLECTION_SCHEDULER_ENABLED": True,
             "REFLECTION_API_ENABLED": True,
+            "REFLECTION_ROLLOUT_MODE": "publish",
+            "REFLECTION_ROLLOUT_USER_IDS": str(USER_ID),
         }
     )
     assert enabled.REFLECTION_SCHEDULER_ENABLED is True
     assert enabled.REFLECTION_API_ENABLED is True
+
+
+def test_processing_worker_backfill_cli_is_persisted_and_resumable() -> None:
+    planned = parse_worker_args(["--backfill-plan", "--backfill-batch-size", "25"])
+    assert planned.backfill_plan is True
+    assert planned.backfill_batch_size == 25
+    run_id = UUID("bccccccc-cccc-4ccc-8ccc-cccccccccccc")
+    for action in ("status", "batch", "pause", "resume"):
+        parsed = parse_worker_args(
+            [
+                "--backfill-action",
+                action,
+                "--backfill-run-id",
+                str(run_id),
+            ]
+        )
+        assert parsed.backfill_action == action
+        assert parsed.backfill_run_id == run_id
+    with pytest.raises(SystemExit):
+        parse_worker_args(["--backfill-action", "batch"])
+    with pytest.raises(SystemExit):
+        parse_worker_args(["--backfill-batch", "25"])

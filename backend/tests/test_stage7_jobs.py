@@ -181,6 +181,7 @@ def application(value: str, provider: Provider):
             "LOG_FORMAT": "text",
             "RATE_LIMITING_ENABLED": False,
             "PROCESSING_JOB_HEARTBEAT_SECONDS": 1,
+            "REFLECTION_ROLLOUT_USER_IDS": str(USER_TWO),
         }
     )
     return create_app(
@@ -198,6 +199,8 @@ def test_processing_job_schema_rejects_unknown_values_and_invalid_lifecycle() ->
         "user_id": USER_ONE,
         "entry_id": uuid4(),
         "job_type": "entry_processing",
+        "execution_mode": "user",
+        "priority": 100,
         "source_version": "",
         "status": "pending",
         "run_after": now,
@@ -431,13 +434,18 @@ def test_apply_uses_per_user_lock_and_backfill_is_idempotent() -> None:
     assert future.result(timeout=5) is True
     executor.shutdown(wait=True)
 
-    now = datetime.now(timezone.utc) - timedelta(seconds=1)
-    assert app.state.job_service.enqueue_backfill(
-        batch_size=100, uow=uow, run_after=now
-    ) == 1
-    assert app.state.job_service.enqueue_backfill(
-        batch_size=100, uow=uow, run_after=now
-    ) == 0
+    run_id = app.state.job_service.plan_backfill(batch_size=100, uow=uow)
+    status = app.state.job_service.run_backfill_batch(run_id=run_id, uow=uow)
+    assert status.status == "completed"
+    assert status.planned_count == 1
+    assert status.enqueued_count == 1
+    second_run_id = app.state.job_service.plan_backfill(batch_size=100, uow=uow)
+    second_status = app.state.job_service.backfill_status(
+        run_id=second_run_id, uow=uow
+    )
+    assert second_status.status == "completed"
+    assert second_status.planned_count == 0
+    assert second_status.enqueued_count == 0
     assert app.state.processing_worker.run_one(
         worker_id="backfill-worker", uow=uow
     ) is True
@@ -452,3 +460,160 @@ def test_apply_uses_per_user_lock_and_backfill_is_idempotent() -> None:
             (materialized_id,),
         ).fetchone() == ("completed", "completed", "accepted")
     app.state.database_sessions.dispose()
+
+
+def test_user_jobs_preempt_resumable_cohort_backfill() -> None:
+    value = database_url()
+    bootstrap(value)
+    with psycopg.connect(value) as connection:
+        first_backfill_entry = insert_entry(
+            connection,
+            user_id=USER_TWO,
+            content="first historical entry",
+            status="completed",
+            materialized=True,
+        )
+        second_backfill_entry = insert_entry(
+            connection,
+            user_id=USER_TWO,
+            content="second historical entry",
+            status="completed",
+            materialized=True,
+        )
+        outsider_entry = insert_entry(
+            connection,
+            user_id=USER_ONE,
+            content="out of cohort historical entry",
+            status="completed",
+            materialized=True,
+        )
+        connection.execute(
+            "UPDATE public.entries SET created_at = CASE id "
+            "WHEN %s THEN '2026-07-01 10:00:00+00'::timestamptz "
+            "WHEN %s THEN '2026-07-02 10:00:00+00'::timestamptz "
+            "ELSE created_at END WHERE id IN (%s, %s)",
+            (
+                first_backfill_entry,
+                second_backfill_entry,
+                first_backfill_entry,
+                second_backfill_entry,
+            ),
+        )
+        connection.commit()
+
+    app = application(value, Provider())
+    uow = app.state.database_sessions.unit_of_work_factory
+    run_id = app.state.job_service.plan_backfill(batch_size=1, uow=uow)
+    planned = app.state.job_service.backfill_status(run_id=run_id, uow=uow)
+    assert (planned.status, planned.planned_count, planned.cohort_size) == (
+        "planned",
+        2,
+        1,
+    )
+
+    first = app.state.job_service.run_backfill_batch(run_id=run_id, uow=uow)
+    assert (first.status, first.enqueued_count, first.cursor_entry_id) == (
+        "running",
+        1,
+        first_backfill_entry,
+    )
+    paused = app.state.job_service.set_backfill_state(
+        run_id=run_id, action="pause", uow=uow
+    )
+    assert paused.status == "paused"
+    assert app.state.job_service.run_backfill_batch(
+        run_id=run_id, uow=uow
+    ).enqueued_count == 1
+    assert app.state.job_service.set_backfill_state(
+        run_id=run_id, action="resume", uow=uow
+    ).status == "running"
+
+    with psycopg.connect(value) as connection:
+        user_entry = insert_entry(
+            connection, user_id=USER_ONE, content="new user-created entry"
+        )
+        connection.commit()
+        with connection.transaction():
+            user_job = enqueue_owner(connection, USER_ONE, user_entry)
+
+    repository = JobRepository()
+    with uow.for_worker() as work:
+        claim = repository.claim(work.session, worker_id="priority-worker")
+    assert claim is not None
+    assert (claim.job_id, claim.execution_mode) == (user_job, "user")
+    with uow.for_worker() as work:
+        assert repository.fail(
+            work.session,
+            claim=claim,
+            worker_id="priority-worker",
+            error_code="PROCESSING_FAILED",
+            retryable=False,
+        ) == "failed"
+
+    completed = app.state.job_service.run_backfill_batch(run_id=run_id, uow=uow)
+    assert (completed.status, completed.enqueued_count) == ("completed", 2)
+    with psycopg.connect(value) as connection:
+        rows = connection.execute(
+            "SELECT entry_id, execution_mode, priority FROM public.processing_jobs "
+            "WHERE execution_mode = 'backfill' ORDER BY entry_id"
+        ).fetchall()
+        assert {row[0] for row in rows} == {
+            first_backfill_entry,
+            second_backfill_entry,
+        }
+        assert all(row[1:] == ("backfill", 10) for row in rows)
+        assert outsider_entry not in {row[0] for row in rows}
+    second_run = app.state.job_service.plan_backfill(batch_size=1, uow=uow)
+    assert app.state.job_service.backfill_status(
+        run_id=second_run, uow=uow
+    ).planned_count == 0
+    app.state.database_sessions.dispose()
+
+
+@pytest.mark.parametrize(
+    ("max_queue_depth", "max_oldest_seconds", "age", "expected_reason"),
+    [
+        (1, 300, timedelta(seconds=0), "QUEUE_DEPTH"),
+        (100, 30, timedelta(minutes=10), "OLDEST_PENDING_AGE"),
+    ],
+)
+def test_backfill_stops_at_queue_budgets(
+    max_queue_depth: int,
+    max_oldest_seconds: int,
+    age: timedelta,
+    expected_reason: str,
+) -> None:
+    value = database_url()
+    bootstrap(value)
+    with psycopg.connect(value) as connection:
+        insert_entry(
+            connection,
+            user_id=USER_TWO,
+            content="eligible historical entry",
+            status="completed",
+            materialized=True,
+        )
+        user_entry = insert_entry(
+            connection, user_id=USER_ONE, content="pending foreground entry"
+        )
+        connection.commit()
+        with connection.transaction():
+            pending_job = enqueue_owner(connection, USER_ONE, user_entry)
+        connection.execute(
+            "UPDATE public.processing_jobs SET created_at = %s WHERE id = %s",
+            (datetime.now(timezone.utc) - age, pending_job),
+        )
+        connection.commit()
+        with connection.transaction():
+            connection.execute("SET LOCAL ROLE orion_worker")
+            run_id = connection.execute(
+                "SELECT public.plan_entry_processing_backfill(%s, 10, %s, %s)",
+                ([USER_TWO], max_queue_depth, max_oldest_seconds),
+            ).fetchone()[0]
+            status = connection.execute(
+                "SELECT public.run_entry_processing_backfill_batch(%s)",
+                (run_id,),
+            ).fetchone()[0]
+    assert status["throttled"] is True
+    assert status["throttle_reason"] == expected_reason
+    assert status["enqueued_count"] == 0

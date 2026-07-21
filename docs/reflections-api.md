@@ -4,15 +4,22 @@
 
 Reflections are fail-closed. The backend settings
 `REFLECTION_ENGINE_ENABLED`, `REFLECTION_SCHEDULER_ENABLED`, and
-`REFLECTION_API_ENABLED` all default to `false`. Enabling the scheduler or the
-public API requires the engine; the API does not require the scheduler because
-it may expose an already-created snapshot.
+`REFLECTION_API_ENABLED` all default to `false`; `REFLECTION_ROLLOUT_MODE`
+defaults to `off`, with an empty `REFLECTION_ROLLOUT_USER_IDS` cohort. Enabling
+the scheduler requires the engine, `shadow` or `publish` mode, and an explicit
+UUID cohort. The public API requires the engine and `publish`; it does not
+require the scheduler because it may expose an already-created snapshot.
 
 When `REFLECTION_API_ENABLED=false`, both operations below return the same
 opaque `503 SERVICE_UNAVAILABLE` envelope with `Cache-Control: private,
 no-store`. The service gate runs before any Reflection repository read,
 feedback write, or provider call. The routes remain in the frozen inventory
 and OpenAPI contract.
+
+The same gate applies to authenticated users outside the configured rollout
+cohort, so cohort membership cannot be inferred from a different response.
+Shadow mode runs synthesis and validation in the worker but never writes a
+public snapshot, candidate, insight, or evidence row.
 
 The browser build setting `NEXT_PUBLIC_REFLECTIONS_ENABLED` also defaults to
 `false`. A disabled build keeps the Reflections page shell and heading, renders

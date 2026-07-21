@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from threading import Event, Thread
+from typing import Literal
+from uuid import UUID
 
 from app.modules.jobs.repository import JobRepository
-from app.modules.jobs.types import DispatchResult, JobClaim
+from app.modules.jobs.types import BackfillStatus, DispatchResult, JobClaim
 from app.modules.processing.provider import (
     ProviderUnavailableError,
     ProviderResponseError,
@@ -42,6 +44,7 @@ ALLOWED_FAILURES = frozenset(
         "PROCESSING_FAILED",
         "PROVIDER_UNAVAILABLE",
         "REFLECTION_DISABLED",
+        "REFLECTION_ROLLOUT_BLOCKED",
         "REFLECTION_PROVIDER_UNAVAILABLE",
         "INVALID_SYNTHESIS",
         "UNSUPPORTED_JOB_TYPE",
@@ -64,6 +67,10 @@ class JobService:
         reflection: ReflectionEngineService | None = None,
         reflection_engine_enabled: bool = False,
         reflection_scheduler_enabled: bool = False,
+        reflection_rollout_mode: Literal["off", "shadow", "publish"] = "off",
+        reflection_rollout_user_ids: Collection[UUID] = (),
+        backfill_max_queue_depth: int = 1000,
+        backfill_max_oldest_pending_seconds: int = 300,
         heartbeat_interval_seconds: float = 30.0,
     ) -> None:
         self._repository = repository
@@ -72,6 +79,12 @@ class JobService:
         self._reflection = reflection
         self._reflection_engine_enabled = reflection_engine_enabled
         self._reflection_scheduler_enabled = reflection_scheduler_enabled
+        self._reflection_rollout_mode = reflection_rollout_mode
+        self._reflection_rollout_user_ids = frozenset(reflection_rollout_user_ids)
+        self._backfill_max_queue_depth = backfill_max_queue_depth
+        self._backfill_max_oldest_pending_seconds = (
+            backfill_max_oldest_pending_seconds
+        )
         self._heartbeat_interval = heartbeat_interval_seconds
 
     def run_one(self, *, worker_id: str, uow: UnitOfWorkFactory) -> bool:
@@ -95,12 +108,44 @@ class JobService:
         with uow.for_worker() as work:
             return self._repository.recover(work.session, stale_before=cutoff)
 
-    def enqueue_backfill(
-        self, *, batch_size: int, uow: UnitOfWorkFactory, run_after: datetime | None = None
-    ) -> int:
+    def plan_backfill(
+        self, *, batch_size: int, uow: UnitOfWorkFactory
+    ) -> UUID:
+        if not self._reflection_rollout_user_ids:
+            raise ValueError("backfill requires a non-empty rollout cohort")
         with uow.for_worker() as work:
-            return self._repository.enqueue_backfill(
-                work.session, batch_size=batch_size, run_after=run_after
+            return self._repository.plan_backfill(
+                work.session,
+                user_ids=self._reflection_rollout_user_ids,
+                batch_size=batch_size,
+                max_queue_depth=self._backfill_max_queue_depth,
+                max_oldest_pending_seconds=(
+                    self._backfill_max_oldest_pending_seconds
+                ),
+            )
+
+    def backfill_status(
+        self, *, run_id: UUID, uow: UnitOfWorkFactory
+    ) -> BackfillStatus:
+        with uow.for_worker() as work:
+            return self._repository.backfill_status(work.session, run_id=run_id)
+
+    def run_backfill_batch(
+        self, *, run_id: UUID, uow: UnitOfWorkFactory
+    ) -> BackfillStatus:
+        with uow.for_worker() as work:
+            return self._repository.run_backfill_batch(work.session, run_id=run_id)
+
+    def set_backfill_state(
+        self,
+        *,
+        run_id: UUID,
+        action: Literal["pause", "resume"],
+        uow: UnitOfWorkFactory,
+    ) -> BackfillStatus:
+        with uow.for_worker() as work:
+            return self._repository.set_backfill_state(
+                work.session, run_id=run_id, action=action
             )
 
     def schedule_reflections(
@@ -111,11 +156,18 @@ class JobService:
     ) -> int:
         if not self._reflection_scheduler_enabled:
             return 0
+        if (
+            self._reflection_rollout_mode == "off"
+            or not self._reflection_rollout_user_ids
+        ):
+            return 0
         scheduled_at = now or datetime.now(timezone.utc)
         with uow.for_worker() as work:
             return self._repository.schedule_reflections(
                 work.session,
                 now=scheduled_at,
+                execution_mode=self._reflection_rollout_mode,
+                user_ids=self._reflection_rollout_user_ids,
             )
 
     def _dispatch(
@@ -131,6 +183,18 @@ class JobService:
                         worker_id=worker_id,
                         uow=uow,
                         error_code="REFLECTION_DISABLED",
+                        retryable=False,
+                    )
+                if (
+                    self._reflection_rollout_mode == "off"
+                    or claim.user_id not in self._reflection_rollout_user_ids
+                    or claim.execution_mode != self._reflection_rollout_mode
+                ):
+                    return self._record_failure(
+                        claim=claim,
+                        worker_id=worker_id,
+                        uow=uow,
+                        error_code="REFLECTION_ROLLOUT_BLOCKED",
                         retryable=False,
                     )
                 with self._heartbeat(

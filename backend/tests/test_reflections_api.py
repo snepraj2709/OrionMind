@@ -126,6 +126,12 @@ def settings(*, reflections_enabled: bool = True) -> Settings:
             "RATE_LIMITING_ENABLED": False,
             "REFLECTION_ENGINE_ENABLED": reflections_enabled,
             "REFLECTION_API_ENABLED": reflections_enabled,
+            "REFLECTION_ROLLOUT_MODE": (
+                "publish" if reflections_enabled else "off"
+            ),
+            "REFLECTION_ROLLOUT_USER_IDS": (
+                str(USER_ID) if reflections_enabled else ""
+            ),
         }
     )
 
@@ -341,7 +347,12 @@ def add_tension(
     return insight_id
 
 
-def build_app(raw: dict[str, object], *, reflections_enabled: bool = True):
+def build_app(
+    raw: dict[str, object],
+    *,
+    reflections_enabled: bool = True,
+    allowed_user_ids: set[UUID] | None = None,
+):
     content_cipher = cipher()
     repository = Repository(raw)
     provider = Provider()
@@ -357,6 +368,7 @@ def build_app(raw: dict[str, object], *, reflections_enabled: bool = True):
         repository=repository,  # type: ignore[arg-type]
         cipher=content_cipher,
         enabled=reflections_enabled,
+        allowed_user_ids={USER_ID} if allowed_user_ids is None else allowed_user_ids,
     )
     return app, repository, provider, content_cipher
 
@@ -392,6 +404,26 @@ def test_disabled_reflection_operations_are_opaque_no_store_and_side_effect_free
         "details": {},
         "request_id": response.json()["request_id"],
     }
+    assert repository.read_users == []
+    assert repository.feedback_calls == []
+    assert provider.calls == []
+
+
+def test_out_of_cohort_reflection_operations_match_disabled_behavior() -> None:
+    app, repository, provider, _content_cipher = build_app(
+        raw_with_snapshot(), allowed_user_ids={OTHER_ID}
+    )
+    with TestClient(app) as client:
+        read = client.get("/api/v1/reflections?range=7d", headers=HEADERS)
+        feedback = client.put(
+            f"/api/v1/reflections/{SNAPSHOT_ID}/insights/{uuid4()}/feedback",
+            headers=HEADERS,
+            json={"response": "resonates"},
+        )
+    for response in (read, feedback):
+        assert response.status_code == 503
+        assert response.headers["cache-control"] == "private, no-store"
+        assert response.json()["error_code"] == "SERVICE_UNAVAILABLE"
     assert repository.read_users == []
     assert repository.feedback_calls == []
     assert provider.calls == []

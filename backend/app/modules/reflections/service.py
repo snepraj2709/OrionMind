@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import date, datetime, timedelta
 from typing import Any, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -57,6 +57,7 @@ class ReflectionsService:
         repository: ReflectionsRepository,
         cipher: ContentCipher,
         enabled: bool,
+        allowed_user_ids: Collection[UUID],
         basis_days: int = 90,
     ) -> None:
         if basis_days != 90:
@@ -64,6 +65,7 @@ class ReflectionsService:
         self._repository = repository
         self._cipher = cipher
         self._enabled = enabled
+        self._allowed_user_ids = frozenset(allowed_user_ids)
 
     def read(
         self,
@@ -71,7 +73,7 @@ class ReflectionsService:
         query: ReflectionQuery,
         uow: UnitOfWorkFactory,
     ) -> ReflectionResponse:
-        self._require_enabled()
+        self._require_enabled(query.user_id)
         with uow.for_user(query.user_id) as work:
             raw = self._repository.load_aggregate(work.session, user_id=query.user_id)
         return self._build_response(query=query, raw=raw)
@@ -82,7 +84,7 @@ class ReflectionsService:
         command: FeedbackCommand,
         uow: UnitOfWorkFactory,
     ) -> FeedbackResult:
-        self._require_enabled()
+        self._require_enabled(command.user_id)
         try:
             with uow.for_user(command.user_id) as work:
                 saved = self._repository.put_feedback(
@@ -106,8 +108,8 @@ class ReflectionsService:
             updated_at=saved.updated_at,
         )
 
-    def _require_enabled(self) -> None:
-        if not self._enabled:
+    def _require_enabled(self, user_id: UUID) -> None:
+        if not self._enabled or user_id not in self._allowed_user_ids:
             raise DomainError(
                 503,
                 "SERVICE_UNAVAILABLE",

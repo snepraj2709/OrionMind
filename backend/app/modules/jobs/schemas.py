@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 JobType: TypeAlias = Literal["entry_processing", "reflection_synthesis"]
 JobStatus: TypeAlias = Literal["pending", "running", "completed", "failed"]
+JobExecutionMode: TypeAlias = Literal["user", "backfill", "shadow", "publish"]
 
 
 class ProcessingJob(BaseModel):
@@ -18,6 +19,8 @@ class ProcessingJob(BaseModel):
     user_id: UUID
     entry_id: UUID | None
     job_type: JobType
+    execution_mode: JobExecutionMode
+    priority: int = Field(ge=0, le=100)
     source_version: str = Field(min_length=1, max_length=200)
     status: JobStatus
     run_after: datetime
@@ -32,6 +35,24 @@ class ProcessingJob(BaseModel):
     def validate_lifecycle(self) -> "ProcessingJob":
         if (self.job_type == "entry_processing") != (self.entry_id is not None):
             raise ValueError("job type and entry must agree")
+        expected_priority = {
+            "user": 100,
+            "publish": 80,
+            "shadow": 60,
+            "backfill": 10,
+        }[self.execution_mode]
+        if self.priority != expected_priority:
+            raise ValueError("job priority does not match its execution mode")
+        if self.job_type == "entry_processing" and self.execution_mode not in {
+            "user",
+            "backfill",
+        }:
+            raise ValueError("entry job execution mode is invalid")
+        if self.job_type == "reflection_synthesis" and self.execution_mode not in {
+            "shadow",
+            "publish",
+        }:
+            raise ValueError("synthesis job execution mode is invalid")
         if self.job_type == "entry_processing" and self.source_version != str(self.entry_id):
             raise ValueError("entry source version must equal the entry id")
         if self.job_type == "reflection_synthesis" and (

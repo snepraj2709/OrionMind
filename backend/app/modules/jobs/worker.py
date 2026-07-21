@@ -4,8 +4,11 @@ import logging
 import signal
 import time
 from threading import Event
+from typing import Literal
+from uuid import UUID
 
 from app.modules.jobs.service import JobService
+from app.modules.jobs.types import BackfillStatus
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 
 
@@ -34,8 +37,29 @@ class ProcessingWorker:
     def recover_stale(self, *, uow: UnitOfWorkFactory) -> int:
         return self._service.recover_stale(stale_seconds=self._stale_seconds, uow=uow)
 
-    def enqueue_backfill(self, *, batch_size: int, uow: UnitOfWorkFactory) -> int:
-        return self._service.enqueue_backfill(batch_size=batch_size, uow=uow)
+    def plan_backfill(self, *, batch_size: int, uow: UnitOfWorkFactory) -> UUID:
+        return self._service.plan_backfill(batch_size=batch_size, uow=uow)
+
+    def backfill_status(
+        self, *, run_id: UUID, uow: UnitOfWorkFactory
+    ) -> BackfillStatus:
+        return self._service.backfill_status(run_id=run_id, uow=uow)
+
+    def run_backfill_batch(
+        self, *, run_id: UUID, uow: UnitOfWorkFactory
+    ) -> BackfillStatus:
+        return self._service.run_backfill_batch(run_id=run_id, uow=uow)
+
+    def set_backfill_state(
+        self,
+        *,
+        run_id: UUID,
+        action: Literal["pause", "resume"],
+        uow: UnitOfWorkFactory,
+    ) -> BackfillStatus:
+        return self._service.set_backfill_state(
+            run_id=run_id, action=action, uow=uow
+        )
 
     def schedule_reflections(self, *, uow: UnitOfWorkFactory) -> int:
         return self._service.schedule_reflections(uow=uow)

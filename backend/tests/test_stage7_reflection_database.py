@@ -53,6 +53,12 @@ NEW_TABLES = (
     "reflection_snapshot_insights",
     "reflection_snapshot_evidence",
     "reflection_feedback",
+    "reflection_shadow_runs",
+    "processing_backfill_runs",
+    "processing_backfill_users",
+)
+USER_OWNED_NEW_TABLES = tuple(
+    table for table in NEW_TABLES if table != "processing_backfill_runs"
 )
 NEW_FUNCTIONS = (
     "apply_combined_entry_processing_job",
@@ -60,14 +66,15 @@ NEW_FUNCTIONS = (
     "apply_entry_analysis",
     "apply_reflection_snapshot",
     "claim_processing_job",
+    "complete_reflection_shadow",
     "complete_processing_job",
     "delete_entry_with_reflection_for_owner",
     "enqueue_processing_job",
-    "enqueue_entry_processing_backfill",
     "enqueue_processing_job_for_owner",
     "fail_processing_job",
     "get_user_pii_vault_for_update",
     "get_entry_processing_payload",
+    "get_entry_processing_backfill_status",
     "get_entry_quality_history",
     "get_reflection_candidate_basis",
     "get_reflection_synthesis_basis",
@@ -75,11 +82,14 @@ NEW_FUNCTIONS = (
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
     "put_reflection_feedback_for_owner",
+    "plan_entry_processing_backfill",
     "recover_stale_processing_jobs",
     "retry_entry_processing_for_owner",
     "renew_processing_job",
+    "run_entry_processing_backfill_batch",
     "save_user_pii_vault",
     "schedule_reflection_jobs",
+    "set_entry_processing_backfill_state",
 )
 RETIRED_ENTRY_APPLY_SIGNATURE = (
     "public.apply_legacy_entry_processing_job("
@@ -134,6 +144,19 @@ def owner(connection: psycopg.Connection, user_id: UUID) -> None:
 
 def worker(connection: psycopg.Connection) -> None:
     connection.execute("SET LOCAL ROLE orion_worker")
+
+
+def schedule_reflections(
+    connection: psycopg.Connection,
+    moment: str,
+    user_ids: tuple[UUID, ...],
+    *,
+    mode: str = "publish",
+) -> int:
+    return connection.execute(
+        "SELECT public.schedule_reflection_jobs(%s, %s, %s)",
+        (moment, mode, list(user_ids)),
+    ).fetchone()[0]
 
 
 def admin(connection: psycopg.Connection) -> None:
@@ -310,6 +333,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0008_deterministic_reflection_candidates.sql",
         "0009_reflection_synthesis.sql",
         "0010_reflections_api.sql",
+        "0011_reflection_rollout.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -483,7 +507,7 @@ def test_schema_constraints_owner_rls_and_account_cascades() -> None:
 
     with psycopg.connect(value) as connection:
         connection.execute("DELETE FROM auth.users WHERE id = %s", (USER_ONE,))
-        for table in NEW_TABLES:
+        for table in USER_OWNED_NEW_TABLES:
             assert connection.execute(
                 sql.SQL("SELECT count(*) FROM public.{} WHERE user_id = %s").format(
                     sql.Identifier(table)
@@ -727,18 +751,38 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
         connection.commit()
         with connection.transaction():
             worker(connection)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-07-21 12:29:00+00')"
-            ).fetchone() == (0,)
+            assert schedule_reflections(
+                connection,
+                "2026-07-21 12:29:00+00",
+                (USER_ONE, USER_TWO, USER_THREE),
+            ) == 0
         assert connection.execute("SELECT count(*) FROM public.processing_jobs").fetchone() == (0,)
         with connection.transaction():
             worker(connection)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-07-21 12:31:00+00')"
-            ).fetchone() == (1,)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-07-21 13:31:00+00')"
-            ).fetchone() == (0,)
+            assert schedule_reflections(
+                connection,
+                "2026-07-21 12:31:00+00",
+                (USER_TWO, USER_THREE),
+            ) == 0
+        admin(connection)
+        assert connection.execute(
+            "SELECT last_schedule_local_date FROM public.reflection_user_state "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone() == (None,)
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert schedule_reflections(
+                connection,
+                "2026-07-21 12:31:00+00",
+                (USER_ONE, USER_TWO, USER_THREE),
+            ) == 1
+            assert schedule_reflections(
+                connection,
+                "2026-07-21 13:31:00+00",
+                (USER_ONE, USER_TWO, USER_THREE),
+            ) == 0
         connection.commit()
         assert connection.execute(
             "SELECT user_id, source_version FROM public.processing_jobs"
@@ -762,12 +806,16 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
         connection.commit()
         with connection.transaction():
             worker(connection)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-07-21 14:00:00+00')"
-            ).fetchone() == (0,)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-07-22 12:31:00+00')"
-            ).fetchone() == (1,)
+            assert schedule_reflections(
+                connection,
+                "2026-07-21 14:00:00+00",
+                (USER_ONE, USER_TWO, USER_THREE),
+            ) == 0
+            assert schedule_reflections(
+                connection,
+                "2026-07-22 12:31:00+00",
+                (USER_ONE, USER_TWO, USER_THREE),
+            ) == 1
         assert connection.execute(
             "SELECT count(*) FROM public.processing_jobs WHERE user_id = %s "
             "AND job_type = 'reflection_synthesis' AND source_version = '15'",
@@ -788,12 +836,16 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
         connection.commit()
         with connection.transaction():
             worker(connection)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-07-22 21:59:00+00')"
-            ).fetchone() == (0,)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-07-22 22:01:00+00')"
-            ).fetchone() == (1,)
+            assert schedule_reflections(
+                connection,
+                "2026-07-22 21:59:00+00",
+                (USER_ONE, USER_TWO, USER_THREE),
+            ) == 0
+            assert schedule_reflections(
+                connection,
+                "2026-07-22 22:01:00+00",
+                (USER_ONE, USER_TWO, USER_THREE),
+            ) == 1
         admin(connection)
         assert connection.execute(
             "SELECT count(*) FROM public.processing_jobs WHERE user_id = %s "
@@ -823,12 +875,12 @@ def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps()
         connection.commit()
         with connection.transaction():
             worker(connection)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-03-08 21:59:59+00')"
-            ).fetchone() == (0,)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-03-08 22:00:00+00')"
-            ).fetchone() == (1,)
+            assert schedule_reflections(
+                connection, "2026-03-08 21:59:59+00", (USER_ONE, USER_TWO)
+            ) == 0
+            assert schedule_reflections(
+                connection, "2026-03-08 22:00:00+00", (USER_ONE, USER_TWO)
+            ) == 1
 
         admin(connection)
         connection.execute(
@@ -841,12 +893,12 @@ def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps()
         connection.commit()
         with connection.transaction():
             worker(connection)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-03-29 16:59:59+00')"
-            ).fetchone() == (0,)
-            assert connection.execute(
-                "SELECT public.schedule_reflection_jobs('2026-03-29 17:00:00+00')"
-            ).fetchone() == (1,)
+            assert schedule_reflections(
+                connection, "2026-03-29 16:59:59+00", (USER_ONE, USER_TWO)
+            ) == 0
+            assert schedule_reflections(
+                connection, "2026-03-29 17:00:00+00", (USER_ONE, USER_TWO)
+            ) == 1
 
         admin(connection)
         connection.execute(
@@ -859,9 +911,9 @@ def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps()
     def sweep(_index: int) -> int:
         with psycopg.connect(value) as concurrent, concurrent.transaction():
             worker(concurrent)
-            return concurrent.execute(
-                "SELECT public.schedule_reflection_jobs('2026-03-30 17:00:00+00')"
-            ).fetchone()[0]
+            return schedule_reflections(
+                concurrent, "2026-03-30 17:00:00+00", (USER_ONE, USER_TWO)
+            )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(sweep, range(2)))
@@ -872,6 +924,97 @@ def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps()
             "AND job_type = 'reflection_synthesis' AND source_version = '24'",
             (USER_TWO,),
         ).fetchone() == (1,)
+
+
+def test_shadow_completion_is_atomic_idempotent_and_snapshot_free() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    with psycopg.connect(value) as connection:
+        connection.execute(
+            "UPDATE public.user_profiles SET timezone = 'Asia/Kolkata' "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) VALUES "
+            "(%s, 7, 3, 2, ARRAY['2026-07-19'::date, '2026-07-20'::date])",
+            (USER_ONE,),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert schedule_reflections(
+                connection,
+                "2026-07-20 12:31:00+00",
+                (USER_ONE,),
+                mode="shadow",
+            ) == 1
+            claimed = connection.execute(
+                "SELECT job_id, execution_mode, claim_token "
+                "FROM public.claim_processing_job('shadow-worker')"
+            ).fetchone()
+        assert claimed is not None
+        job_id, execution_mode, claim_token = claimed
+        assert execution_mode == "shadow"
+
+        with pytest.raises(psycopg.errors.RaiseException):
+            with connection.transaction():
+                worker(connection)
+                connection.execute(
+                    "SELECT public.complete_reflection_shadow("
+                    "%s, 'shadow-worker', %s, 4, 2, true)",
+                    (job_id, uuid4()),
+                )
+
+        with connection.transaction():
+            worker(connection)
+            shadow_id = connection.execute(
+                "SELECT public.complete_reflection_shadow("
+                "%s, 'shadow-worker', %s, 4, 2, true)",
+                (job_id, claim_token),
+            ).fetchone()[0]
+            replay = connection.execute(
+                "SELECT public.complete_reflection_shadow("
+                "%s, 'shadow-worker', %s, 4, 2, true)",
+                (job_id, claim_token),
+            ).fetchone()[0]
+            assert replay == shadow_id
+        admin(connection)
+        assert connection.execute(
+            "SELECT status, execution_mode, priority FROM public.processing_jobs "
+            "WHERE id = %s",
+            (job_id,),
+        ).fetchone() == ("completed", "shadow", 60)
+        assert connection.execute(
+            "SELECT candidate_count, selected_count, provider_called "
+            "FROM public.reflection_shadow_runs WHERE id = %s",
+            (shadow_id,),
+        ).fetchone() == (4, 2, True)
+        assert connection.execute(
+            "SELECT (SELECT count(*) FROM public.pattern_candidates), "
+            "(SELECT count(*) FROM public.reflection_snapshots)"
+        ).fetchone() == (0, 0)
+        connection.commit()
+
+        with connection.transaction():
+            worker(connection)
+            assert schedule_reflections(
+                connection,
+                "2026-07-21 12:31:00+00",
+                (USER_ONE,),
+                mode="publish",
+            ) == 1
+        admin(connection)
+        assert connection.execute(
+            "SELECT status, execution_mode, priority, attempts "
+            "FROM public.processing_jobs WHERE id = %s",
+            (job_id,),
+        ).fetchone() == ("pending", "publish", 80, 0)
+        assert connection.execute(
+            "SELECT count(*) FROM public.reflection_snapshots"
+        ).fetchone() == (0,)
 
 
 def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> None:
@@ -1096,14 +1239,17 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
             "SELECT status FROM public.reflection_snapshots WHERE id = %s", (snapshot_id,)
         ).fetchone() == ("stale",)
         replacement = connection.execute(
-            "SELECT status, source_version::bigint FROM public.processing_jobs "
+            "SELECT status FROM public.processing_jobs "
             "WHERE user_id = %s AND job_type = 'reflection_synthesis' "
             "AND source_version <> %s ORDER BY created_at DESC LIMIT 1",
             (USER_ONE, str(source_three)),
         ).fetchone()
-        assert replacement is not None
-        assert replacement[0] == "pending"
-        assert replacement[1] > source_three
+        assert replacement is None
+        assert connection.execute(
+            "SELECT last_schedule_local_date FROM public.reflection_user_state "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone() == (None,)
 
 
 def test_snapshot_versions_reject_stale_claims_and_preserve_concurrent_counters() -> None:

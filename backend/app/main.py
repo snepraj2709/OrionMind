@@ -239,6 +239,7 @@ def create_app(
         cipher=resolved_content_cipher,
         basis_days=resolved_settings.REFLECTION_BASIS_DAYS,
         enabled=resolved_settings.REFLECTION_API_ENABLED,
+        allowed_user_ids=resolved_settings.reflection_rollout_user_ids(),
     )
     app.state.content_cipher = resolved_content_cipher
     app.state.entry_service = EntryService(
@@ -257,6 +258,14 @@ def create_app(
         cipher=resolved_content_cipher,
         reflection_engine_enabled=resolved_settings.REFLECTION_ENGINE_ENABLED,
         reflection_scheduler_enabled=resolved_settings.REFLECTION_SCHEDULER_ENABLED,
+        reflection_rollout_mode=resolved_settings.REFLECTION_ROLLOUT_MODE,
+        reflection_rollout_user_ids=resolved_settings.reflection_rollout_user_ids(),
+        backfill_max_queue_depth=(
+            resolved_settings.PROCESSING_BACKFILL_MAX_QUEUE_DEPTH
+        ),
+        backfill_max_oldest_pending_seconds=(
+            resolved_settings.PROCESSING_BACKFILL_MAX_OLDEST_PENDING_SECONDS
+        ),
         heartbeat_interval_seconds=(
             resolved_settings.PROCESSING_JOB_HEARTBEAT_SECONDS
         ),
