@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import re
 import logging
+import re
 from collections import defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from itertools import combinations
 from statistics import fmean
 from typing import Any, cast
@@ -40,6 +40,7 @@ from app.modules.reflection_engine.schemas import (
     PreviousCandidate,
     RecurringLoopProposal,
     RecurringLoopStructure,
+    ReflectionCriticOutput,
     ReflectionSynthesisOutput,
     SynthesisEvidenceReference,
 )
@@ -181,15 +182,23 @@ class ReflectionEngineService:
             previous_candidates=previous,
         )
         feedback = self._feedback_qualifications(raw)
+        previously_rejected = {
+            candidate.id for candidate in previous if candidate.status == "rejected"
+        }
+        previous_by_id = {candidate.id: candidate for candidate in previous}
         publishable = [
             candidate
             for candidate in batch.candidates
-            if candidate.publication_gate_passed and candidate.status != "rejected"
+            if candidate.publication_gate_passed
+            and candidate.status != "rejected"
+            and candidate.id not in previously_rejected
         ]
         contexts = {
             str(candidate.id): self._synthesis_candidate_context(
                 candidate,
                 signals=signals,
+                basis_end=basis.basis_end,
+                previous_candidate=previous_by_id.get(candidate.id),
                 feedback_qualification=feedback.get(str(candidate.id)),
             )
             for candidate in publishable
@@ -326,8 +335,12 @@ class ReflectionEngineService:
         candidate: ConstructedCandidate,
         *,
         signals: Sequence[CandidateSignal],
+        basis_end: date | None,
+        previous_candidate: PreviousCandidate | None,
         feedback_qualification: str | None,
     ) -> dict[str, object]:
+        if basis_end is None:
+            raise SnapshotValidationError("synthesis basis end is unavailable")
         by_id = {signal.id: signal for signal in signals}
         evidence = []
         for role, identifiers in (
@@ -348,8 +361,35 @@ class ReflectionEngineService:
                         "need_tags": signal.need_tags,
                         "loop_role": signal.loop_role,
                         "confidence": signal.confidence,
+                        "is_new_since_previous": (
+                            previous_candidate is None
+                            or signal.analysis_source_version
+                            > previous_candidate.last_source_version
+                        ),
                     }
                 )
+        support = [by_id[signal_id] for signal_id in candidate.support_signal_ids]
+
+        def activation(days: int | None) -> dict[str, int]:
+            start = (
+                date.min if days is None else basis_end - timedelta(days=days - 1)
+            )
+            selected = [signal for signal in support if signal.entry_date >= start]
+            return {
+                "supporting_signals": len(selected),
+                "supporting_entries": len({signal.entry_id for signal in selected}),
+                "supporting_dates": len({signal.entry_date for signal in selected}),
+            }
+
+        prior_context = None
+        if previous_candidate is not None:
+            prior_context = {
+                "status": previous_candidate.status,
+                "score": previous_candidate.score,
+                "last_source_version": previous_candidate.last_source_version,
+                "structure": previous_candidate.payload.get("structure"),
+                "confidence_label": previous_candidate.payload.get("confidence_label"),
+            }
         return {
             "candidate_id": str(candidate.id),
             "pattern_type": candidate.pattern_type,
@@ -358,6 +398,12 @@ class ReflectionEngineService:
             "score_components": candidate.score_components.model_dump(mode="json"),
             "deterministic_structure": candidate.structure.model_dump(mode="json"),
             "evidence": evidence,
+            "range_activation": {
+                "7d": activation(7),
+                "30d": activation(30),
+                "all": activation(None),
+            },
+            "previous_candidate": prior_context,
             "feedback_qualification": feedback_qualification,
         }
 
@@ -701,10 +747,15 @@ class ReflectionEngineService:
             )
             if not isinstance(payload, dict):
                 raise ValueError("candidate signal payload is invalid")
+            materialized = {
+                key: value
+                for key, value in item.items()
+                if key not in {"payload_envelope", "entry_content_envelope"}
+            }
             signals.append(
                 CandidateSignal.model_validate(
                     {
-                        **item,
+                        **materialized,
                         "normalized_label": payload.get("normalized_label"),
                         "interpretation": payload.get("interpretation"),
                         "source_quote": payload.get("source_quote"),
@@ -1164,6 +1215,85 @@ def _is_counter(signal: CandidateSignal) -> bool:
     return COUNTER_LANGUAGE.search(
         f"{signal.normalized_label} {signal.interpretation}"
     ) is not None
+
+
+def critic_required(candidate: ConstructedCandidate) -> bool:
+    """Return the exact deterministic P0 critic routing decision."""
+
+    threshold = PUBLICATION_THRESHOLDS[candidate.pattern_type]
+    return (
+        round(abs(candidate.score - threshold), 10) <= 0.05
+        or candidate.score_components.contradiction >= 0.20
+    )
+
+
+def _critic_allows_publication(value: object) -> bool:
+    critique = (
+        value
+        if isinstance(value, ReflectionCriticOutput)
+        else ReflectionCriticOutput.model_validate(value)
+    )
+    return (
+        critique.recommended_action == "publish"
+        and critique.entailed
+        and not critique.overreaches
+        and not critique.contradictory_evidence_ignored
+        and not critique.diagnostic_language
+        and critique.evidence_diversity_adequate
+    )
+
+
+def _references_match(
+    references: Sequence[SynthesisEvidenceReference],
+    expected: Collection[tuple[UUID, str]],
+) -> bool:
+    actual = [(item.signal_id, item.evidence_role) for item in references]
+    return len(actual) == len(set(actual)) and set(actual) == set(expected)
+
+
+def _final_transition_support(
+    candidate: ConstructedCandidate,
+) -> Mapping[str, tuple[int, int]]:
+    structure = candidate.structure
+    if not isinstance(structure, RecurringLoopStructure):
+        return {}
+    # These keys were generated only from transitions that P0-05 proved across
+    # at least two chains and two entries. The model cannot alter the role or
+    # fingerprint fields, so presence remains the authoritative local proof.
+    return {key: (2, 2) for key in structure.transition_keys}
+
+
+def _select_snapshot_candidates(
+    candidates: Sequence[ConstructedCandidate],
+) -> list[ConstructedCandidate]:
+    ordered = sorted(
+        candidates,
+        key=lambda item: (-item.score, item.canonical_key, str(item.id)),
+    )
+    selected: list[ConstructedCandidate] = []
+    for pattern_type in ("hidden_driver", "recurring_loop"):
+        candidate = next(
+            (item for item in ordered if item.pattern_type == pattern_type),
+            None,
+        )
+        if candidate is not None:
+            selected.append(candidate)
+    selected.extend(item for item in ordered if item.pattern_type == "inner_tension")
+    return selected
+
+
+def _snapshot_candidate_status(
+    candidate: ConstructedCandidate,
+    *,
+    published: bool,
+) -> ConstructedCandidate:
+    if published:
+        status = "published"
+    elif candidate.status in {"rejected", "weakened", "superseded"}:
+        status = candidate.status
+    else:
+        status = "candidate"
+    return candidate.model_copy(update={"status": status})
 
 
 def _candidate_id(user_id: UUID, pattern_type: str, canonical_key: str) -> UUID:

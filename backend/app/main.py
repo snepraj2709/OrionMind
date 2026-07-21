@@ -28,6 +28,12 @@ from app.modules.processing.provider import (
 from app.modules.processing.redaction import PiiRedactor
 from app.modules.processing.repository import ProcessingRepository
 from app.modules.processing.service import ProcessingService
+from app.modules.reflection_engine.provider import (
+    OpenAIReflectionProvider,
+    UnavailableReflectionProvider,
+)
+from app.modules.reflection_engine.repository import ReflectionEngineRepository
+from app.modules.reflection_engine.service import ReflectionEngineService
 from app.modules.past_imports.repository import PastImportRepository
 from app.modules.past_imports.service import PastImportService
 from app.openapi_contract import install_local_openapi
@@ -104,6 +110,20 @@ def _build_content_cipher(settings: Settings):
         return UnavailableContentCipher()
 
 
+def _build_reflection_provider(settings: Settings):
+    api_key = settings.OPENAI_API_KEY.get_secret_value().strip()
+    if not api_key:
+        return UnavailableReflectionProvider()
+    return OpenAIReflectionProvider(
+        build_openai_client(api_key),
+        synthesis_model=settings.OPENAI_REFLECTION_SYNTHESIS_MODEL,
+        critic_model=settings.OPENAI_REFLECTION_CRITIC_MODEL,
+        connect_timeout=settings.OPENAI_CONNECT_TIMEOUT_SECONDS,
+        response_timeout=settings.OPENAI_RESPONSE_TIMEOUT_SECONDS,
+        total_timeout=settings.PROCESSING_TOTAL_TIMEOUT_SECONDS,
+    )
+
+
 def create_app(
     *,
     settings: Settings | None = None,
@@ -111,6 +131,7 @@ def create_app(
     token_verifier=None,
     account_auth=None,
     extraction_provider=None,
+    reflection_provider=None,
     content_cipher=None,
     pii_redactor=None,
     transcriber=None,
@@ -121,6 +142,9 @@ def create_app(
     verifier = token_verifier or _build_token_verifier(resolved_settings)
     resolved_account_auth = account_auth or _build_account_auth(resolved_settings)
     resolved_extraction_provider = extraction_provider or _build_extraction_provider(
+        resolved_settings
+    )
+    resolved_reflection_provider = reflection_provider or _build_reflection_provider(
         resolved_settings
     )
     resolved_content_cipher = content_cipher or _build_content_cipher(resolved_settings)
@@ -202,6 +226,12 @@ def create_app(
         model_id=resolved_settings.OPENAI_ENTRY_ANALYSIS_MODEL,
         reflection_threshold=resolved_settings.REFLECTION_REVIEW_THRESHOLD,
     )
+    app.state.reflection_engine_service = ReflectionEngineService(
+        repository=ReflectionEngineRepository(),
+        provider=resolved_reflection_provider,
+        cipher=resolved_content_cipher,
+        basis_days=resolved_settings.REFLECTION_BASIS_DAYS,
+    )
     app.state.content_cipher = resolved_content_cipher
     app.state.entry_service = EntryService(
         repository=EntryRepository(),
@@ -215,7 +245,10 @@ def create_app(
     app.state.job_service = JobService(
         repository=JobRepository(),
         processing=app.state.processing_service,
+        reflection=app.state.reflection_engine_service,
         cipher=resolved_content_cipher,
+        reflection_engine_enabled=resolved_settings.REFLECTION_ENGINE_ENABLED,
+        reflection_scheduler_enabled=resolved_settings.REFLECTION_SCHEDULER_ENABLED,
         heartbeat_interval_seconds=(
             resolved_settings.PROCESSING_JOB_HEARTBEAT_SECONDS
         ),
@@ -226,6 +259,9 @@ def create_app(
         stale_seconds=resolved_settings.PROCESSING_JOB_STALE_SECONDS,
         recovery_interval_seconds=(
             resolved_settings.PROCESSING_JOB_RECOVERY_INTERVAL_SECONDS
+        ),
+        scheduler_interval_seconds=(
+            resolved_settings.REFLECTION_SCHEDULER_POLL_SECONDS
         ),
     )
 

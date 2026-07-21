@@ -2,16 +2,42 @@
 
 ## Stage gates
 
-| Stage                             | Status                               | Implementation evidence                                    | Review passes | Verification                                                                                                                  | Blockers                                                             |
-| --------------------------------- | ------------------------------------ | ---------------------------------------------------------- | ------------: | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 0 — Reference contract            | Verified complete                    | `reference-manifest.md`, blueprint, trimmed OpenAPI        |             2 | 13 operations; sole anonymous health; 41 reachable refs; zero dangling/unreachable refs; source parity and diff hygiene pass  | None                                                                 |
-| 1 — Shared platform               | Verified complete                    | HTTP/auth/config/UoW/health platform                       |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass               | None                                                                 |
-| 2 — Database/profile/account      | Verified complete; live proof waived | Fresh schema, migration runner, profile/account feature    |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | User explicitly waived unavailable live Supabase proof on 2026-07-21 |
-| 3 — Processing core               | Verified complete                    | Strict extraction, bounded provider, atomic RPCs           |             3 | 61 full tests; structured validation, fallback ceiling, source spans, threshold, rollback, stale-token and concurrency pass   | None                                                                 |
-| 4 — Drafts/text/list/detail/retry | Verified complete                    | AES-GCM drafts and complete owner text lifecycle           |             3 | 70 full tests; encryption, replay, concurrency, pagination, detail, retry, RLS and privacy proofs pass                        | None                                                                 |
-| 5 — Voice/past imports            | Locally verified                     | Streaming voice boundary and durable worker queue          |             3 | 97 full tests; genuine audio families, cleanup, replay, encryption, queue tokens, RLS/grants, heartbeat and recovery pass     | Live Supabase proof waived                                           |
-| 6 — Contract freeze/release proof | Locally verified; live proof waived  | Frozen artifact, limits, readiness, worker, release docs   |             3 | 127 full tests; OpenAPI/route, rate, readiness/recovery, privacy, Docker build/runtime and migration parity pass              | Live two-account Supabase proof waived; deployment not authorized    |
-| 7 — Reflection Engine P0-01–P0-05 | Locally verified through P0-05       | Deterministic candidates, scoring, and evidence validation |             2 | 191 full tests; exact formulas/gates, evidence safety, atomic idempotent apply, rejected re-entry, and schema parity pass     | P0-06 and later are not implemented; production KMS remains blocked  |
+| Stage                             | Status                               | Implementation evidence                                      | Review passes | Verification                                                                                                                  | Blockers                                                             |
+| --------------------------------- | ------------------------------------ | ------------------------------------------------------------ | ------------: | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| 0 — Reference contract            | Verified complete                    | `reference-manifest.md`, blueprint, trimmed OpenAPI          |             2 | 13 operations; sole anonymous health; 41 reachable refs; zero dangling/unreachable refs; source parity and diff hygiene pass  | None                                                                 |
+| 1 — Shared platform               | Verified complete                    | HTTP/auth/config/UoW/health platform                         |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass               | None                                                                 |
+| 2 — Database/profile/account      | Verified complete; live proof waived | Fresh schema, migration runner, profile/account feature      |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | User explicitly waived unavailable live Supabase proof on 2026-07-21 |
+| 3 — Processing core               | Verified complete                    | Strict extraction, bounded provider, atomic RPCs             |             3 | 61 full tests; structured validation, fallback ceiling, source spans, threshold, rollback, stale-token and concurrency pass   | None                                                                 |
+| 4 — Drafts/text/list/detail/retry | Verified complete                    | AES-GCM drafts and complete owner text lifecycle             |             3 | 70 full tests; encryption, replay, concurrency, pagination, detail, retry, RLS and privacy proofs pass                        | None                                                                 |
+| 5 — Voice/past imports            | Locally verified                     | Streaming voice boundary and durable worker queue            |             3 | 97 full tests; genuine audio families, cleanup, replay, encryption, queue tokens, RLS/grants, heartbeat and recovery pass     | Live Supabase proof waived                                           |
+| 6 — Contract freeze/release proof | Locally verified; live proof waived  | Frozen artifact, limits, readiness, worker, release docs     |             3 | 127 full tests; OpenAPI/route, rate, readiness/recovery, privacy, Docker build/runtime and migration parity pass              | Live two-account Supabase proof waived; deployment not authorized    |
+| 7 — Reflection Engine P0-01–P0-06 | Locally verified through P0-06       | Worker scheduler, synthesis, critic, and immutable snapshots |             3 | 214 full tests; local-time scheduling, model routing, final validation, atomic snapshots, concurrency, and parity pass        | P0-07 and later are not implemented; production KMS remains blocked  |
+
+## P0-06 scheduler and synthesis evidence
+
+- The generalized processing worker runs scheduler sweeps at the configured interval; FastAPI
+  startup never schedules. PostgreSQL converts only `user_profiles.timezone`, checks at or after
+  18:00 local time once per local date, catches up after downtime, and serializes each user with the
+  existing advisory lock.
+- Scheduling implements only the approved entry/date/signal trigger. The daily check is recorded
+  even when ineligible, source-version uniqueness makes repeated sweeps idempotent, and entries
+  accepted after a completed check remain pending until the next local date.
+- Synthesis loads a claim-bound, accepted-only 90-day basis, decrypts only in the worker, constructs
+  P0-05 candidates locally, and sends Terra only redacted candidate aggregates, selected opaque
+  evidence IDs, prior candidate state, range activation, and non-evidentiary feedback context.
+- Terra and conditional Sol use strict Responses schemas with SDK retries disabled,
+  `truncation="disabled"`, keyed safety identifiers, and `store=False`. Sol runs only within 0.05 of
+  the type threshold or at contradiction 0.20 and may return only publish/discard; local code owns
+  every final decision.
+- Every proposal reruns the complete evidence/language validator. Invalid IDs, roles, offsets,
+  quotes, diversity, dominance, counterevidence, loop closure, tension sides, enums, or unsafe
+  wording are discarded without a repair call.
+- Migration 0009 adds the claim-bound synthesis basis and replaces snapshot apply with one
+  advisory-locked atomic operation. It validates the authoritative basis and section union, applies
+  monotonic candidate versions/evidence, inserts immutable versioned snapshots, completes the job,
+  and recomputes counters strictly after the snapshot source so concurrent accepted entries remain.
+- Focused P0-06 scheduler/synthesis/scoring/privacy/queue matrix: 74 passed. Full backend suite: 214
+  passed with one third-party pending-deprecation warning from Starlette's multipart import.
 
 ## P0-05 deterministic candidate evidence
 

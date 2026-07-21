@@ -112,7 +112,16 @@ class OpenAIReflectionProvider:
             safety_identifier=safety_identifier,
         )
 
-    def _parse(self, *, role, model, instructions, payload, output_model, safety_identifier):
+    def _parse(
+        self,
+        *,
+        role: str,
+        model: str,
+        instructions: str,
+        payload: str,
+        output_model: Any,
+        safety_identifier: str,
+    ):
         client = self._client.with_options(max_retries=0, timeout=self._timeout)
         started = time.monotonic()
         try:
@@ -134,7 +143,11 @@ class OpenAIReflectionProvider:
                 raise ReflectionProviderResponseError(
                     f"reflection {role} response is unavailable"
                 )
-            result = parsed if isinstance(parsed, output_model) else output_model.model_validate(parsed)
+            result = (
+                parsed
+                if isinstance(parsed, output_model)
+                else output_model.model_validate(parsed)
+            )
         except (ReflectionProviderResponseError, ValidationError) as exc:
             logger.info(
                 "reflection_model_attempt role=%s model=%s outcome=invalid duration_ms=%d",

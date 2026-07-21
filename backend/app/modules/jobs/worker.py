@@ -20,11 +20,13 @@ class ProcessingWorker:
         poll_seconds: float,
         stale_seconds: int,
         recovery_interval_seconds: float,
+        scheduler_interval_seconds: float = 60.0,
     ) -> None:
         self._service = service
         self._poll_seconds = poll_seconds
         self._stale_seconds = stale_seconds
         self._recovery_interval = recovery_interval_seconds
+        self._scheduler_interval = scheduler_interval_seconds
 
     def run_one(self, *, worker_id: str, uow: UnitOfWorkFactory) -> bool:
         return self._service.run_one(worker_id=worker_id, uow=uow)
@@ -35,6 +37,9 @@ class ProcessingWorker:
     def enqueue_backfill(self, *, batch_size: int, uow: UnitOfWorkFactory) -> int:
         return self._service.enqueue_backfill(batch_size=batch_size, uow=uow)
 
+    def schedule_reflections(self, *, uow: UnitOfWorkFactory) -> int:
+        return self._service.schedule_reflections(uow=uow)
+
     def run(self, *, worker_id: str, uow: UnitOfWorkFactory) -> None:
         stop = Event()
 
@@ -44,6 +49,7 @@ class ProcessingWorker:
         previous_term = signal.signal(signal.SIGTERM, request_stop)
         previous_int = signal.signal(signal.SIGINT, request_stop)
         last_recovery = 0.0
+        last_scheduler = 0.0
         try:
             while not stop.is_set():
                 now = time.monotonic()
@@ -54,6 +60,16 @@ class ProcessingWorker:
                     except Exception:
                         logger.error("processing_recovery_failed")
                     last_recovery = now
+                if now - last_scheduler >= self._scheduler_interval:
+                    try:
+                        enqueued = self.schedule_reflections(uow=uow)
+                        logger.info(
+                            "reflection_scheduler_complete enqueued=%d",
+                            enqueued,
+                        )
+                    except Exception:
+                        logger.error("reflection_scheduler_failed")
+                    last_scheduler = now
                 try:
                     processed = self.run_one(worker_id=worker_id, uow=uow)
                 except Exception:

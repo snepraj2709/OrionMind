@@ -19,6 +19,16 @@ from app.modules.processing.service import (
     PrivacyValidationError,
     ProcessingService,
 )
+from app.modules.reflection_engine.provider import (
+    ReflectionProviderResponseError,
+    ReflectionProviderUnavailableError,
+    reflection_provider_failure_is_retryable,
+)
+from app.modules.reflection_engine.repository import StaleSynthesisClaimError
+from app.modules.reflection_engine.service import (
+    ReflectionEngineService,
+    SnapshotValidationError,
+)
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 from app.shared.security.encryption import ContentCipher, ContentUnavailableError
 
@@ -31,6 +41,9 @@ ALLOWED_FAILURES = frozenset(
         "PRIVACY_VALIDATION_FAILED",
         "PROCESSING_FAILED",
         "PROVIDER_UNAVAILABLE",
+        "REFLECTION_DISABLED",
+        "REFLECTION_PROVIDER_UNAVAILABLE",
+        "INVALID_SYNTHESIS",
         "UNSUPPORTED_JOB_TYPE",
         "WORKER_INTERRUPTED",
     }
@@ -48,11 +61,17 @@ class JobService:
         repository: JobRepository,
         processing: ProcessingService,
         cipher: ContentCipher,
+        reflection: ReflectionEngineService | None = None,
+        reflection_engine_enabled: bool = False,
+        reflection_scheduler_enabled: bool = False,
         heartbeat_interval_seconds: float = 30.0,
     ) -> None:
         self._repository = repository
         self._processing = processing
         self._cipher = cipher
+        self._reflection = reflection
+        self._reflection_engine_enabled = reflection_engine_enabled
+        self._reflection_scheduler_enabled = reflection_scheduler_enabled
         self._heartbeat_interval = heartbeat_interval_seconds
 
     def run_one(self, *, worker_id: str, uow: UnitOfWorkFactory) -> bool:
@@ -84,10 +103,48 @@ class JobService:
                 work.session, batch_size=batch_size, run_after=run_after
             )
 
+    def schedule_reflections(
+        self,
+        *,
+        uow: UnitOfWorkFactory,
+        now: datetime | None = None,
+    ) -> int:
+        if not self._reflection_scheduler_enabled:
+            return 0
+        scheduled_at = now or datetime.now(timezone.utc)
+        with uow.for_worker() as work:
+            return self._repository.schedule_reflections(
+                work.session,
+                now=scheduled_at,
+            )
+
     def _dispatch(
         self, *, claim: JobClaim, worker_id: str, uow: UnitOfWorkFactory
     ) -> DispatchResult:
         try:
+            if claim.job_type == "reflection_synthesis":
+                if claim.entry_id is not None:
+                    raise SnapshotValidationError("synthesis job has an entry")
+                if not self._reflection_engine_enabled or self._reflection is None:
+                    return self._record_failure(
+                        claim=claim,
+                        worker_id=worker_id,
+                        uow=uow,
+                        error_code="REFLECTION_DISABLED",
+                        retryable=False,
+                    )
+                with self._heartbeat(
+                    claim=claim,
+                    worker_id=worker_id,
+                    uow=uow,
+                    completion_inside=True,
+                ):
+                    self._reflection.run_synthesis_job(
+                        claim=claim,
+                        worker_id=worker_id,
+                        uow=uow,
+                    )
+                return DispatchResult("completed")
             if claim.job_type != "entry_processing" or claim.entry_id is None:
                 return self._record_failure(
                     claim=claim,
@@ -125,10 +182,17 @@ class JobService:
                 uow=uow,
             )
             return DispatchResult("completed")
-        except (LostJobClaimError, StaleAnalysisClaimError):
+        except (
+            LostJobClaimError,
+            StaleAnalysisClaimError,
+            StaleSynthesisClaimError,
+        ):
             return DispatchResult("stale", "WORKER_INTERRUPTED")
         except Exception as exc:
-            error_code, retryable = _classify_failure(exc)
+            error_code, retryable = _classify_failure(
+                exc,
+                synthesis=claim.job_type == "reflection_synthesis",
+            )
             return self._record_failure(
                 claim=claim,
                 worker_id=worker_id,
@@ -160,7 +224,12 @@ class JobService:
 
     @contextmanager
     def _heartbeat(
-        self, *, claim: JobClaim, worker_id: str, uow: UnitOfWorkFactory
+        self,
+        *,
+        claim: JobClaim,
+        worker_id: str,
+        uow: UnitOfWorkFactory,
+        completion_inside: bool = False,
     ) -> Iterator[None]:
         stopped = Event()
         lost = Event()
@@ -188,18 +257,27 @@ class JobService:
         thread.start()
         try:
             yield
-            if lost.is_set() or not renew():
+            if not completion_inside and (lost.is_set() or not renew()):
                 raise LostJobClaimError("processing claim is no longer current")
         finally:
             stopped.set()
             thread.join(timeout=max(1.0, self._heartbeat_interval + 1.0))
 
 
-def _classify_failure(exc: Exception) -> tuple[str, bool]:
+def _classify_failure(exc: Exception, *, synthesis: bool = False) -> tuple[str, bool]:
     if isinstance(exc, ContentUnavailableError):
         return "ENTRY_CONTENT_UNAVAILABLE", False
     if isinstance(exc, ProviderUnavailableError):
         return "PROVIDER_UNAVAILABLE", provider_failure_is_retryable(exc)
+    if isinstance(exc, ReflectionProviderUnavailableError):
+        return (
+            "REFLECTION_PROVIDER_UNAVAILABLE",
+            reflection_provider_failure_is_retryable(exc),
+        )
+    if isinstance(exc, (ReflectionProviderResponseError, SnapshotValidationError)):
+        return "INVALID_SYNTHESIS", False
+    if synthesis and isinstance(exc, ValueError):
+        return "INVALID_SYNTHESIS", False
     if isinstance(exc, (ProviderResponseError, AnalysisValidationError)):
         return "INVALID_ANALYSIS", False
     if isinstance(exc, PrivacyValidationError):

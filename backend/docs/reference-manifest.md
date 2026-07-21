@@ -126,3 +126,28 @@ through migration 0008.
 | `app/modules/reflection_engine/service.py`                | `c5a985621b8f34f17b4eb15840d6b1bc0c61c2d1e0ab8b635128a165d6eb8e92` |
 | `tests/test_stage7_reflection_candidates.py`              | `53cd92d378f6aea6fc73e7ecffcf82b94e2de4f0bd3652ab16f22ee4cf7e20d5` |
 | `tests/test_stage7_reflection_database.py`                | `8a16387c157bada2ec3f04e47918442169392f26ca1bc61f68f0a431e6420e55` |
+
+## P0-06 scheduler and reflection-synthesis artifacts
+
+Recorded after the P0-06 implementation and local verification on 2026-07-21. The P0-05
+checksums above remain historical; the checksum below is the current exact ordered fresh-install
+schema through migration 0009. P0-07 APIs and frontend work are not included.
+
+| Target-relative path                          | SHA-256                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `migrations/0009_reflection_synthesis.sql`    | `e89f976e09b8f26234de46110255817b97f4cf45af2725799c1f58708d78f791` |
+| `supabase_schema.sql`                         | `2b5135b36fdeae4249cb68bd714aa9b493c9907c6b5079f1ba16c6256feb31a1` |
+| `app/main.py`                                 | `34ad7da2c44790cefdbbaef0103cb71c3aba78e6eab4712f03cab60a3a49b9d5` |
+| `app/modules/jobs/repository.py`              | `998aa4855b0e9bccb5a97bd910ede541ea5774055e90a71b518a295cc394490d` |
+| `app/modules/jobs/service.py`                 | `34ef5a0831b5ce69ec2870bb09d2670b777399a49472c26d66e2a6f0a67767d1` |
+| `app/modules/jobs/worker.py`                  | `41d1864daa8db8dcca0f001d8daa59a8cd4157a029bf115816171dd5a16b234e` |
+| `app/modules/reflection_engine/evidence.py`   | `82e178d585ac6ec8c2dd15a4f3eb4b352a7062d9dedaafdbbe3b4210cc630172` |
+| `app/modules/reflection_engine/prompts.py`    | `d62834c4f9e168f1a588a6832b03c641f8cecb188b42e45f4c0a2ed679e06669` |
+| `app/modules/reflection_engine/provider.py`   | `e89b4158a92ff97174514110b5fa69a0dbf5debb089723a8c11dc0a6aad639ef` |
+| `app/modules/reflection_engine/repository.py` | `14b44861b0e374ab57daf5ef9a8abdc13cf7cd5d72425ebbd5fb908fd4483baa` |
+| `app/modules/reflection_engine/schemas.py`    | `076b052b5d5a4fe11226d27a2d523540a4e7263ee111fec5af7efd84021a027e` |
+| `app/modules/reflection_engine/service.py`    | `4ef7aec706707f845cc0d43ab5eff7ad736d2b16db05873ccd65578459dc8a85` |
+| `app/shared/config/settings.py`               | `7ea3af874d76825b1b14f477f706d9c11d71dcc27f1d69b5a5752d730a5f1a4d` |
+| `.env.example`                                | `21a30fb14716fff9a4ceaadcb1406eac11eed0bda5ce3c1abcb00dec21645e08` |
+| `tests/test_stage7_reflection_database.py`    | `0cc341cdf8262269b383f1541bbf66c1ff5caf4257a1e08e982836d5765332f7` |
+| `tests/test_stage7_reflection_synthesis.py`   | `41f8dd46a0904e2a2a16ecbaa4620c0caa418a9da854bcc1341457bd69af2fce` |

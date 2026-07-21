@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID, uuid4
@@ -70,6 +70,7 @@ NEW_FUNCTIONS = (
     "get_entry_processing_payload",
     "get_entry_quality_history",
     "get_reflection_candidate_basis",
+    "get_reflection_synthesis_basis",
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
     "put_reflection_feedback_for_owner",
@@ -306,6 +307,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0006_shared_entry_queue.sql",
         "0007_combined_entry_analysis.sql",
         "0008_deterministic_reflection_candidates.sql",
+        "0009_reflection_synthesis.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -749,13 +751,36 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
         ]
         admin(connection)
         connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET latest_accepted_source_version = 15, new_valid_entries = 3, "
+            "new_accepted_signals = 1, pending_local_dates = ARRAY['2026-07-21'::date] "
+            "WHERE user_id = %s",
+            (USER_TWO,),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.schedule_reflection_jobs('2026-07-21 14:00:00+00')"
+            ).fetchone() == (0,)
+            assert connection.execute(
+                "SELECT public.schedule_reflection_jobs('2026-07-22 12:31:00+00')"
+            ).fetchone() == (1,)
+        assert connection.execute(
+            "SELECT count(*) FROM public.processing_jobs WHERE user_id = %s "
+            "AND job_type = 'reflection_synthesis' AND source_version = '15'",
+            (USER_TWO,),
+        ).fetchone() == (1,)
+        admin(connection)
+        connection.execute(
             "UPDATE public.user_profiles SET timezone = 'America/New_York' WHERE user_id = %s",
             (USER_THREE,),
         )
         connection.execute(
             "UPDATE public.reflection_user_state SET latest_accepted_source_version = 14, "
             "new_valid_entries = 3, new_accepted_signals = 1, "
-            "pending_local_dates = ARRAY['2026-07-22'::date] WHERE user_id = %s",
+            "pending_local_dates = ARRAY['2026-07-22'::date], "
+            "last_schedule_local_date = '2026-07-21' WHERE user_id = %s",
             (USER_THREE,),
         )
         connection.commit()
@@ -775,27 +800,109 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
         ).fetchone() == (1,)
 
 
+def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    with psycopg.connect(value) as connection:
+        connection.execute(
+            "UPDATE public.user_profiles SET timezone = CASE "
+            "WHEN user_id = %s THEN 'America/New_York' ELSE 'Europe/London' END "
+            "WHERE user_id IN (%s, %s)",
+            (USER_ONE, USER_ONE, USER_TWO),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates, last_schedule_local_date) VALUES "
+            "(%s, 21, 3, 1, ARRAY['2026-03-08'::date], NULL), "
+            "(%s, 22, 3, 1, ARRAY['2026-03-08'::date], '2026-03-08')",
+            (USER_ONE, USER_TWO),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.schedule_reflection_jobs('2026-03-08 21:59:59+00')"
+            ).fetchone() == (0,)
+            assert connection.execute(
+                "SELECT public.schedule_reflection_jobs('2026-03-08 22:00:00+00')"
+            ).fetchone() == (1,)
+
+        admin(connection)
+        connection.execute(
+            "UPDATE public.reflection_user_state SET last_schedule_local_date = CASE "
+            "WHEN user_id = %s THEN '2026-03-29'::date ELSE NULL END, "
+            "latest_accepted_source_version = CASE WHEN user_id = %s THEN 21 ELSE 23 END "
+            "WHERE user_id IN (%s, %s)",
+            (USER_ONE, USER_ONE, USER_ONE, USER_TWO),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.schedule_reflection_jobs('2026-03-29 16:59:59+00')"
+            ).fetchone() == (0,)
+            assert connection.execute(
+                "SELECT public.schedule_reflection_jobs('2026-03-29 17:00:00+00')"
+            ).fetchone() == (1,)
+
+        admin(connection)
+        connection.execute(
+            "UPDATE public.reflection_user_state SET last_schedule_local_date = NULL, "
+            "latest_accepted_source_version = 24 WHERE user_id = %s",
+            (USER_TWO,),
+        )
+        connection.commit()
+
+    def sweep(_index: int) -> int:
+        with psycopg.connect(value) as concurrent, concurrent.transaction():
+            worker(concurrent)
+            return concurrent.execute(
+                "SELECT public.schedule_reflection_jobs('2026-03-30 17:00:00+00')"
+            ).fetchone()[0]
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(sweep, range(2)))
+    assert sorted(results) == [0, 1]
+    with psycopg.connect(value) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM public.processing_jobs WHERE user_id = %s "
+            "AND job_type = 'reflection_synthesis' AND source_version = '24'",
+            (USER_TWO,),
+        ).fetchone() == (1,)
+
+
 def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> None:
     value = database_url()
     bootstrap(value, USER_ONE, USER_TWO)
     with psycopg.connect(value) as connection:
         entry_one = insert_entry(connection, USER_ONE, entry_date="2026-07-19")
         entry_two = insert_entry(connection, USER_ONE, entry_date="2026-07-20")
+        entry_three = insert_entry(connection, USER_ONE, entry_date="2026-07-18")
         _, signal_one, source_one = insert_analysis_signal(connection, USER_ONE, entry_one)
-        _, _signal_two, source_two = insert_analysis_signal(connection, USER_ONE, entry_two)
+        _, signal_two, source_two = insert_analysis_signal(connection, USER_ONE, entry_two)
+        _, signal_three, source_three = insert_analysis_signal(
+            connection, USER_ONE, entry_three
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 100 "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        )
         connection.execute(
             "INSERT INTO public.reflection_user_state "
             "(user_id, latest_accepted_source_version, new_valid_entries, "
             "new_accepted_signals, pending_local_dates) "
-            "VALUES (%s, %s, 2, 2, ARRAY['2026-07-19'::date, '2026-07-20'::date])",
-            (USER_ONE, source_two),
+            "VALUES (%s, %s, 3, 3, "
+            "ARRAY['2026-07-18'::date, '2026-07-19'::date, '2026-07-20'::date])",
+            (USER_ONE, source_three),
         )
         connection.commit()
         with connection.transaction():
             worker(connection)
             job_id = connection.execute(
                 "SELECT public.enqueue_processing_job(%s, NULL, 'reflection_synthesis', %s, pg_catalog.now())",
-                (USER_ONE, str(source_two)),
+                    (USER_ONE, str(source_three)),
             ).fetchone()[0]
             claim = connection.execute(
                 "SELECT claim_token FROM public.claim_processing_job('snapshot-worker')"
@@ -807,13 +914,14 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
         snapshot = {
             "id": str(snapshot_id),
             "version": 1,
-            "source_version": source_two,
-            "basis_start": "2026-07-01",
-            "basis_end": "2026-07-20",
-            "valid_entry_count": 2,
-            "excluded_entry_count": 0,
-            "distinct_entry_dates": 2,
-            "reflective_word_count": 40,
+                "source_version": source_three,
+                "basis_start": "2026-04-22",
+                "basis_end": "2026-07-20",
+                "valid_entry_count": 3,
+                "excluded_entry_count": 0,
+                "distinct_entry_dates": 3,
+                "reflective_word_count": 300,
+                "status": "available",
         }
         candidates = [
             {
@@ -827,6 +935,7 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
                 "first_seen_at": "2026-07-19T10:00:00Z",
                 "last_seen_at": "2026-07-20T10:00:00Z",
                 "version": 1,
+                "publication_gate_passed": True,
             }
         ]
         candidate_evidence = [
@@ -835,7 +944,19 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
                 "signal_id": str(signal_one),
                 "evidence_role": "supporting",
                 "evidence_weight": 0.9,
-            }
+            },
+            {
+                "candidate_id": str(candidate_id),
+                "signal_id": str(signal_two),
+                "evidence_role": "supporting",
+                "evidence_weight": 0.9,
+            },
+            {
+                "candidate_id": str(candidate_id),
+                "signal_id": str(signal_three),
+                "evidence_role": "supporting",
+                "evidence_weight": 0.9,
+            },
         ]
         insights = [
             {
@@ -855,6 +976,13 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
                 "status": "insufficient_evidence",
                 "reason_code": "LOOP_NOT_REPEATED",
             },
+            {
+                "id": str(uuid4()),
+                "pattern_type": "inner_tension",
+                "ordinal": 0,
+                "status": "insufficient_evidence",
+                "reason_code": "BOTH_SIDES_NOT_SUPPORTED",
+            },
         ]
         evidence = [
             {
@@ -865,7 +993,25 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
                 "ordinal": 0,
                 "source_start": 0,
                 "source_end": 4,
-            }
+            },
+            {
+                "insight_id": str(insight_id),
+                "signal_id": str(signal_two),
+                "entry_id": str(entry_two),
+                "evidence_role": "supporting",
+                "ordinal": 1,
+                "source_start": 0,
+                "source_end": 4,
+            },
+            {
+                "insight_id": str(insight_id),
+                "signal_id": str(signal_three),
+                "entry_id": str(entry_three),
+                "evidence_role": "supporting",
+                "ordinal": 2,
+                "source_start": 0,
+                "source_end": 4,
+            },
         ]
         with connection.transaction():
             worker(connection)
@@ -904,7 +1050,7 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
             "SELECT last_snapshot_source_version, new_valid_entries, new_accepted_signals "
             "FROM public.reflection_user_state WHERE user_id = %s",
             (USER_ONE,),
-        ).fetchone() == (source_two, 0, 0)
+        ).fetchone() == (source_three, 0, 0)
 
         with connection.transaction():
             owner(connection, USER_ONE)
@@ -951,11 +1097,196 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
             "SELECT status, source_version::bigint FROM public.processing_jobs "
             "WHERE user_id = %s AND job_type = 'reflection_synthesis' "
             "AND source_version <> %s ORDER BY created_at DESC LIMIT 1",
-            (USER_ONE, str(source_two)),
+            (USER_ONE, str(source_three)),
         ).fetchone()
         assert replacement is not None
         assert replacement[0] == "pending"
-        assert replacement[1] > source_two
+        assert replacement[1] > source_three
+
+
+def test_snapshot_versions_reject_stale_claims_and_preserve_concurrent_counters() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+
+    def snapshot_payload(
+        *, snapshot_id: UUID, version: int, source: int, start: str, end: str, count: int
+    ) -> dict[str, object]:
+        return {
+            "id": str(snapshot_id),
+            "version": version,
+            "source_version": source,
+            "basis_start": start,
+            "basis_end": end,
+            "valid_entry_count": count,
+            "excluded_entry_count": 0,
+            "distinct_entry_dates": count,
+            "reflective_word_count": count * 100,
+            "status": "available",
+        }
+
+    def insufficient(snapshot_id: UUID) -> list[dict[str, object]]:
+        return [
+            {
+                "id": str(uuid4()),
+                "pattern_type": pattern_type,
+                "ordinal": 0,
+                "status": "insufficient_evidence",
+                "reason_code": reason,
+            }
+            for pattern_type, reason in (
+                ("hidden_driver", "DRIVER_NOT_REPEATED"),
+                ("recurring_loop", "LOOP_NOT_REPEATED"),
+                ("inner_tension", "BOTH_SIDES_NOT_SUPPORTED"),
+            )
+        ]
+
+    with psycopg.connect(value) as connection:
+        sources: list[int] = []
+        for entry_date in ("2026-05-01", "2026-05-10", "2026-06-01"):
+            entry_id = insert_entry(connection, USER_ONE, entry_date=entry_date)
+            _, _, source = insert_analysis_signal(connection, USER_ONE, entry_id)
+            sources.append(source)
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 100 "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        )
+        source_three = sources[-1]
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) VALUES "
+            "(%s, %s, 3, 3, ARRAY['2026-05-01'::date, '2026-05-10'::date, "
+            "'2026-06-01'::date])",
+            (USER_ONE, source_three),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            worker(connection)
+            first_job = connection.execute(
+                "SELECT public.enqueue_processing_job(%s, NULL, 'reflection_synthesis', %s, "
+                "pg_catalog.now())",
+                (USER_ONE, str(source_three)),
+            ).fetchone()[0]
+            first_claim = connection.execute(
+                "SELECT claim_token FROM public.claim_processing_job('snapshot-worker')"
+            ).fetchone()[0]
+
+        admin(connection)
+        concurrent_entry = insert_entry(connection, USER_ONE, entry_date="2026-06-02")
+        _, _, source_four = insert_analysis_signal(
+            connection, USER_ONE, concurrent_entry
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 100 "
+            "WHERE entry_id = %s",
+            (concurrent_entry,),
+        )
+        connection.execute(
+            "UPDATE public.reflection_user_state SET "
+            "latest_accepted_source_version = %s, new_valid_entries = 4, "
+            "new_accepted_signals = 4, pending_local_dates = "
+            "ARRAY['2026-05-01'::date, '2026-05-10'::date, '2026-06-01'::date, "
+            "'2026-06-02'::date] WHERE user_id = %s",
+            (source_four, USER_ONE),
+        )
+        connection.commit()
+
+        first_snapshot = uuid4()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.apply_reflection_snapshot("
+                "%s, 'snapshot-worker', %s, %s::jsonb, '[]'::jsonb, '[]'::jsonb, "
+                "%s::jsonb, '[]'::jsonb)",
+                (
+                    first_job,
+                    first_claim,
+                    json.dumps(
+                        snapshot_payload(
+                            snapshot_id=first_snapshot,
+                            version=1,
+                            source=source_three,
+                            start="2026-03-04",
+                            end="2026-06-01",
+                            count=3,
+                        )
+                    ),
+                    json.dumps(insufficient(first_snapshot)),
+                ),
+            ).fetchone() == (first_snapshot,)
+        assert connection.execute(
+            "SELECT last_snapshot_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates "
+            "FROM public.reflection_user_state WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone() == (source_three, 1, 1, [date(2026, 6, 2)])
+
+        admin(connection)
+        with connection.transaction():
+            worker(connection)
+            second_job = connection.execute(
+                "SELECT public.enqueue_processing_job(%s, NULL, 'reflection_synthesis', %s, "
+                "pg_catalog.now())",
+                (USER_ONE, str(source_four)),
+            ).fetchone()[0]
+            second_claim = connection.execute(
+                "SELECT claim_token FROM public.claim_processing_job('snapshot-worker')"
+            ).fetchone()[0]
+
+        second_snapshot = uuid4()
+        second_payload = snapshot_payload(
+            snapshot_id=second_snapshot,
+            version=2,
+            source=source_four,
+            start="2026-03-05",
+            end="2026-06-02",
+            count=4,
+        )
+        with pytest.raises(psycopg.errors.RaiseException):
+            with connection.transaction():
+                worker(connection)
+                connection.execute(
+                    "SELECT public.apply_reflection_snapshot("
+                    "%s, 'snapshot-worker', %s, %s::jsonb, '[]'::jsonb, '[]'::jsonb, "
+                    "%s::jsonb, '[]'::jsonb)",
+                    (
+                        second_job,
+                        uuid4(),
+                        json.dumps(second_payload),
+                        json.dumps(insufficient(second_snapshot)),
+                    ),
+                )
+        assert connection.execute(
+            "SELECT count(*) FROM public.reflection_snapshots WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone() == (1,)
+
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.apply_reflection_snapshot("
+                "%s, 'snapshot-worker', %s, %s::jsonb, '[]'::jsonb, '[]'::jsonb, "
+                "%s::jsonb, '[]'::jsonb)",
+                (
+                    second_job,
+                    second_claim,
+                    json.dumps(second_payload),
+                    json.dumps(insufficient(second_snapshot)),
+                ),
+            ).fetchone() == (second_snapshot,)
+        admin(connection)
+        assert connection.execute(
+            "SELECT version, source_version FROM public.reflection_snapshots "
+            "WHERE user_id = %s ORDER BY version",
+            (USER_ONE,),
+        ).fetchall() == [(1, source_three), (2, source_four)]
+        assert connection.execute(
+            "SELECT new_valid_entries, new_accepted_signals, last_successful_snapshot_id "
+            "FROM public.reflection_user_state WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone() == (0, 0, second_snapshot)
 
 
 def test_candidate_basis_and_atomic_apply_are_worker_only_owner_safe_and_idempotent() -> None:
@@ -1061,6 +1392,83 @@ def test_candidate_basis_and_atomic_apply_are_worker_only_owner_safe_and_idempot
             "SELECT count(*) FROM public.pattern_candidates WHERE id = %s",
             (bad_candidate_id,),
         ).fetchone() == (0,)
+
+
+def test_synthesis_basis_is_claim_bound_accepted_only_and_capped_at_90_days() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        old_entry = insert_entry(connection, USER_ONE, entry_date="2026-01-01")
+        _, old_signal, _ = insert_analysis_signal(connection, USER_ONE, old_entry)
+        inside_entry = insert_entry(connection, USER_ONE, entry_date="2026-06-01")
+        _, inside_signal, _ = insert_analysis_signal(connection, USER_ONE, inside_entry)
+        uncertain_entry = insert_entry(connection, USER_ONE, entry_date="2026-06-15")
+        connection.execute(
+            "INSERT INTO public.entry_analyses "
+            "(user_id, entry_id, entry_kind, model_eligibility, eligibility, "
+            "deterministic_features, semantic_scores, redacted_text_envelope, "
+            "offset_map_envelope, reflective_word_count, model_id, prompt_version) "
+            "VALUES (%s, %s, 'unclear', 'uncertain', 'uncertain', '{}'::jsonb, "
+            "%s::jsonb, %s::jsonb, %s::jsonb, 50, 'test-model', 'v1')",
+            (
+                USER_ONE,
+                uncertain_entry,
+                json.dumps(
+                    {
+                        "lived_experience_score": 0.5,
+                        "self_reference_score": 0.5,
+                        "emotional_information_score": 0.5,
+                        "causal_reasoning_score": 0.5,
+                        "personal_relevance_score": 0.5,
+                        "confidence": 0.5,
+                    }
+                ),
+                json.dumps(ENVELOPE_V1),
+                json.dumps(ENVELOPE_V1),
+            ),
+        )
+        latest_entry = insert_entry(connection, USER_ONE, entry_date="2026-07-01")
+        _, latest_signal, latest_source = insert_analysis_signal(
+            connection, USER_ONE, latest_entry
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) "
+            "VALUES (%s, %s, 3, 3, ARRAY['2026-01-01'::date, '2026-06-01'::date, "
+            "'2026-07-01'::date])",
+            (USER_ONE, latest_source),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            job_id = connection.execute(
+                "SELECT public.enqueue_processing_job(%s, NULL, 'reflection_synthesis', %s, "
+                "pg_catalog.now())",
+                (USER_ONE, str(latest_source)),
+            ).fetchone()[0]
+            claim = connection.execute(
+                "SELECT claim_token FROM public.claim_processing_job('basis-worker')"
+            ).fetchone()[0]
+            basis = connection.execute(
+                "SELECT public.get_reflection_synthesis_basis(%s, 'basis-worker', %s, 90)",
+                (job_id, claim),
+            ).fetchone()[0]
+            assert basis["basis_start"] == "2026-04-03"
+            assert basis["basis_end"] == "2026-07-01"
+            assert basis["valid_entry_count"] == 2
+            assert basis["excluded_entry_count"] == 1
+            assert {item["id"] for item in basis["signals"]} == {
+                str(inside_signal),
+                str(latest_signal),
+            }
+            assert str(old_signal) not in json.dumps(basis)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    "SELECT public.get_reflection_synthesis_basis("
+                    "%s, 'basis-worker', %s, 89)",
+                    (job_id, claim),
+                )
 
 
 def test_database_rejected_candidate_reentry_requires_three_new_entries_on_two_dates() -> None:
