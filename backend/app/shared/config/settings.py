@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     WORKER_DATABASE_URL: SecretStr = SecretStr("")
 
     OPENAI_API_KEY: SecretStr = SecretStr("")
+    OPENAI_PRIMARY_EXTRACTION_MODEL: str = "gpt-4o"
+    OPENAI_FALLBACK_EXTRACTION_MODEL: str = "gpt-4o-mini"
+    OPENAI_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=60)
+    OPENAI_RESPONSE_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, le=180)
+    PROCESSING_TOTAL_TIMEOUT_SECONDS: float = Field(default=300.0, gt=0, le=600)
     ENTRY_ENCRYPTION_ACTIVE_KEY_ID: str = ""
     ENTRY_ENCRYPTION_KEYS: SecretStr = SecretStr("{}")
     ENTRY_FINGERPRINT_ACTIVE_KEY_ID: str = ""
@@ -69,6 +74,14 @@ class Settings(BaseSettings):
         normalized = value.strip().lower()
         if normalized not in {"json", "text"}:
             raise ValueError("must be json or text")
+        return normalized
+
+    @field_validator("OPENAI_PRIMARY_EXTRACTION_MODEL", "OPENAI_FALLBACK_EXTRACTION_MODEL")
+    @classmethod
+    def validate_model_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or len(normalized) > 100:
+            raise ValueError("model name must be between 1 and 100 characters")
         return normalized
 
     def cors_origins(self) -> tuple[str, ...]:

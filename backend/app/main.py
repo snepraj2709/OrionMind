@@ -8,6 +8,9 @@ from fastapi import FastAPI
 from app.modules.health.routes import router as health_router
 from app.modules.profile.repository import ProfileRepository
 from app.modules.profile.service import ProfileService
+from app.modules.processing.provider import OpenAIExtractionProvider, UnavailableExtractionProvider
+from app.modules.processing.repository import ProcessingRepository
+from app.modules.processing.service import ProcessingService
 from app.openapi_contract import install_local_openapi
 from app.router import router as api_router
 from app.shared.auth.service import AuthenticationService
@@ -21,6 +24,7 @@ from app.shared.integrations.supabase_auth import (
     UnavailableAccountAuthGateway,
     UnavailableTokenVerifier,
 )
+from app.shared.integrations.openai import build_openai_client
 from app.shared.observability.logging import configure_logging
 
 
@@ -56,18 +60,36 @@ def _build_account_auth(settings: Settings):
     return SupabaseAccountAuthGateway(verification_client, administration_client)
 
 
+def _build_extraction_provider(settings: Settings):
+    api_key = settings.OPENAI_API_KEY.get_secret_value().strip()
+    if not api_key:
+        return UnavailableExtractionProvider()
+    return OpenAIExtractionProvider(
+        build_openai_client(api_key),
+        primary_model=settings.OPENAI_PRIMARY_EXTRACTION_MODEL,
+        fallback_model=settings.OPENAI_FALLBACK_EXTRACTION_MODEL,
+        connect_timeout=settings.OPENAI_CONNECT_TIMEOUT_SECONDS,
+        response_timeout=settings.OPENAI_RESPONSE_TIMEOUT_SECONDS,
+        total_timeout=settings.PROCESSING_TOTAL_TIMEOUT_SECONDS,
+    )
+
+
 def create_app(
     *,
     settings: Settings | None = None,
     database_sessions: DatabaseSessions | None = None,
     token_verifier=None,
     account_auth=None,
+    extraction_provider=None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     configure_logging(json_logs=resolved_settings.LOG_FORMAT == "json")
     sessions = database_sessions or build_database_sessions(resolved_settings)
     verifier = token_verifier or _build_token_verifier(resolved_settings)
     resolved_account_auth = account_auth or _build_account_auth(resolved_settings)
+    resolved_extraction_provider = extraction_provider or _build_extraction_provider(
+        resolved_settings
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -94,6 +116,11 @@ def create_app(
     app.state.profile_service = ProfileService(
         repository=ProfileRepository(),
         account_auth=resolved_account_auth,
+    )
+    app.state.processing_service = ProcessingService(
+        repository=ProcessingRepository(),
+        provider=resolved_extraction_provider,
+        reflection_threshold=resolved_settings.REFLECTION_REVIEW_THRESHOLD,
     )
 
     install_error_handlers(app)

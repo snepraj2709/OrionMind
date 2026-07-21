@@ -319,7 +319,22 @@ def production_values() -> dict:
 
 def test_production_settings_fail_closed_and_secrets_are_masked() -> None:
     with pytest.raises(ValidationError, match="missing or invalid production settings"):
-        Settings.model_validate({"ENVIRONMENT": "production"})
+        Settings.model_validate(
+            {
+                "ENVIRONMENT": "production",
+                "ENABLE_API_DOCS": False,
+                "SUPABASE_URL": "",
+                "SUPABASE_PUBLISHABLE_KEY": "",
+                "SUPABASE_SECRET_KEY": "",
+                "APP_DATABASE_URL": "",
+                "WORKER_DATABASE_URL": "",
+                "OPENAI_API_KEY": "",
+                "ENTRY_ENCRYPTION_ACTIVE_KEY_ID": "",
+                "ENTRY_ENCRYPTION_KEYS": "{}",
+                "ENTRY_FINGERPRINT_ACTIVE_KEY_ID": "",
+                "ENTRY_FINGERPRINT_KEYS": "{}",
+            }
+        )
     with pytest.raises(ValidationError, match="API docs must be disabled"):
         Settings.model_validate(
             {"ENVIRONMENT": "production", **production_values(), "ENABLE_API_DOCS": True}

@@ -7,7 +7,7 @@
 | 0 — Reference contract            | Verified complete                    | `reference-manifest.md`, blueprint, trimmed OpenAPI     |             2 | 13 operations; sole anonymous health; 41 reachable refs; zero dangling/unreachable refs; source parity and diff hygiene pass  | None                                                                 |
 | 1 — Shared platform               | Verified complete                    | HTTP/auth/config/UoW/health platform                    |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass               | None                                                                 |
 | 2 — Database/profile/account      | Verified complete; live proof waived | Fresh schema, migration runner, profile/account feature |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | User explicitly waived unavailable live Supabase proof on 2026-07-21 |
-| 3 — Processing core               | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
+| 3 — Processing core               | Verified complete                    | Strict extraction, bounded provider, atomic RPCs        |             3 | 61 full tests; structured validation, fallback ceiling, source spans, threshold, rollback, stale-token and concurrency pass   | None                                                                 |
 | 4 — Drafts/text/list/detail/retry | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
 | 5 — Voice/past imports            | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
 | 6 — Contract freeze/release proof | Not started                          |                                                         |             0 |                                                                                                                               |                                                                      |
@@ -252,7 +252,8 @@ Status: fixed
 - Fresh PostgreSQL 15 install from two concurrent runners: exactly one apply; the other observes the
   checksum ledger after the advisory lock.
 - Migration rerun is idempotent; a tampered checksum fails closed.
-- `supabase_schema.sql` is byte-identical to `migrations/0001_foundation.sql`.
+- At the Stage 2 gate, `supabase_schema.sql` was byte-identical to
+  `migrations/0001_foundation.sql`; later stages regenerate it as the ordered migration concatenation.
 - Existing-user bootstrap and new-user trigger pass; fixed Default 8 contains exactly eight rows.
 - Real HTTP -> controller -> service -> repository -> SQLAlchemy UoW profile read/partial-update pass.
 - Direct two-user profile select/update isolation, foreign-parent rejection, invalid-envelope rejection,
@@ -265,6 +266,61 @@ Status: fixed
   RLS and Auth identity deletion/cascade proof was not run. The user explicitly waived this live proof
   on 2026-07-21 and directed execution to continue through Stage 6; the local disposable proof remains
   the Stage 2 gate evidence.
+
+## Stage 3 findings
+
+### ST3-001
+
+Finding ID: ST3-001
+Severity: High
+Requirement: Past-import provenance and automatic approval must be a worker-only capability.
+Evidence: The initial owner extraction RPC accepted a caller-controlled `past_import` boolean and used
+it to select approved candidate state.
+Impact: An authenticated browser with a processing token could attempt to create auto-approved
+derived rows outside the durable import worker boundary.
+Fix: The owner RPC now rejects `past_import=true`; Stage 5 must provide a separate worker-only RPC.
+Regression test: Direct authenticated invocation with the flag fails and leaves the processing entry
+and all derived tables unchanged.
+Status: fixed
+
+### ST3-002
+
+Finding ID: ST3-002
+Severity: Medium
+Requirement: Schema parity and migration-lock tests must remain valid as the ordered migration set grows.
+Evidence: Stage 2 assertions assumed exactly one migration and one applied filename.
+Impact: Correct Stage 3 installs failed the test even though both migrations were serialized and recorded.
+Fix: Assert contiguous versions, complete ledger rows, one concurrent runner applying the entire current
+set, and exact ordered schema concatenation.
+Regression test: Concurrent clean install and parity assertions pass with both migrations.
+Status: fixed
+
+### ST3-003
+
+Finding ID: ST3-003
+Severity: Low
+Requirement: Negative database tests must prove rollback without leaving their connection aborted.
+Evidence: Initial stale-token and constraint tests caught SQL errors inside a savepoint context, causing
+the context to attempt release instead of observing the error and rolling back.
+Impact: The harness failed after the intended database rejection and could not inspect rollback state.
+Fix: Move exception assertions outside transaction contexts so psycopg rolls back the savepoint.
+Regression test: Atomic rollback and stale-token checks pass and subsequent assertions use the same connection.
+Status: fixed
+
+## Stage 3 verification evidence
+
+- Full non-live plus PostgreSQL 15 disposable suite: 61 passed; one expected pinned-Starlette warning.
+- Strict Pydantic output rejects extra fields, invalid modes, non-contiguous tiers, duplicate keys,
+  unknown config keys/segments, non-finite confidence, and bounded-output violations.
+- Exact source spans and 50,000-scalar/200,000-byte provider cap pass without truncating stored source.
+- Primary success uses one request; only eligible retryable failure reaches exactly one fallback; SDK
+  retries are zero and connection/response/total timeouts are explicit.
+- Reflection threshold `0.80` is inclusive; normal candidate rows remain `pending_approval`.
+- Atomic RPC proof covers success, derived-row rollback, stale/duplicate token rejection, one winner
+  under concurrent commits, safe failed transition, and a new retry token.
+- Provider and source privacy scan: no journal text, prompts, parsed output, token, or provider payload logging.
+- Runtime inventory remains the four Stage 2 operations; Stage 3 adds no public routes.
+- Final Stage 3 findings-first review: zero open actionable findings.
 
 ## Final route evidence
 

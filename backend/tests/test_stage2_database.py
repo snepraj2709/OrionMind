@@ -82,10 +82,11 @@ def test_fresh_install_migration_ledger_rls_constraints_and_cascades() -> None:
     database_url = disposable_database_url()
     reset_database(database_url)
     migrations = load_migrations(ROOT / "migrations")
-    assert [migration.version for migration in migrations] == [1]
-    assert (ROOT / "supabase_schema.sql").read_bytes() == (
-        ROOT / "migrations" / "0001_foundation.sql"
-    ).read_bytes()
+    assert [migration.version for migration in migrations] == list(
+        range(1, len(migrations) + 1)
+    )
+    expected_schema = "\n\n".join(migration.sql.rstrip("\n") for migration in migrations) + "\n"
+    assert (ROOT / "supabase_schema.sql").read_text() == expected_schema
 
     with psycopg.connect(database_url) as connection:
         connection.execute((ROOT / "tests/sql/bootstrap_auth.sql").read_text(), prepare=False)
@@ -97,14 +98,17 @@ def test_fresh_install_migration_ledger_rls_constraints_and_cascades() -> None:
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(lambda _index: apply_migrations(database_url, migrations), range(2)))
-    assert sorted(len(result) for result in results) == [0, 1]
+    assert sorted(len(result) for result in results) == [0, len(migrations)]
     assert apply_migrations(database_url, migrations) == ()
 
     with psycopg.connect(database_url) as connection:
         ledger = connection.execute(
             "SELECT version, name, checksum FROM public.schema_migrations"
         ).fetchall()
-        assert ledger == [(1, migrations[0].name, migrations[0].checksum)]
+        assert ledger == [
+            (migration.version, migration.name, migration.checksum)
+            for migration in migrations
+        ]
         assert connection.execute("SELECT count(*) FROM public.themes").fetchone() == (8,)
         assert connection.execute(
             "SELECT count(*) FROM pg_catalog.pg_class c "
@@ -272,8 +276,8 @@ def test_fresh_install_migration_ledger_rls_constraints_and_cascades() -> None:
 
     with psycopg.connect(database_url) as connection:
         connection.execute(
-            "UPDATE public.schema_migrations SET checksum = %s WHERE version = 1",
-            ("0" * 64,),
+            "UPDATE public.schema_migrations SET checksum = %s WHERE version = %s",
+            ("0" * 64, migrations[-1].version),
         )
         connection.commit()
     with pytest.raises(RuntimeError, match="checksum mismatch"):
