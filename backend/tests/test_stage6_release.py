@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
+import yaml
 from fastapi import APIRouter
 from fastapi.testclient import TestClient
 from pydantic import SecretStr, ValidationError
@@ -90,6 +91,8 @@ def test_packaged_openapi_is_exact_runtime_contract_with_no_dangling_references(
         "/api/v1/entries/voice",
         "/api/v1/entries/{entry_id}",
         "/api/v1/entries/{entry_id}/retry",
+        "/api/v1/reflections",
+        "/api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback",
     }
     references = tuple(all_references(artifact))
     assert references
@@ -151,6 +154,12 @@ def test_every_endpoint_class_has_integer_retry_after_at_its_limit(rule: str) ->
         ("POST", "/api/v1/entries/voice", "voice_create"),
         ("GET", "/api/v1/entries/entry-id", "read"),
         ("POST", "/api/v1/entries/entry-id/retry", "entry_retry"),
+        ("GET", "/api/v1/reflections", "read"),
+        (
+            "PUT",
+            "/api/v1/reflections/snapshot-id/insights/insight-id/feedback",
+            "reflection_write",
+        ),
     ],
 )
 def test_exact_operation_rate_classification(method: str, path: str, expected: str) -> None:
@@ -323,6 +332,29 @@ def test_production_cannot_disable_limits_or_scale_in_process_limiter() -> None:
 def test_openapi_artifact_is_packaged_under_the_repository() -> None:
     assert CONTRACT_PATH == Path(__file__).resolve().parents[1] / "docs/contracts/profile-entry-v1.openapi.json"
     assert CONTRACT_PATH.is_file()
+
+
+def test_json_yaml_and_runtime_reflection_contracts_are_equivalent() -> None:
+    artifact = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    yaml_path = CONTRACT_PATH.with_suffix(".yaml")
+    assert yaml.safe_load(yaml_path.read_text(encoding="utf-8")) == artifact
+    reflection_paths = {
+        path: value
+        for path, value in artifact["paths"].items()
+        if path.startswith("/api/v1/reflections")
+    }
+    assert set(reflection_paths) == {
+        "/api/v1/reflections",
+        "/api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback",
+    }
+    assert reflection_paths["/api/v1/reflections"]["get"]["parameters"][0][
+        "schema"
+    ] == {"$ref": "#/components/schemas/ReflectionRange"}
+    assert artifact["components"]["schemas"]["ReflectionRange"]["enum"] == [
+        "7d",
+        "30d",
+        "all",
+    ]
 
 
 def test_shared_processing_worker_is_the_only_operational_entrypoint() -> None:

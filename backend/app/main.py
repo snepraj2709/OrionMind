@@ -34,6 +34,8 @@ from app.modules.reflection_engine.provider import (
 )
 from app.modules.reflection_engine.repository import ReflectionEngineRepository
 from app.modules.reflection_engine.service import ReflectionEngineService
+from app.modules.reflections.repository import ReflectionsRepository
+from app.modules.reflections.service import ReflectionsService
 from app.modules.past_imports.repository import PastImportRepository
 from app.modules.past_imports.service import PastImportService
 from app.openapi_contract import install_local_openapi
@@ -229,6 +231,11 @@ def create_app(
     app.state.reflection_engine_service = ReflectionEngineService(
         repository=ReflectionEngineRepository(),
         provider=resolved_reflection_provider,
+        cipher=resolved_content_cipher,
+        basis_days=resolved_settings.REFLECTION_BASIS_DAYS,
+    )
+    app.state.reflections_service = ReflectionsService(
+        repository=ReflectionsRepository(),
         cipher=resolved_content_cipher,
         basis_days=resolved_settings.REFLECTION_BASIS_DAYS,
     )

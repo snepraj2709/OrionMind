@@ -151,3 +151,31 @@ schema through migration 0009. P0-07 APIs and frontend work are not included.
 | `.env.example`                                | `21a30fb14716fff9a4ceaadcb1406eac11eed0bda5ce3c1abcb00dec21645e08` |
 | `tests/test_stage7_reflection_database.py`    | `0cc341cdf8262269b383f1541bbf66c1ff5caf4257a1e08e982836d5765332f7` |
 | `tests/test_stage7_reflection_synthesis.py`   | `41f8dd46a0904e2a2a16ecbaa4620c0caa418a9da854bcc1341457bd69af2fce` |
+
+## P0-07 aggregate Reflection API artifacts
+
+Recorded after the P0-07 implementation and local verification on 2026-07-21. The P0-06
+checksums above remain historical; this section records the authenticated read/feedback surface
+and the exact ordered fresh-install schema through migration 0010. P0-08 frontend work is not
+included.
+
+| Target-relative path                           | SHA-256                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------ |
+| `migrations/0010_reflections_api.sql`          | `6966770b559ab4259ac14b318cefaa0876f46d6b5f781ef12cdd03fbcd143029` |
+| `supabase_schema.sql`                          | `7f0dd7b9c80b28c45d0408aed45d86b4303594df617b533e558ce8c81062d928` |
+| `app/modules/reflections/schemas.py`           | `acf1aa37d4622f0a638efaa89e89f432b49072d83793c09167cc595d5d58ef1f` |
+| `app/modules/reflections/types.py`             | `d24a343e587a7acf4fe8530d6df7ea02493efa178600344c5886f4d5a3e0ae8b` |
+| `app/modules/reflections/repository.py`        | `36c9b09ea818d1c314eabcee91c54647f40f5c9cee4bcd8ba8907a47541cf6ff` |
+| `app/modules/reflections/service.py`           | `a6c8a74ced42890f71ca5249945de239afbac2a0f4b3ad9d312c0c3b080ff591` |
+| `app/modules/reflections/views.py`             | `b8d9c8a1afde226d69f2f042ab376a4b7b504d8c41c41232cbd55c6fe02799e1` |
+| `app/modules/reflections/controller.py`        | `1f0a5217467aa345778d133082400eb83c3303a7a7abfccce8105e5fd4f95acd` |
+| `app/modules/reflections/routes.py`            | `3f4486b128c6722969084a31a79f5029bb4d9ba23ea518ce5753226633c7baf9` |
+| `app/main.py`                                  | `077ab921e0149e0a280b7a2f230d7735932e567bd1f0f1c41bcc3cff67863c7b` |
+| `app/router.py`                                | `5467e9966494f7fbdae2f995203db5673758fb2d6c74aac777a3b85a1a2d531b` |
+| `app/contract.py`                              | `60fd75bc68834c8ce4fcfc523ad28b0c072fe36d8b1bcfc0af56c76fd845dad1` |
+| `app/shared/http/rate_limits.py`               | `8982bc8a21259403b6c655d367dd8cdda0d29c5c8fbb80bda79e409f03769351` |
+| `docs/contracts/profile-entry-v1.openapi.yaml` | `8ca591496bbf02d2aba102d9be9c6c60c7f42bbb6202df8baf284d409322032b` |
+| `docs/contracts/profile-entry-v1.openapi.json` | `1290c0ff32d1262baae6df9b0980a257d976d53e29466b2dba728bc6e37cc313` |
+| `tests/test_reflections_api.py`                | `32b5b5df53df15a8164d5faa1f31188a02161dc8b1d96b1701392020e2aee6e5` |
+| `tests/test_stage6_release.py`                 | `9f8afb41d382af6632b0464eccb5b384ffe502108b79090087781aca4b6e884b` |
+| `tests/test_stage7_reflection_database.py`     | `46734e72a737c6c61d6d1df6bbe12a94877effb1037c875ee557b7c135d05028` |

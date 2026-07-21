@@ -26,10 +26,14 @@ RULES: dict[str, tuple[Window, ...]] = {
     "past_entry_create": (Window(2, 1), Window(200, 86_400)),
     "voice_create": (Window(1, 10), Window(6, 3_600)),
     "entry_retry": (Window(2, 60),),
+    "reflection_write": (Window(5, 1),),
 }
 
 _ENTRY_DETAIL = re.compile(r"^/api/v1/entries/[^/]+$")
 _ENTRY_RETRY = re.compile(r"^/api/v1/entries/[^/]+/retry$")
+_REFLECTION_FEEDBACK = re.compile(
+    r"^/api/v1/reflections/[^/]+/insights/[^/]+/feedback$"
+)
 
 
 def request_class(request: Request) -> tuple[str, str] | None:
@@ -60,8 +64,15 @@ def _rate_class(method: str, path: str) -> str | None:
         return "voice_create"
     if method == "POST" and _ENTRY_RETRY.fullmatch(path):
         return "entry_retry"
+    if method == "PUT" and _REFLECTION_FEEDBACK.fullmatch(path):
+        return "reflection_write"
     if method == "GET" and (
-        path in {"/api/v1/profile", "/api/v1/entries", "/api/v1/entry/draft"}
+        path in {
+            "/api/v1/profile",
+            "/api/v1/entries",
+            "/api/v1/entry/draft",
+            "/api/v1/reflections",
+        }
         or _ENTRY_DETAIL.fullmatch(path)
     ):
         return "read"

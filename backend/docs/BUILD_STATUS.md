@@ -4,14 +4,40 @@
 
 | Stage                             | Status                               | Implementation evidence                                      | Review passes | Verification                                                                                                                  | Blockers                                                             |
 | --------------------------------- | ------------------------------------ | ------------------------------------------------------------ | ------------: | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 0 — Reference contract            | Verified complete                    | `reference-manifest.md`, blueprint, trimmed OpenAPI          |             2 | 13 operations; sole anonymous health; 41 reachable refs; zero dangling/unreachable refs; source parity and diff hygiene pass  | None                                                                 |
+| 0 — Reference contract            | Verified complete                    | `reference-manifest.md`, blueprint, frozen OpenAPI           |             2 | 15 operations; sole anonymous health; 59 referenced components; zero dangling refs; JSON/YAML/runtime parity passes           | None                                                                 |
 | 1 — Shared platform               | Verified complete                    | HTTP/auth/config/UoW/health platform                         |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass               | None                                                                 |
 | 2 — Database/profile/account      | Verified complete; live proof waived | Fresh schema, migration runner, profile/account feature      |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | User explicitly waived unavailable live Supabase proof on 2026-07-21 |
 | 3 — Processing core               | Verified complete                    | Strict extraction, bounded provider, atomic RPCs             |             3 | 61 full tests; structured validation, fallback ceiling, source spans, threshold, rollback, stale-token and concurrency pass   | None                                                                 |
 | 4 — Drafts/text/list/detail/retry | Verified complete                    | AES-GCM drafts and complete owner text lifecycle             |             3 | 70 full tests; encryption, replay, concurrency, pagination, detail, retry, RLS and privacy proofs pass                        | None                                                                 |
 | 5 — Voice/past imports            | Locally verified                     | Streaming voice boundary and durable worker queue            |             3 | 97 full tests; genuine audio families, cleanup, replay, encryption, queue tokens, RLS/grants, heartbeat and recovery pass     | Live Supabase proof waived                                           |
 | 6 — Contract freeze/release proof | Locally verified; live proof waived  | Frozen artifact, limits, readiness, worker, release docs     |             3 | 127 full tests; OpenAPI/route, rate, readiness/recovery, privacy, Docker build/runtime and migration parity pass              | Live two-account Supabase proof waived; deployment not authorized    |
-| 7 — Reflection Engine P0-01–P0-06 | Locally verified through P0-06       | Worker scheduler, synthesis, critic, and immutable snapshots |             3 | 214 full tests; local-time scheduling, model routing, final validation, atomic snapshots, concurrency, and parity pass        | P0-07 and later are not implemented; production KMS remains blocked  |
+| 7 — Reflection Engine P0-01–P0-07 | Locally verified through P0-07       | Aggregate read, persisted feedback, scheduler, and snapshots |             4 | 233 full tests; every API state, auth isolation, bounded evidence, feedback, route/OpenAPI/rate, database and parity pass     | P0-08 and later are not implemented; production KMS remains blocked  |
+
+## P0-07 aggregate Reflection API evidence
+
+- `GET /api/v1/reflections?range=7d|30d|all` derives ownership only from the authenticated
+  context, rejects extra owner/tab query fields, caps `all` at the persisted 90-day basis, and
+  returns hidden driver, recurring loop, and zero-to-many inner tensions in one strict response.
+- State derivation keeps reflection and processing state orthogonal: available/idle, first
+  pending, stale/pending, stale/failed, insufficient reflective content, and no-snapshot technical
+  failure all retain the documented status and fallback behavior.
+- Migration 0010 adds one authenticated security-definer read RPC. It checks `auth.uid()`, selects
+  one owner snapshot plus at most 12 evidence rows per insight, and exposes encrypted entry/signal
+  envelopes only to the authenticated application transaction. Direct authenticated access to
+  internal analyses, signals, jobs, state, and candidates remains closed.
+- The service decrypts only after the owner check, caches each referenced entry and signal once,
+  revalidates exact quote offsets, filters evidence to the selected display range, and emits only
+  opaque evidence IDs plus approved public fields. No raw offsets, owners, queue claims, model
+  metadata, envelopes, candidate internals, prompts, or PII mappings enter the response or logs.
+- Feedback uses the P0-01 owner-checking RPC unchanged. Create/repeat/replace is one row per
+  owner/snapshot/insight; `partly` weakens, `rejected` stores the snapshot source version and
+  suppresses the candidate, and `resonates` never inflates evidence or score. Snapshots remain
+  immutable and subsequent reads overlay the persisted selection.
+- Both routes return `Cache-Control: private, no-store`, use `ProtectedAPIRoute`, and are frozen in
+  the operation inventory, JSON/YAML/runtime OpenAPI contract, and read/write rate classes.
+- Focused P0-07 API/release matrix: 48 passed. Exact full backend command: 210 passed and 23
+  database tests skipped without the disposable URL. Database-enabled full backend suite: 233
+  passed. All runs have one third-party pending-deprecation warning from Starlette multipart.
 
 ## P0-06 scheduler and synthesis evidence
 

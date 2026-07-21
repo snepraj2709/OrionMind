@@ -71,6 +71,7 @@ NEW_FUNCTIONS = (
     "get_entry_quality_history",
     "get_reflection_candidate_basis",
     "get_reflection_synthesis_basis",
+    "get_reflections_for_owner",
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
     "put_reflection_feedback_for_owner",
@@ -308,6 +309,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0007_combined_entry_analysis.sql",
         "0008_deterministic_reflection_candidates.sql",
         "0009_reflection_synthesis.sql",
+        "0010_reflections_api.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -1564,3 +1566,36 @@ def test_database_rejected_candidate_reentry_requires_three_new_entries_on_two_d
             "FROM public.pattern_candidates WHERE id = %s",
             (candidate_id,),
         ).fetchone() == ("candidate", None, None, latest_source)
+
+
+def test_reflection_api_read_rpc_is_authenticated_owner_checked_and_bounded() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    with psycopg.connect(value) as connection:
+        entry_id = insert_entry(connection, USER_ONE, entry_date="2026-07-20")
+        insert_analysis_signal(connection, USER_ONE, entry_id)
+        connection.commit()
+
+        owner(connection, USER_ONE)
+        payload = connection.execute(
+            "SELECT public.get_reflections_for_owner(%s, 12)", (USER_ONE,)
+        ).fetchone()[0]
+        assert payload["snapshot"] is None
+        assert payload["current_basis"]["valid_entry_count"] == 1
+        assert payload["current_basis"]["basis_start"] == "2026-04-22"
+        assert payload["current_basis"]["basis_end"] == "2026-07-20"
+        assert payload["evidence"] == []
+        connection.rollback()
+
+        owner(connection, USER_TWO)
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            connection.execute(
+                "SELECT public.get_reflections_for_owner(%s, 12)", (USER_ONE,)
+            )
+        connection.rollback()
+
+        owner(connection, USER_ONE)
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            connection.execute(
+                "SELECT public.get_reflections_for_owner(%s, 13)", (USER_ONE,)
+            )

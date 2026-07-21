@@ -3,9 +3,9 @@ info:
   title: Orion profile and entry API
   version: 1.5.0-profile-entry-trim
   description: >-
-    Review-stage extraction of the Orion 1.5.0 contract containing only the 13 approved profile,
-    account, health, draft, entry, voice, retry, and past-import operations. Supabase Auth remains
-    external; ownership is derived from a verified bearer token.
+    Frozen Orion 1.5.0 contract containing the 15 approved profile, account, health, entry, and
+    Reflection operations. Supabase Auth remains external; ownership is derived exclusively from
+    a verified bearer token.
   x-source-artifact: ORION-API-UI-CONTRACT-1.5.0
   x-source-commit: 1a993c3438460dcdf5d0680a272e43c6c09e34e3
 servers:
@@ -17,6 +17,7 @@ tags:
   - name: Operations
   - name: Profile
   - name: Entries
+  - name: Reflections
 paths:
   /health:
     get:
@@ -312,6 +313,69 @@ paths:
         '502': { $ref: '#/components/responses/ProviderFailure' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
+  /api/v1/reflections:
+    get:
+      tags: [Reflections]
+      operationId: getReflections
+      summary: Read the authenticated user's aggregate persisted Reflection
+      description: Reads only persisted state and never invokes a model. The all range is capped at 90 days.
+      parameters:
+        - name: range
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/ReflectionRange' }
+      responses:
+        '200':
+          description: Aggregate Reflection, including valid pending and insufficient-evidence states.
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReflectionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback:
+    parameters:
+      - name: snapshot_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+      - name: insight_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [Reflections]
+      operationId: putReflectionFeedback
+      summary: Persist one authenticated insight response
+      description: Idempotently overlays feedback without changing the immutable snapshot or invoking a model.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReflectionFeedbackRequest' }
+      responses:
+        '200':
+          description: Persisted feedback selection.
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReflectionFeedbackResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -411,6 +475,298 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    ReflectionRange:
+      type: string
+      enum: [7d, 30d, all]
+    ReflectionFeedbackResponse:
+      type: string
+      enum: [resonates, partly, rejected]
+    ReflectionConfidence:
+      type: string
+      enum: [preliminary, emerging, recurring]
+    ReflectionReasonCode:
+      type: string
+      enum:
+        - NOT_ENOUGH_REFLECTIVE_CONTENT
+        - DRIVER_NOT_REPEATED
+        - LOOP_NOT_REPEATED
+        - BOTH_SIDES_NOT_SUPPORTED
+        - INSUFFICIENT_EVIDENCE
+    ReflectionSnapshot:
+      type: object
+      additionalProperties: false
+      required: [id, version, generatedAt, sourceVersion, isStale]
+      properties:
+        id: { type: string, format: uuid }
+        version: { type: integer, minimum: 1 }
+        generatedAt: { type: string, format: date-time }
+        sourceVersion: { type: integer, minimum: 1 }
+        isStale: { type: boolean }
+    ReflectionExcludedReasons:
+      type: object
+      additionalProperties: false
+      properties:
+        personal_reflection: { type: integer, minimum: 1 }
+        personal_event: { type: integer, minimum: 1 }
+        personal_observation: { type: integer, minimum: 1 }
+        task_or_note: { type: integer, minimum: 1 }
+        informational_text: { type: integer, minimum: 1 }
+        creative_writing: { type: integer, minimum: 1 }
+        test_or_noise: { type: integer, minimum: 1 }
+        copied_or_quoted_text: { type: integer, minimum: 1 }
+        unclear: { type: integer, minimum: 1 }
+    ReflectionAnalysisBasis:
+      type: object
+      additionalProperties: false
+      required:
+        - window
+        - validEntryCount
+        - excludedEntryCount
+        - distinctEntryDates
+        - reflectiveWordCount
+        - currentRangeFrom
+        - currentRangeTo
+        - excludedReasons
+      properties:
+        window: { type: string, const: 90d }
+        validEntryCount: { type: integer, minimum: 0 }
+        excludedEntryCount: { type: integer, minimum: 0 }
+        distinctEntryDates: { type: integer, minimum: 0 }
+        reflectiveWordCount: { type: integer, minimum: 0 }
+        currentRangeFrom:
+          anyOf: [{ type: string, format: date }, { type: 'null' }]
+        currentRangeTo:
+          anyOf: [{ type: string, format: date }, { type: 'null' }]
+        excludedReasons:
+          anyOf:
+            - { $ref: '#/components/schemas/ReflectionExcludedReasons' }
+            - { type: 'null' }
+    ReflectionEvidence:
+      type: object
+      additionalProperties: false
+      required:
+        [id, entryDate, sourceLabel, quote, interpretation, theme, supports]
+      properties:
+        id: { type: string, format: uuid }
+        entryDate: { type: string, format: date }
+        sourceLabel: { type: string, minLength: 1, maxLength: 80 }
+        quote: { type: string, minLength: 1, maxLength: 4000 }
+        interpretation: { type: string, minLength: 1, maxLength: 1000 }
+        theme:
+          anyOf:
+            - type: string
+              enum:
+                [
+                  career,
+                  money,
+                  health,
+                  love_life,
+                  family_and_friends,
+                  personal_growth,
+                  fun_and_recreation,
+                  home_and_lifestyle,
+                ]
+            - { type: 'null' }
+        supports: { type: string, minLength: 1, maxLength: 200 }
+    InsufficientReflectionInsight:
+      type: object
+      additionalProperties: false
+      required: [status, reasonCode, message]
+      properties:
+        status: { type: string, const: insufficient_evidence }
+        reasonCode: { $ref: '#/components/schemas/ReflectionReasonCode' }
+        message: { type: string, minLength: 1, maxLength: 500 }
+    AvailableHiddenDriver:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          status,
+          id,
+          confidence,
+          score,
+          statement,
+          underlyingNeed,
+          drivers,
+          evidence,
+          feedback,
+        ]
+      properties:
+        status: { type: string, const: available }
+        id: { type: string, format: uuid }
+        confidence: { $ref: '#/components/schemas/ReflectionConfidence' }
+        score: { type: number, minimum: 0, maximum: 1 }
+        statement: { type: string, minLength: 1, maxLength: 1000 }
+        underlyingNeed: { type: string, minLength: 1, maxLength: 200 }
+        drivers:
+          type: array
+          maxItems: 5
+          items: { type: string, minLength: 1 }
+        evidence:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ReflectionEvidence' }
+        feedback:
+          anyOf:
+            - { $ref: '#/components/schemas/ReflectionFeedbackResponse' }
+            - { type: 'null' }
+    ReflectionLoopStep:
+      type: object
+      additionalProperties: false
+      required: [id, text, evidence]
+      properties:
+        id: { type: string, format: uuid }
+        text: { type: string, minLength: 1, maxLength: 1000 }
+        evidence:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ReflectionEvidence' }
+    AvailableRecurringLoop:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          status,
+          id,
+          confidence,
+          score,
+          title,
+          description,
+          steps,
+          protection,
+          interruption,
+          evidence,
+          feedback,
+        ]
+      properties:
+        status: { type: string, const: available }
+        id: { type: string, format: uuid }
+        confidence: { $ref: '#/components/schemas/ReflectionConfidence' }
+        score: { type: number, minimum: 0, maximum: 1 }
+        title: { type: string, minLength: 1, maxLength: 300 }
+        description: { type: string, minLength: 1, maxLength: 1000 }
+        steps:
+          type: array
+          minItems: 3
+          maxItems: 6
+          items: { $ref: '#/components/schemas/ReflectionLoopStep' }
+        protection: { type: string, minLength: 1, maxLength: 1000 }
+        interruption: { type: string, minLength: 1, maxLength: 1000 }
+        evidence:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ReflectionEvidence' }
+        feedback:
+          anyOf:
+            - { $ref: '#/components/schemas/ReflectionFeedbackResponse' }
+            - { type: 'null' }
+    ReflectionInnerTension:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          confidence,
+          score,
+          leftTitle,
+          leftBody,
+          rightTitle,
+          rightBody,
+          integration,
+          dates,
+          evidence,
+          feedback,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        confidence: { $ref: '#/components/schemas/ReflectionConfidence' }
+        score: { type: number, minimum: 0, maximum: 1 }
+        leftTitle: { type: string, minLength: 1 }
+        leftBody: { type: string, minLength: 1, maxLength: 1000 }
+        rightTitle: { type: string, minLength: 1 }
+        rightBody: { type: string, minLength: 1, maxLength: 1000 }
+        integration: { type: string, minLength: 1, maxLength: 1000 }
+        dates:
+          type: array
+          items: { type: string, format: date }
+        evidence:
+          type: array
+          maxItems: 12
+          items: { $ref: '#/components/schemas/ReflectionEvidence' }
+        feedback:
+          anyOf:
+            - { $ref: '#/components/schemas/ReflectionFeedbackResponse' }
+            - { type: 'null' }
+    AvailableInnerTensions:
+      type: object
+      additionalProperties: false
+      required: [status, tensions]
+      properties:
+        status: { type: string, const: available }
+        tensions:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items: { $ref: '#/components/schemas/ReflectionInnerTension' }
+    ReflectionData:
+      type: object
+      additionalProperties: false
+      required: [hiddenDriver, recurringLoop, innerTensions]
+      properties:
+        hiddenDriver:
+          oneOf:
+            - { $ref: '#/components/schemas/AvailableHiddenDriver' }
+            - { $ref: '#/components/schemas/InsufficientReflectionInsight' }
+          discriminator: { propertyName: status }
+        recurringLoop:
+          oneOf:
+            - { $ref: '#/components/schemas/AvailableRecurringLoop' }
+            - { $ref: '#/components/schemas/InsufficientReflectionInsight' }
+          discriminator: { propertyName: status }
+        innerTensions:
+          oneOf:
+            - { $ref: '#/components/schemas/AvailableInnerTensions' }
+            - { $ref: '#/components/schemas/InsufficientReflectionInsight' }
+          discriminator: { propertyName: status }
+    ReflectionResponse:
+      type: object
+      additionalProperties: false
+      required:
+        [range, reflectionState, processingState, snapshot, analysisBasis, data]
+      properties:
+        range: { $ref: '#/components/schemas/ReflectionRange' }
+        reflectionState:
+          type: string
+          enum:
+            [
+              available,
+              first_reflection_pending,
+              stale,
+              insufficient_reflective_content,
+              technical_failure,
+            ]
+        processingState: { type: string, enum: [idle, pending, failed] }
+        snapshot:
+          anyOf:
+            - { $ref: '#/components/schemas/ReflectionSnapshot' }
+            - { type: 'null' }
+        analysisBasis: { $ref: '#/components/schemas/ReflectionAnalysisBasis' }
+        data: { $ref: '#/components/schemas/ReflectionData' }
+    ReflectionFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [response]
+      properties:
+        response: { $ref: '#/components/schemas/ReflectionFeedbackResponse' }
+    ReflectionFeedbackResult:
+      type: object
+      additionalProperties: false
+      required: [snapshotId, insightId, response, updatedAt]
+      properties:
+        snapshotId: { type: string, format: uuid }
+        insightId: { type: string, format: uuid }
+        response: { $ref: '#/components/schemas/ReflectionFeedbackResponse' }
+        updatedAt: { type: string, format: date-time }
     HealthResponse:
       type: object
       additionalProperties: false
