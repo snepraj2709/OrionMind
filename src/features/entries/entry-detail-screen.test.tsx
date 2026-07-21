@@ -1,11 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { EntryDetail } from './model';
-import type { EntriesRepository } from './repository';
+import type { EntryDetailRepository } from './repository';
 import { EntryDetailScreen } from './entry-detail-screen';
 
 const completedEntry: EntryDetail = {
@@ -36,28 +36,10 @@ const completedEntry: EntryDetail = {
 };
 
 function createRepository(
-  overrides: Partial<EntriesRepository> = {},
-): EntriesRepository {
+  overrides: Partial<EntryDetailRepository> = {},
+): EntryDetailRepository {
   return {
-    createTextEntry: vi.fn(),
-    createVoiceEntry: vi.fn(),
-    getTextDraft: vi.fn().mockResolvedValue({ content: null, updatedAt: null }),
-    saveTextDraft: vi.fn().mockImplementation(async (content: string) => ({
-      content,
-      updatedAt: '2026-07-21T10:00:00Z',
-    })),
-    discardTextDraft: vi.fn().mockResolvedValue({
-      content: null,
-      updatedAt: null,
-    }),
-    decideExtractedItem: vi.fn().mockResolvedValue(completedEntry),
     getEntry: vi.fn().mockResolvedValue(completedEntry),
-    listEntries: vi.fn().mockResolvedValue({
-      items: [],
-      total: 0,
-      page: 1,
-      pageSize: 10,
-    }),
     retryEntry: vi
       .fn()
       .mockResolvedValue({ ...completedEntry, status: 'processing' }),
@@ -99,15 +81,8 @@ describe('EntryDetailScreen', () => {
     expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
   });
 
-  it('renders a completed entry and saves an approval decision', async () => {
-    const approvedEntry: EntryDetail = {
-      ...completedEntry,
-      ideas: [{ ...completedEntry.ideas[0], status: 'approved' }],
-    };
-    const decideExtractedItem = vi.fn().mockResolvedValue(approvedEntry);
-    const repository = createRepository({ decideExtractedItem });
-    const user = userEvent.setup();
-    renderEntryDetail(repository);
+  it('renders a completed entry with read-only extracted items', async () => {
+    renderEntryDetail();
 
     expect(
       await screen.findByRole('heading', { name: 'July 10, 2025' }),
@@ -115,27 +90,29 @@ describe('EntryDetailScreen', () => {
     expect(screen.getByText('Personal Growth')).toBeVisible();
     expect(screen.getByText('Health')).toBeVisible();
 
-    const ideaCard = screen
-      .getByText('Protect slow, screen-free time in the morning.')
-      .closest('[data-slot="card"]');
-    expect(ideaCard).not.toBeNull();
-    await user.click(
-      within(ideaCard as HTMLElement).getByRole('button', {
-        name: 'Approve',
-      }),
-    );
-
-    await waitFor(() =>
-      expect(decideExtractedItem).toHaveBeenCalledWith({
-        entryId: 'e1',
-        itemId: 'i1',
-        kind: 'idea',
-        status: 'approved',
-      }),
-    );
     expect(
-      await within(ideaCard as HTMLElement).findByText('Approved'),
+      screen.getByText('Protect slow, screen-free time in the morning.'),
     ).toBeVisible();
+    expect(screen.getByText('Needs review')).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: 'Approve' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Reject' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps queued entry content visible until manual refresh', async () => {
+    const getEntry = vi
+      .fn<EntryDetailRepository['getEntry']>()
+      .mockResolvedValue({ ...completedEntry, status: 'pending' });
+    renderEntryDetail(createRepository({ getEntry }));
+
+    expect(
+      await screen.findByText('Entry is queued for reflection'),
+    ).toBeVisible();
+    expect(screen.getByText(completedEntry.content)).toBeVisible();
+    expect(getEntry).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the original entry visible while reflection is processing', async () => {
@@ -180,6 +157,41 @@ describe('EntryDetailScreen', () => {
     expect(retryEntry).toHaveBeenCalledWith('e1');
   });
 
+  it('prevents duplicate retry submissions', async () => {
+    const failedEntry: EntryDetail = {
+      ...completedEntry,
+      status: 'failed',
+    };
+    let resolveRetry: ((entry: EntryDetail) => void) | undefined;
+    const retryEntry = vi.fn(
+      () =>
+        new Promise<EntryDetail>((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    renderEntryDetail(
+      createRepository({
+        getEntry: vi.fn().mockResolvedValue(failedEntry),
+        retryEntry,
+      }),
+    );
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Retry reflection' }),
+    );
+    const loadingButton = screen.getByRole('button', {
+      name: 'Retrying reflection',
+    });
+    expect(loadingButton).toBeDisabled();
+    await user.click(loadingButton);
+    expect(retryEntry).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveRetry?.({ ...failedEntry, status: 'pending' });
+    });
+  });
+
   it('distinguishes a missing entry from a loading error', async () => {
     renderEntryDetail(
       createRepository({ getEntry: vi.fn().mockResolvedValue(null) }),
@@ -193,7 +205,7 @@ describe('EntryDetailScreen', () => {
 
   it('shows a load error and retries through the repository boundary', async () => {
     const getEntry = vi
-      .fn<EntriesRepository['getEntry']>()
+      .fn<EntryDetailRepository['getEntry']>()
       .mockRejectedValueOnce(new Error('Unavailable'))
       .mockResolvedValueOnce(completedEntry);
     const user = userEvent.setup();
@@ -211,7 +223,7 @@ describe('EntryDetailScreen', () => {
   it('keeps loaded content visible during a background refresh', async () => {
     let resolveRefresh: ((entry: EntryDetail) => void) | undefined;
     const getEntry = vi
-      .fn<EntriesRepository['getEntry']>()
+      .fn<EntryDetailRepository['getEntry']>()
       .mockResolvedValueOnce(completedEntry)
       .mockImplementationOnce(
         () =>
@@ -230,15 +242,24 @@ describe('EntryDetailScreen', () => {
     await act(async () => resolveRefresh?.(completedEntry));
   });
 
-  it('keeps data readable but disables decisions while offline', async () => {
+  it('keeps failed data readable but disables retry while offline', async () => {
     Object.defineProperty(navigator, 'onLine', {
       configurable: true,
       value: false,
     });
-    renderEntryDetail();
+    renderEntryDetail(
+      createRepository({
+        getEntry: vi.fn().mockResolvedValue({
+          ...completedEntry,
+          status: 'failed',
+        }),
+      }),
+    );
 
     expect(await screen.findByText(/You are offline/)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Retry reflection' }),
+    ).toBeDisabled();
     expect(screen.getByText(completedEntry.content)).toBeVisible();
   });
 });

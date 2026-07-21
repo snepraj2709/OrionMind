@@ -12,9 +12,14 @@ import { getDataViewStatus } from '@/lib/query-state';
 import { entriesRepository } from './mock-repository';
 import type { EntriesQuery } from './model';
 import { entryKeys } from './query-keys';
-import { entryComposerRepository, entriesListRepository } from './repository';
+import {
+  entryComposerRepository,
+  entryDetailRepository,
+  entriesListRepository,
+} from './repository';
 import type {
   EntryComposerRepository,
+  EntryDetailRepository,
   EntriesListRepository,
   CreateEntryInput,
   EntriesRepository,
@@ -44,7 +49,7 @@ export function useEntriesQuery(
 
 export function useEntryQuery(
   entryId: string,
-  repository: EntriesRepository = entriesRepository,
+  repository: EntryDetailRepository = entryDetailRepository,
 ) {
   const query = useQuery({
     queryKey: entryKeys.detail(entryId),
@@ -111,7 +116,7 @@ export function useEntryDecisionMutation(
 
 export function useRetryEntryMutation(
   entryId: string,
-  repository: EntriesRepository = entriesRepository,
+  repository: EntryDetailRepository = entryDetailRepository,
 ) {
   const queryClient = useQueryClient();
 

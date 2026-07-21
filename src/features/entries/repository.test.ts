@@ -23,6 +23,71 @@ const createdEntryResponse = {
   },
 };
 
+const entryDetailResponse = {
+  id: '8a7cc7df-94e5-41b4-b983-ab6ddda47785',
+  content: 'A complete voice transcript.',
+  input_type: 'audio' as const,
+  entry_date: '2026-07-21',
+  original_theme_config_id: '046870f3-a50f-4406-a9d8-36e774a793f1',
+  processing_status: 'completed' as const,
+  processing_error_code: null,
+  created_at: '2026-07-21T10:00:00Z',
+  classification: {
+    theme_config_id: '046870f3-a50f-4406-a9d8-36e774a793f1',
+    source: 'initial' as const,
+    mode: 'balanced' as const,
+    themes: [
+      {
+        key: 'personal_growth',
+        name: 'Personal Growth',
+        score: 0.8,
+        tier: 'primary' as const,
+      },
+      {
+        key: 'family_friends',
+        name: 'Family and Friends',
+        score: 0.6,
+        tier: 'secondary' as const,
+      },
+    ],
+  },
+  ideas: [
+    {
+      id: '9c36b3da-85da-4b63-93ee-5a48dc289034',
+      content: 'Protect quiet mornings.',
+      status: 'pending_approval' as const,
+      entry_id: '8a7cc7df-94e5-41b4-b983-ab6ddda47785',
+      entry_date: '2026-07-21',
+      created_at: '2026-07-21T10:01:00Z',
+      decided_at: null,
+    },
+  ],
+  extracted_memories: [
+    {
+      id: 'e3daf390-e979-4bb3-99f4-e42fd928af1b',
+      content: 'Stillness made the day feel spacious.',
+      status: 'approved' as const,
+      entry_id: '8a7cc7df-94e5-41b4-b983-ab6ddda47785',
+      entry_date: '2026-07-21',
+      created_at: '2026-07-21T10:01:00Z',
+      decided_at: '2026-07-21T10:02:00Z',
+    },
+  ],
+  reflections: [
+    {
+      id: '9f01fe2c-6a51-4aaf-844e-46495cba87ce',
+      reflection_type: 'learned_about_self' as const,
+      activity: 'I value unhurried time.',
+      confidence_score: 0.9,
+      status: 'rejected' as const,
+      entry_id: '8a7cc7df-94e5-41b4-b983-ab6ddda47785',
+      entry_date: '2026-07-21',
+      created_at: '2026-07-21T10:01:00Z',
+      decided_at: '2026-07-21T10:02:00Z',
+    },
+  ],
+};
+
 describe('HttpEntriesRepository', () => {
   it('sends only the backend-supported pagination parameters', async () => {
     const request = vi.fn<ApiRequest>().mockResolvedValue(
@@ -71,6 +136,87 @@ describe('HttpEntriesRepository', () => {
       status: 'pending',
       themes: ['personalGrowth', 'health', 'familyAndFriends'],
     });
+  });
+
+  it('gets and maps the complete entry detail contract', async () => {
+    const request = vi
+      .fn<ApiRequest>()
+      .mockResolvedValue(Response.json(entryDetailResponse));
+    const repository = new HttpEntriesRepository(request);
+
+    const result = await repository.getEntry('entry / 1');
+
+    expect(request).toHaveBeenCalledWith('/api/v1/entries/entry%20%2F%201');
+    expect(result).toEqual({
+      id: entryDetailResponse.id,
+      content: entryDetailResponse.content,
+      date: '2026-07-21',
+      inputType: 'voice',
+      status: 'completed',
+      themes: ['personalGrowth', 'familyAndFriends'],
+      ideas: [
+        {
+          id: entryDetailResponse.ideas[0].id,
+          content: 'Protect quiet mornings.',
+          kind: 'idea',
+          status: 'pending_approval',
+        },
+      ],
+      memories: [
+        {
+          id: entryDetailResponse.extracted_memories[0].id,
+          content: 'Stillness made the day feel spacious.',
+          kind: 'memory',
+          status: 'approved',
+        },
+      ],
+      reflections: [
+        {
+          id: entryDetailResponse.reflections[0].id,
+          content: 'I value unhurried time.',
+          kind: 'reflection',
+          status: 'rejected',
+        },
+      ],
+    });
+  });
+
+  it('maps detail 404 to null and safely rejects other failures', async () => {
+    const request = vi
+      .fn<ApiRequest>()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ id: 'malformed' }));
+    const repository = new HttpEntriesRepository(request);
+
+    await expect(repository.getEntry('missing')).resolves.toBeNull();
+    await expect(repository.getEntry('unavailable')).rejects.toMatchObject({
+      status: 503,
+    });
+    await expect(repository.getEntry('malformed')).rejects.toThrow();
+  });
+
+  it('retries a failed entry with POST and no body', async () => {
+    const request = vi.fn<ApiRequest>().mockResolvedValue(
+      Response.json({
+        ...entryDetailResponse,
+        processing_status: 'pending',
+        classification: null,
+        ideas: [],
+        extracted_memories: [],
+        reflections: [],
+      }),
+    );
+    const repository = new HttpEntriesRepository(request);
+
+    const result = await repository.retryEntry('entry / 1');
+
+    expect(request).toHaveBeenCalledWith(
+      '/api/v1/entries/entry%20%2F%201/retry',
+      { method: 'POST' },
+    );
+    expect(request.mock.calls[0]?.[1]?.body).toBeUndefined();
+    expect(result).toMatchObject({ status: 'pending', themes: [] });
   });
 
   it('uses the exact draft methods and JSON body', async () => {

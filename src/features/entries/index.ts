@@ -10,11 +10,13 @@ export {
   entriesApiResponseSchema,
   entriesRequestSchema,
   entryDraftApiResponseSchema,
+  entryDetailApiResponseSchema,
   createdEntryApiResponseSchema,
   type EntriesApiItem,
   type EntriesApiRequest,
   type EntriesApiResponse,
   type EntryDraftApiResponse,
+  type EntryDetailApiResponse,
   type CreatedEntryApiResponse,
 } from './api-schema';
 export { entriesApiFixtures } from './fixtures';
@@ -37,11 +39,13 @@ export type {
 export {
   entriesListRepository,
   entryComposerRepository,
+  entryDetailRepository,
   EntryRequestError,
   HttpEntriesRepository,
   type EntriesListRepository,
   type EntriesRepository,
   type EntryComposerRepository,
+  type EntryDetailRepository,
 } from './repository';
 export {
   canonicalizeDraftContent,

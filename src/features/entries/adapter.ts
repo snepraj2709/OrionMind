@@ -1,8 +1,12 @@
 import { themeRegistry, type ThemeKey } from '@/config/design-system';
 import { entryStatusPresentation, type EntryStatus } from '@/config/status';
-import type { EntrySummary } from '@/types/records';
+import type { EntryDetail, EntrySummary, ExtractedItem } from '@/types/records';
 
-import type { CreatedEntryApiResponse, EntriesApiItem } from './api-schema';
+import type {
+  CreatedEntryApiResponse,
+  EntriesApiItem,
+  EntryDetailApiResponse,
+} from './api-schema';
 
 function isEntryStatus(value: string): value is EntryStatus {
   return Object.hasOwn(entryStatusPresentation, value);
@@ -65,5 +69,42 @@ export function mapCreatedEntryApiResponse(
     themes: mapThemeKeys(
       item.classification?.themes.map((theme) => theme.key) ?? [],
     ),
+  };
+}
+
+function mapCandidate(
+  item: EntryDetailApiResponse['ideas'][number],
+  kind: 'idea' | 'memory',
+): ExtractedItem {
+  return {
+    id: item.id,
+    content: item.content,
+    kind,
+    status: item.status,
+  };
+}
+
+export function mapEntryDetailApiResponse(
+  item: EntryDetailApiResponse,
+): EntryDetail {
+  return {
+    id: item.id,
+    content: item.content,
+    date: item.entry_date,
+    inputType: item.input_type === 'audio' ? 'voice' : 'text',
+    status: item.processing_status,
+    themes: mapThemeKeys(
+      item.classification?.themes.map((theme) => theme.key) ?? [],
+    ),
+    ideas: item.ideas.map((idea) => mapCandidate(idea, 'idea')),
+    memories: item.extracted_memories.map((memory) =>
+      mapCandidate(memory, 'memory'),
+    ),
+    reflections: item.reflections.map((reflection) => ({
+      id: reflection.id,
+      content: reflection.activity,
+      kind: 'reflection',
+      status: reflection.status,
+    })),
   };
 }

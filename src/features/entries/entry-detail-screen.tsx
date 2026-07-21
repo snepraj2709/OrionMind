@@ -13,11 +13,7 @@ import {
   ProcessingState,
 } from '@/components/feedback';
 import { PageHeader, PageShell, Section } from '@/components/layout';
-import {
-  ApprovalActions,
-  RefreshButton,
-  ReviewItemCard,
-} from '@/components/shared';
+import { RefreshButton, ReviewItemCard } from '@/components/shared';
 import { AppLink, Breadcrumbs } from '@/components/navigation';
 import { routes } from '@/config/routes';
 import { dataViewMessages } from '@/config/messages';
@@ -29,60 +25,18 @@ import {
 import { useOnlineStatus } from '@/hooks';
 import { formatLongDate } from '@/lib/date';
 
-import { entriesRepository } from './mock-repository';
 import type { EntryDetail, ExtractedItem } from './model';
+import { useEntryQuery, useRetryEntryMutation } from './queries';
 import {
-  useEntryDecisionMutation,
-  useEntryQuery,
-  useRetryEntryMutation,
-} from './queries';
-import type { EntriesRepository } from './repository';
+  entryDetailRepository,
+  type EntryDetailRepository,
+} from './repository';
 
-function ExtractedItemView({
-  decision,
-  disabled,
-  entryId,
-  item,
-}: {
-  decision: ReturnType<typeof useEntryDecisionMutation>;
-  disabled: boolean;
-  entryId: string;
-  item: ExtractedItem;
-}) {
+function ExtractedItemView({ item }: { item: ExtractedItem }) {
   const presentation = approvalStatusPresentation[item.status];
-  const isCurrentItem = decision.variables?.itemId === item.id;
-  const loadingAction = isCurrentItem
-    ? decision.variables?.status === 'approved'
-      ? 'approve'
-      : 'reject'
-    : undefined;
 
   return (
     <ReviewItemCard
-      actions={
-        item.status === 'pending_approval' ? (
-          <ApprovalActions
-            disabled={disabled || decision.isPending}
-            loadingAction={decision.isPending ? loadingAction : undefined}
-            onApprove={() =>
-              decision.mutate({
-                entryId,
-                itemId: item.id,
-                kind: item.kind,
-                status: 'approved',
-              })
-            }
-            onReject={() =>
-              decision.mutate({
-                entryId,
-                itemId: item.id,
-                kind: item.kind,
-                status: 'rejected',
-              })
-            }
-          />
-        ) : undefined
-      }
       content={item.content}
       status={
         <StatusBadge label={presentation.label} variant={presentation.tone} />
@@ -92,15 +46,7 @@ function ExtractedItemView({
   );
 }
 
-function CompletedEntry({
-  decision,
-  entry,
-  isOnline,
-}: {
-  decision: ReturnType<typeof useEntryDecisionMutation>;
-  entry: EntryDetail;
-  isOnline: boolean;
-}) {
+function CompletedEntry({ entry }: { entry: EntryDetail }) {
   const extractedItems = [
     ...entry.ideas,
     ...entry.memories,
@@ -142,37 +88,19 @@ function CompletedEntry({
       </Section>
 
       <Section
-        description="Choose which extracted ideas, memories, and reflections belong in your Orion record."
+        description="Ideas, memories, and reflections Orion found in this entry."
         title="Extracted items"
       >
-        {!isOnline ? (
-          <InlineError>
-            You are offline. Your entry remains available, but review actions
-            will return when the connection is restored.
-          </InlineError>
-        ) : null}
-        {decision.isError ? (
-          <InlineError>
-            This review decision could not be saved. It may already have been
-            decided; refresh the entry and try again.
-          </InlineError>
-        ) : null}
         {extractedItems.length === 0 ? (
           <EmptyState
             className="py-8"
-            description="This entry did not produce an extracted item that needs your review."
-            title="Nothing to review"
+            description="This entry did not produce any extracted ideas, memories, or reflections."
+            title="No extracted items"
           />
         ) : (
           <div aria-live="polite" className="space-y-4">
             {extractedItems.map((item) => (
-              <ExtractedItemView
-                decision={decision}
-                disabled={!isOnline}
-                entryId={entry.id}
-                item={item}
-                key={item.id}
-              />
+              <ExtractedItemView item={item} key={item.id} />
             ))}
           </div>
         )}
@@ -183,16 +111,15 @@ function CompletedEntry({
 
 export interface EntryDetailScreenProps {
   entryId: string;
-  repository?: EntriesRepository;
+  repository?: EntryDetailRepository;
 }
 
 export function EntryDetailScreen({
   entryId,
-  repository = entriesRepository,
+  repository = entryDetailRepository,
 }: EntryDetailScreenProps) {
   const isOnline = useOnlineStatus();
   const { query: entryQuery, viewStatus } = useEntryQuery(entryId, repository);
-  const decision = useEntryDecisionMutation(repository);
   const retry = useRetryEntryMutation(entryId, repository);
 
   const entry = entryQuery.data;
@@ -262,6 +189,20 @@ export function EntryDetailScreen({
         </div>
       ) : null}
 
+      {entry?.status === 'pending' ? (
+        <div className="space-y-6">
+          <Surface className="p-6 sm:p-8">
+            <Typography className="text-measure-wide" variant="journalExcerpt">
+              {entry.content}
+            </Typography>
+          </Surface>
+          <ProcessingState
+            description="Your entry is safe and waiting for Orion to begin reflection. Refresh when you are ready to check its progress."
+            title="Entry is queued for reflection"
+          />
+        </div>
+      ) : null}
+
       {entry?.status === 'failed' ? (
         <div className="space-y-6">
           <Surface className="p-6 sm:p-8">
@@ -272,7 +213,7 @@ export function EntryDetailScreen({
           <PageErrorState
             action={
               <AppButton
-                disabled={!isOnline}
+                disabled={!isOnline || retry.isPending}
                 loading={retry.isPending}
                 loadingLabel="Retrying reflection"
                 onClick={() => retry.mutate()}
@@ -297,9 +238,7 @@ export function EntryDetailScreen({
         </div>
       ) : null}
 
-      {entry?.status === 'completed' ? (
-        <CompletedEntry decision={decision} entry={entry} isOnline={isOnline} />
-      ) : null}
+      {entry?.status === 'completed' ? <CompletedEntry entry={entry} /> : null}
     </PageShell>
   );
 }

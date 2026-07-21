@@ -1,10 +1,15 @@
 import { apiRequest, type ApiRequest } from '@/services/api-client';
 
-import { mapCreatedEntryApiResponse, mapEntriesApiItem } from './adapter';
+import {
+  mapCreatedEntryApiResponse,
+  mapEntriesApiItem,
+  mapEntryDetailApiResponse,
+} from './adapter';
 import {
   createdEntryApiResponseSchema,
   entriesApiResponseSchema,
   entryDraftApiResponseSchema,
+  entryDetailApiResponseSchema,
 } from './api-schema';
 import type {
   ApprovalStatus,
@@ -44,11 +49,17 @@ export interface EntryComposerRepository {
   createVoiceEntry(input: CreateVoiceEntryInput): Promise<EntrySummary>;
 }
 
-export interface EntriesRepository
-  extends EntriesListRepository, EntryComposerRepository {
+export interface EntryDetailRepository {
   getEntry(entryId: string): Promise<EntryDetail | null>;
-  decideExtractedItem(input: ExtractedItemDecisionInput): Promise<EntryDetail>;
   retryEntry(entryId: string): Promise<EntryDetail>;
+}
+
+export interface EntriesRepository
+  extends
+    EntriesListRepository,
+    EntryComposerRepository,
+    EntryDetailRepository {
+  decideExtractedItem(input: ExtractedItemDecisionInput): Promise<EntryDetail>;
 }
 
 export const MAX_VOICE_RECORDING_BYTES = 25 * 1024 * 1024;
@@ -107,7 +118,10 @@ function voiceUpload(recording: Blob) {
 }
 
 export class HttpEntriesRepository
-  implements EntriesListRepository, EntryComposerRepository
+  implements
+    EntriesListRepository,
+    EntryComposerRepository,
+    EntryDetailRepository
 {
   constructor(private readonly request: ApiRequest = apiRequest) {}
 
@@ -190,6 +204,30 @@ export class HttpEntriesRepository
       createdEntryApiResponseSchema.parse(await response.json()),
     );
   }
+
+  async getEntry(entryId: string): Promise<EntryDetail | null> {
+    const response = await this.request(
+      `/api/v1/entries/${encodeURIComponent(entryId)}`,
+    );
+    if (response.status === 404) return null;
+    await requireOk(response, 'Entry detail');
+    return mapEntryDetailApiResponse(
+      entryDetailApiResponseSchema.parse(await response.json()),
+    );
+  }
+
+  async retryEntry(entryId: string): Promise<EntryDetail> {
+    const response = await requireOk(
+      await this.request(
+        `/api/v1/entries/${encodeURIComponent(entryId)}/retry`,
+        { method: 'POST' },
+      ),
+      'Entry retry',
+    );
+    return mapEntryDetailApiResponse(
+      entryDetailApiResponseSchema.parse(await response.json()),
+    );
+  }
 }
 
 const httpEntriesRepository = new HttpEntriesRepository();
@@ -197,4 +235,6 @@ const httpEntriesRepository = new HttpEntriesRepository();
 export const entriesListRepository: EntriesListRepository =
   httpEntriesRepository;
 export const entryComposerRepository: EntryComposerRepository =
+  httpEntriesRepository;
+export const entryDetailRepository: EntryDetailRepository =
   httpEntriesRepository;
