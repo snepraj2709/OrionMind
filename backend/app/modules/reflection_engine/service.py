@@ -55,6 +55,8 @@ from app.modules.reflection_engine.scoring import (
     score_recurring_loop,
 )
 from app.shared.database.unit_of_work import UnitOfWorkFactory
+from app.shared.observability.logging import safe_log
+from app.shared.observability.reflection import ReflectionTelemetry
 from app.shared.security.encryption import ContentCipher
 
 
@@ -107,6 +109,7 @@ class ReflectionEngineService:
         provider: Any | None = None,
         validator: EvidenceValidator | None = None,
         basis_days: int = 90,
+        telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         if basis_days != 90:
             raise ValueError("the MVP reflection basis must be exactly 90 days")
@@ -115,6 +118,7 @@ class ReflectionEngineService:
         self._provider = provider or UnavailableReflectionProvider()
         self._validator = validator or EvidenceValidator()
         self._basis_days = basis_days
+        self._telemetry = telemetry or ReflectionTelemetry()
 
     def construct_and_apply(
         self,
@@ -241,17 +245,15 @@ class ReflectionEngineService:
         for proposal in proposals:
             deterministic = by_candidate.get(proposal.candidate_id)
             if deterministic is None:
-                logger.info(
-                    "reflection_proposal_discarded reason_code=UNKNOWN_CANDIDATE"
-                )
+                self._record_discard("UNKNOWN_CANDIDATE")
                 continue
             materialized = self._materialize_proposal(
                 deterministic,
                 proposal=proposal,
             )
             if materialized is None:
-                logger.info(
-                    "reflection_proposal_discarded reason_code=EVIDENCE_ROLE_MISMATCH"
+                self._record_discard(
+                    "EVIDENCE_ROLE_MISMATCH", candidate=deterministic
                 )
                 continue
             reasons = self._validator.validate_candidate(
@@ -264,10 +266,7 @@ class ReflectionEngineService:
                 transition_support=_final_transition_support(materialized),
             )
             if reasons:
-                logger.info(
-                    "reflection_proposal_discarded reason_code=%s",
-                    reasons[0],
-                )
+                self._record_discard(reasons[0], candidate=materialized)
                 continue
             if critic_required(materialized):
                 critique = self._provider.critique(
@@ -278,13 +277,25 @@ class ReflectionEngineService:
                     safety_identifier=safety_identifier,
                 )
                 if not _critic_allows_publication(critique):
-                    logger.info(
-                        "reflection_proposal_discarded reason_code=CRITIC_DISCARDED"
+                    self._record_discard(
+                        "CRITIC_DISCARDED", candidate=materialized
                     )
                     continue
             final_candidates.append(materialized)
 
         selected = _select_snapshot_candidates(final_candidates)
+        for candidate in selected:
+            self._telemetry.record_candidate(
+                pattern_type=candidate.pattern_type,
+                outcome="selected",
+            )
+            safe_log(
+                logger,
+                "reflection_candidate_observed",
+                candidate_id=candidate.id,
+                pattern_type=candidate.pattern_type,
+                outcome="selected",
+            )
         selected_ids = {candidate.id for candidate in selected}
         persisted_candidates = [
             _snapshot_candidate_status(candidate, published=candidate.id in selected_ids)
@@ -329,6 +340,31 @@ class ReflectionEngineService:
                 candidate_evidence=candidate_evidence,
                 insights=insights,
                 snapshot_evidence=snapshot_evidence,
+            )
+
+    def _record_discard(
+        self,
+        reason_code: str,
+        *,
+        candidate: ConstructedCandidate | None = None,
+    ) -> None:
+        self._telemetry.record_validator_discard(reason_code=reason_code)
+        safe_log(
+            logger,
+            "reflection_proposal_discarded",
+            reason_code=reason_code,
+        )
+        if candidate is not None:
+            self._telemetry.record_candidate(
+                pattern_type=candidate.pattern_type,
+                outcome="discarded",
+            )
+            safe_log(
+                logger,
+                "reflection_candidate_observed",
+                candidate_id=candidate.id,
+                pattern_type=candidate.pattern_type,
+                outcome="discarded",
             )
 
     @staticmethod
@@ -690,6 +726,17 @@ class ReflectionEngineService:
             )
             if reasons:
                 discarded.extend(reasons)
+                self._telemetry.record_candidate(
+                    pattern_type=draft.candidate.pattern_type,
+                    outcome="discarded",
+                )
+                safe_log(
+                    logger,
+                    "reflection_candidate_observed",
+                    candidate_id=draft.candidate.id,
+                    pattern_type=draft.candidate.pattern_type,
+                    outcome="discarded",
+                )
                 continue
             accepted.append(draft.candidate)
             evidence.extend(
@@ -710,6 +757,25 @@ class ReflectionEngineService:
                 )
                 for signal_id in draft.candidate.counter_signal_ids
             )
+        for reason_code in discarded:
+            self._telemetry.record_validator_discard(reason_code=reason_code)
+        for candidate in accepted:
+            self._telemetry.record_candidate(
+                pattern_type=candidate.pattern_type,
+                outcome="constructed",
+            )
+            safe_log(
+                logger,
+                "reflection_candidate_observed",
+                candidate_id=candidate.id,
+                pattern_type=candidate.pattern_type,
+                outcome="constructed",
+            )
+            if candidate.publication_gate_passed:
+                self._telemetry.record_candidate(
+                    pattern_type=candidate.pattern_type,
+                    outcome="publishable",
+                )
         return CandidateBatch(
             basis=basis,
             basis_eligible=True,

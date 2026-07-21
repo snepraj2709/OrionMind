@@ -10,6 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse
 
 from app.shared.exceptions.domain import DomainError
+from app.shared.observability.logging import safe_log
 
 
 logger = logging.getLogger("orion.errors")
@@ -116,11 +117,15 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def handle_unexpected_error(request: Request, _exc: Exception) -> JSONResponse:
-        logger.error(
-            "unhandled_request_error request_id=%s method=%s path=%s",
-            request_id_for(request),
-            request.method,
-            request.url.path,
+        route = getattr(request.scope.get("route"), "path", "<unmatched>")
+        safe_log(
+            logger,
+            "unhandled_request_error",
+            level=logging.ERROR,
+            request_id=request_id_for(request),
+            method=request.method,
+            route=route,
+            status_code=500,
         )
         return error_response(
             request,

@@ -49,3 +49,17 @@ class BackfillStatus:
     cursor_entry_id: UUID | None
     throttled: bool
     throttle_reason: Literal["QUEUE_DEPTH", "OLDEST_PENDING_AGE"] | None
+
+
+@dataclass(frozen=True, slots=True)
+class SchedulerStats:
+    checked: int
+    eligible: int
+    enqueued: int
+
+
+@dataclass(frozen=True, slots=True)
+class QueueStatus:
+    job_type: JobType
+    queue_depth: int
+    oldest_pending_seconds: int

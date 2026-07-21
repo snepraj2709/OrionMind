@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -9,7 +10,12 @@ from typing import Literal
 from uuid import UUID
 
 from app.modules.jobs.repository import JobRepository
-from app.modules.jobs.types import BackfillStatus, DispatchResult, JobClaim
+from app.modules.jobs.types import (
+    BackfillStatus,
+    DispatchResult,
+    JobClaim,
+    SchedulerStats,
+)
 from app.modules.processing.provider import (
     ProviderUnavailableError,
     ProviderResponseError,
@@ -32,6 +38,8 @@ from app.modules.reflection_engine.service import (
     SnapshotValidationError,
 )
 from app.shared.database.unit_of_work import UnitOfWorkFactory
+from app.shared.observability.logging import safe_log
+from app.shared.observability.reflection import QueueObservation, ReflectionTelemetry
 from app.shared.security.encryption import ContentCipher, ContentUnavailableError
 
 
@@ -72,6 +80,7 @@ class JobService:
         backfill_max_queue_depth: int = 1000,
         backfill_max_oldest_pending_seconds: int = 300,
         heartbeat_interval_seconds: float = 30.0,
+        telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         self._repository = repository
         self._processing = processing
@@ -86,20 +95,33 @@ class JobService:
             backfill_max_oldest_pending_seconds
         )
         self._heartbeat_interval = heartbeat_interval_seconds
+        self._telemetry = telemetry or ReflectionTelemetry()
 
     def run_one(self, *, worker_id: str, uow: UnitOfWorkFactory) -> bool:
         with uow.for_worker() as work:
             claim = self._repository.claim(work.session, worker_id=worker_id)
         if claim is None:
             return False
+        started = time.monotonic()
         result = self._dispatch(claim=claim, worker_id=worker_id, uow=uow)
-        logger.info(
-            "processing_job_finished job_id=%s job_type=%s attempt=%d outcome=%s error_code=%s",
-            claim.job_id,
-            claim.job_type,
-            claim.attempts,
-            result.outcome,
-            result.error_code or "NONE",
+        duration_seconds = time.monotonic() - started
+        error_code = result.error_code or "NONE"
+        self._telemetry.record_job(
+            job_type=claim.job_type,
+            status=result.outcome,
+            error_code=error_code,
+            duration_seconds=duration_seconds,
+        )
+        safe_log(
+            logger,
+            "processing_job_finished",
+            job_id=claim.job_id,
+            job_type=claim.job_type,
+            attempt=claim.attempts,
+            status=result.outcome,
+            error_code=error_code,
+            duration_ms=round(duration_seconds * 1000),
+            terminal_failures=1 if result.outcome == "failed" else 0,
         )
         return True
 
@@ -163,11 +185,55 @@ class JobService:
             return 0
         scheduled_at = now or datetime.now(timezone.utc)
         with uow.for_worker() as work:
-            return self._repository.schedule_reflections(
+            observed = self._repository.schedule_reflections(
                 work.session,
                 now=scheduled_at,
                 execution_mode=self._reflection_rollout_mode,
                 user_ids=self._reflection_rollout_user_ids,
+            )
+        stats = (
+            observed
+            if isinstance(observed, SchedulerStats)
+            else SchedulerStats(
+                checked=int(observed),
+                eligible=int(observed),
+                enqueued=int(observed),
+            )
+        )
+        self._telemetry.record_scheduler(
+            checked=stats.checked,
+            eligible=stats.eligible,
+            enqueued=stats.enqueued,
+        )
+        safe_log(
+            logger,
+            "reflection_scheduler_complete",
+            checked=stats.checked,
+            eligible=stats.eligible,
+            enqueued=stats.enqueued,
+        )
+        return stats.enqueued
+
+    def observe_queue(self, *, uow: UnitOfWorkFactory) -> None:
+        with uow.for_worker() as work:
+            statuses = self._repository.queue_observability(work.session)
+        self._telemetry.observe_queue(
+            tuple(
+                QueueObservation(
+                    job_type=item.job_type,
+                    queue_depth=item.queue_depth,
+                    oldest_pending_seconds=item.oldest_pending_seconds,
+                )
+                for item in statuses
+            )
+        )
+        for item in statuses:
+            safe_log(
+                logger,
+                "processing_queue_observed",
+                job_type=item.job_type,
+                queue_depth=item.queue_depth,
+                oldest_pending_seconds=item.oldest_pending_seconds,
             )
 
     def _dispatch(

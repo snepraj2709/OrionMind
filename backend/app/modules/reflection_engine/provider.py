@@ -9,12 +9,16 @@ from pydantic import ValidationError
 
 from app.modules.reflection_engine.prompts import (
     REFLECTION_CRITIC_DEVELOPER_PROMPT,
+    REFLECTION_CRITIC_PROMPT_VERSION,
     REFLECTION_SYNTHESIS_DEVELOPER_PROMPT,
+    REFLECTION_SYNTHESIS_PROMPT_VERSION,
 )
 from app.modules.reflection_engine.schemas import (
     ReflectionCriticOutput,
     ReflectionSynthesisOutput,
 )
+from app.shared.observability.logging import safe_log
+from app.shared.observability.reflection import ReflectionTelemetry, token_counts
 
 
 logger = logging.getLogger("orion.reflection.provider")
@@ -74,10 +78,12 @@ class OpenAIReflectionProvider:
         connect_timeout: float,
         response_timeout: float,
         total_timeout: float,
+        telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         self._client = client
         self._synthesis_model = synthesis_model
         self._critic_model = critic_model
+        self._telemetry = telemetry or ReflectionTelemetry()
         bounded_response = min(response_timeout, total_timeout)
         bounded_connect = min(connect_timeout, total_timeout)
         self._timeout = httpx.Timeout(
@@ -94,6 +100,7 @@ class OpenAIReflectionProvider:
         return self._parse(
             role="synthesis",
             model=self._synthesis_model,
+            prompt_version=REFLECTION_SYNTHESIS_PROMPT_VERSION,
             instructions=REFLECTION_SYNTHESIS_DEVELOPER_PROMPT,
             payload=payload,
             output_model=ReflectionSynthesisOutput,
@@ -106,6 +113,7 @@ class OpenAIReflectionProvider:
         return self._parse(
             role="critic",
             model=self._critic_model,
+            prompt_version=REFLECTION_CRITIC_PROMPT_VERSION,
             instructions=REFLECTION_CRITIC_DEVELOPER_PROMPT,
             payload=payload,
             output_model=ReflectionCriticOutput,
@@ -117,6 +125,7 @@ class OpenAIReflectionProvider:
         *,
         role: str,
         model: str,
+        prompt_version: str,
         instructions: str,
         payload: str,
         output_model: Any,
@@ -124,57 +133,115 @@ class OpenAIReflectionProvider:
     ):
         client = self._client.with_options(max_retries=0, timeout=self._timeout)
         started = time.monotonic()
-        try:
-            response = client.responses.parse(
-                model=model,
-                instructions=instructions,
-                input=payload,
-                text_format=output_model,
-                store=False,
-                truncation="disabled",
-                safety_identifier=safety_identifier,
-            )
-            if getattr(response, "status", None) == "incomplete":
-                raise ReflectionProviderResponseError(
-                    f"reflection {role} response is incomplete"
+        input_tokens = 0
+        output_tokens = 0
+        model_role = "synthesis" if role == "synthesis" else "critic"
+        with self._telemetry.model_span(
+            role=model_role,
+            model_id=model,
+            prompt_version=prompt_version,
+        ) as span:
+            try:
+                response = client.responses.parse(
+                    model=model,
+                    instructions=instructions,
+                    input=payload,
+                    text_format=output_model,
+                    store=False,
+                    truncation="disabled",
+                    safety_identifier=safety_identifier,
                 )
-            parsed = getattr(response, "output_parsed", None)
-            if parsed is None:
-                raise ReflectionProviderResponseError(
-                    f"reflection {role} response is unavailable"
+                input_tokens, output_tokens = token_counts(response)
+                if getattr(response, "status", None) == "incomplete":
+                    raise ReflectionProviderResponseError(
+                        f"reflection {role} response is incomplete"
+                    )
+                parsed = getattr(response, "output_parsed", None)
+                if parsed is None:
+                    raise ReflectionProviderResponseError(
+                        f"reflection {role} response is unavailable"
+                    )
+                result = (
+                    parsed
+                    if isinstance(parsed, output_model)
+                    else output_model.model_validate(parsed)
                 )
-            result = (
-                parsed
-                if isinstance(parsed, output_model)
-                else output_model.model_validate(parsed)
-            )
-        except (ReflectionProviderResponseError, ValidationError) as exc:
-            logger.info(
-                "reflection_model_attempt role=%s model=%s outcome=invalid duration_ms=%d",
-                role,
-                model,
-                round((time.monotonic() - started) * 1000),
-            )
-            if isinstance(exc, ValidationError):
-                raise ReflectionProviderResponseError(
-                    f"reflection {role} schema is invalid"
+            except (ReflectionProviderResponseError, ValidationError) as exc:
+                self._record_attempt(
+                    span=span,
+                    role=model_role,
+                    model=model,
+                    prompt_version=prompt_version,
+                    status="invalid",
+                    started=started,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    retry_class="terminal",
+                )
+                if isinstance(exc, ValidationError):
+                    raise ReflectionProviderResponseError(
+                        f"reflection {role} schema is invalid"
+                    ) from exc
+                raise
+            except Exception as exc:
+                self._record_attempt(
+                    span=span,
+                    role=model_role,
+                    model=model,
+                    prompt_version=prompt_version,
+                    status="failed",
+                    started=started,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    retry_class="retryable" if _retryable(exc) else "terminal",
+                )
+                raise ReflectionProviderUnavailableError(
+                    f"structured reflection {role} failed"
                 ) from exc
-            raise
-        except Exception as exc:
-            logger.info(
-                "reflection_model_attempt role=%s model=%s outcome=failure error_class=%s duration_ms=%d",
-                role,
-                model,
-                type(exc).__name__,
-                round((time.monotonic() - started) * 1000),
+            self._record_attempt(
+                span=span,
+                role=model_role,
+                model=model,
+                prompt_version=prompt_version,
+                status="success",
+                started=started,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                retry_class="none",
             )
-            raise ReflectionProviderUnavailableError(
-                f"structured reflection {role} failed"
-            ) from exc
-        logger.info(
-            "reflection_model_attempt role=%s model=%s outcome=success duration_ms=%d",
-            role,
-            model,
-            round((time.monotonic() - started) * 1000),
-        )
         return result
+
+    def _record_attempt(
+        self,
+        *,
+        span: Any,
+        role: str,
+        model: str,
+        prompt_version: str,
+        status: str,
+        started: float,
+        input_tokens: int,
+        output_tokens: int,
+        retry_class: str,
+    ) -> None:
+        duration_ms = round((time.monotonic() - started) * 1000)
+        self._telemetry.finish_model_span(
+            span,
+            status=status,
+            duration_ms=duration_ms,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            retry_class=retry_class,
+        )
+        safe_log(
+            logger,
+            "reflection_model_attempt",
+            model_role=role,
+            model_id=model,
+            prompt_version=prompt_version,
+            status=status,
+            duration_ms=duration_ms,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            retry_class=retry_class,
+        )

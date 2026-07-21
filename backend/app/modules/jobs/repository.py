@@ -9,7 +9,13 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.modules.jobs.schemas import JobExecutionMode
-from app.modules.jobs.types import BackfillStatus, EntryJobPayload, JobClaim
+from app.modules.jobs.types import (
+    BackfillStatus,
+    EntryJobPayload,
+    JobClaim,
+    QueueStatus,
+    SchedulerStats,
+)
 
 
 FailureOutcome = Literal["pending", "failed", "stale"]
@@ -23,21 +29,57 @@ class JobRepository:
         now: datetime,
         execution_mode: Literal["shadow", "publish"],
         user_ids: Collection[UUID],
-    ) -> int:
-        return int(
-            session.scalar(
-                text(
-                    "SELECT public.schedule_reflection_jobs("
-                    ":now, :execution_mode, :user_ids)"
-                ),
-                {
-                    "now": now,
-                    "execution_mode": execution_mode,
-                    "user_ids": list(user_ids),
-                },
-            )
-            or 0
+    ) -> SchedulerStats:
+        value = session.scalar(
+            text(
+                "SELECT public.schedule_reflection_jobs_observed("
+                ":now, :execution_mode, :user_ids)"
+            ),
+            {
+                "now": now,
+                "execution_mode": execution_mode,
+                "user_ids": list(user_ids),
+            },
         )
+        if not isinstance(value, Mapping):
+            raise RuntimeError("reflection scheduler statistics are invalid")
+        try:
+            result = SchedulerStats(
+                checked=int(value["checked"]),
+                eligible=int(value["eligible"]),
+                enqueued=int(value["enqueued"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("reflection scheduler statistics are invalid") from exc
+        if min(result.checked, result.eligible, result.enqueued) < 0:
+            raise RuntimeError("reflection scheduler statistics are invalid")
+        return result
+
+    def queue_observability(self, session: Session) -> tuple[QueueStatus, ...]:
+        rows = session.execute(
+            text("SELECT * FROM public.get_processing_queue_observability()")
+        ).mappings().all()
+        try:
+            result = tuple(
+                QueueStatus(
+                    job_type=cast(Any, row["job_type"]),
+                    queue_depth=int(row["queue_depth"]),
+                    oldest_pending_seconds=int(row["oldest_pending_seconds"]),
+                )
+                for row in rows
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("processing queue observation is invalid") from exc
+        if (
+            {item.job_type for item in result}
+            != {"entry_processing", "reflection_synthesis"}
+            or any(
+                item.queue_depth < 0 or item.oldest_pending_seconds < 0
+                for item in result
+            )
+        ):
+            raise RuntimeError("processing queue observation is invalid")
+        return result
 
     def claim(self, session: Session, *, worker_id: str) -> JobClaim | None:
         row = session.execute(

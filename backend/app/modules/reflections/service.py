@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from collections.abc import Collection, Mapping
 from datetime import date, datetime, timedelta
@@ -34,10 +35,13 @@ from app.modules.reflections.types import FeedbackCommand, ReflectionQuery
 from app.modules.reflections.views import insufficient
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 from app.shared.exceptions.domain import DomainError
+from app.shared.observability.logging import safe_log
+from app.shared.observability.reflection import ReflectionTelemetry
 from app.shared.security.encryption import ContentCipher
 
 
 NO_STORE_HEADERS = {"Cache-Control": "private, no-store"}
+logger = logging.getLogger("orion.reflections.service")
 PATTERN_TYPES = frozenset({"hidden_driver", "recurring_loop", "inner_tension"})
 REASON_CODES = frozenset(
     {
@@ -59,6 +63,7 @@ class ReflectionsService:
         enabled: bool,
         allowed_user_ids: Collection[UUID],
         basis_days: int = 90,
+        telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         if basis_days != 90:
             raise ValueError("the MVP reflection basis must be exactly 90 days")
@@ -66,6 +71,7 @@ class ReflectionsService:
         self._cipher = cipher
         self._enabled = enabled
         self._allowed_user_ids = frozenset(allowed_user_ids)
+        self._telemetry = telemetry or ReflectionTelemetry()
 
     def read(
         self,
@@ -73,10 +79,39 @@ class ReflectionsService:
         query: ReflectionQuery,
         uow: UnitOfWorkFactory,
     ) -> ReflectionResponse:
-        self._require_enabled(query.user_id)
-        with uow.for_user(query.user_id) as work:
-            raw = self._repository.load_aggregate(work.session, user_id=query.user_id)
-        return self._build_response(query=query, raw=raw)
+        try:
+            self._require_enabled(query.user_id)
+            with uow.for_user(query.user_id) as work:
+                raw = self._repository.load_aggregate(
+                    work.session, user_id=query.user_id
+                )
+            result = self._build_response(query=query, raw=raw)
+        except DomainError as exc:
+            reflection_state = str(
+                exc.details.get("reflectionState", "unavailable")
+            )
+            processing_state = str(
+                exc.details.get("processingState", "unavailable")
+            )
+            self._record_api_response(
+                reflection_state=reflection_state,
+                processing_state=processing_state,
+                status_code=exc.status_code,
+            )
+            raise
+        except Exception:
+            self._record_api_response(
+                reflection_state="technical_failure",
+                processing_state="failed",
+                status_code=500,
+            )
+            raise
+        self._record_api_response(
+            reflection_state=result.reflection_state,
+            processing_state=result.processing_state,
+            status_code=200,
+        )
+        return result
 
     def save_feedback(
         self,
@@ -101,11 +136,39 @@ class ReflectionsService:
                 "The requested resource was not found.",
                 headers=NO_STORE_HEADERS,
             ) from exc
-        return FeedbackResult(
+        result = FeedbackResult(
             snapshot_id=saved.snapshot_id,
             insight_id=saved.insight_id,
             response=saved.response,
             updated_at=saved.updated_at,
+        )
+        self._telemetry.record_feedback(response=result.response)
+        safe_log(
+            logger,
+            "reflection_feedback_saved",
+            snapshot_id=result.snapshot_id,
+            response=result.response,
+            status_code=200,
+        )
+        return result
+
+    def _record_api_response(
+        self,
+        *,
+        reflection_state: str,
+        processing_state: str,
+        status_code: int,
+    ) -> None:
+        self._telemetry.record_api_response(
+            reflection_state=reflection_state,
+            processing_state=processing_state,
+        )
+        safe_log(
+            logger,
+            "reflection_api_response",
+            reflection_state=reflection_state,
+            processing_state=processing_state,
+            status_code=status_code,
         )
 
     def _require_enabled(self, user_id: UUID) -> None:

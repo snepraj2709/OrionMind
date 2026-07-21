@@ -75,6 +75,7 @@ NEW_FUNCTIONS = (
     "get_user_pii_vault_for_update",
     "get_entry_processing_payload",
     "get_entry_processing_backfill_status",
+    "get_processing_queue_observability",
     "get_entry_quality_history",
     "get_reflection_candidate_basis",
     "get_reflection_synthesis_basis",
@@ -89,6 +90,7 @@ NEW_FUNCTIONS = (
     "run_entry_processing_backfill_batch",
     "save_user_pii_vault",
     "schedule_reflection_jobs",
+    "schedule_reflection_jobs_observed",
     "set_entry_processing_backfill_state",
 )
 RETIRED_ENTRY_APPLY_SIGNATURE = (
@@ -334,6 +336,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0009_reflection_synthesis.sql",
         "0010_reflections_api.sql",
         "0011_reflection_rollout.sql",
+        "0012_reflection_observability.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -1745,3 +1748,51 @@ def test_reflection_api_read_rpc_is_authenticated_owner_checked_and_bounded() ->
             connection.execute(
                 "SELECT public.get_reflections_for_owner(%s, 13)", (USER_ONE,)
             )
+
+
+def test_observability_rpcs_are_worker_only_and_report_scheduler_and_queue_counts() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        connection.execute(
+            "UPDATE public.user_profiles SET timezone = 'Asia/Kolkata' "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) "
+            "VALUES (%s, 21, 3, 1, ARRAY['2026-07-21'::date])",
+            (USER_ONE,),
+        )
+        connection.commit()
+
+        owner(connection, USER_ONE)
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            connection.execute(
+                "SELECT * FROM public.get_processing_queue_observability()"
+            )
+        connection.rollback()
+
+        with connection.transaction():
+            worker(connection)
+            stats = connection.execute(
+                "SELECT public.schedule_reflection_jobs_observed(%s, %s, %s)",
+                (
+                    "2026-07-21 12:31:00+00",
+                    "publish",
+                    [USER_ONE],
+                ),
+            ).fetchone()[0]
+            assert stats == {"checked": 1, "eligible": 1, "enqueued": 1}
+            queue = connection.execute(
+                "SELECT * FROM public.get_processing_queue_observability()"
+            ).fetchall()
+            assert [row[0] for row in queue] == [
+                "entry_processing",
+                "reflection_synthesis",
+            ]
+            assert queue[0][1:] == (0, 0)
+            assert queue[1][1] == 1
+            assert queue[1][2] >= 0

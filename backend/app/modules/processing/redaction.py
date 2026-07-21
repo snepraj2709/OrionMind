@@ -75,6 +75,7 @@ class PresidioEntityAnalyzer:
 
     @classmethod
     def from_local_model(cls) -> "PresidioEntityAnalyzer":
+        _offline_tldextract()
         from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
         from presidio_analyzer.nlp_engine import NlpEngineProvider
 
@@ -576,6 +577,29 @@ def _resolve_overlaps(
 @lru_cache(maxsize=1)
 def _local_entity_analyzer() -> PresidioEntityAnalyzer:
     return PresidioEntityAnalyzer.from_local_model()
+
+
+@lru_cache(maxsize=1)
+def _offline_tldextract():
+    """Force Presidio's email recognizer onto the packaged PSL snapshot."""
+
+    import tldextract
+
+    extractor = tldextract.TLDExtract(
+        cache_dir=None,
+        suffix_list_urls=(),
+        fallback_to_snapshot=True,
+    )
+    # Presidio's EmailRecognizer calls the module-level function at runtime.
+    tldextract.extract = extractor
+    return extractor
+
+
+def initialize_offline_privacy_runtime() -> None:
+    """Load all local privacy dependencies now and fail startup if unavailable."""
+
+    _offline_tldextract()("orion.example")
+    _local_entity_analyzer()
 
 
 def _normalize_entity(value: str) -> str:

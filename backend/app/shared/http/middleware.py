@@ -14,6 +14,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.shared.exceptions.handlers import error_response
 from app.shared.http.rate_limits import ProcessRateLimiter, request_class
+from app.shared.observability.logging import safe_log
 
 
 logger = logging.getLogger("orion.http")
@@ -103,11 +104,13 @@ class HttpBoundaryMiddleware:
             return message
 
         response_started = False
+        status_code = 500
 
         async def send_with_request_id(message: Message) -> None:
-            nonlocal response_started
+            nonlocal response_started, status_code
             if message["type"] == "http.response.start":
                 response_started = True
+                status_code = int(message["status"])
                 mutable = MutableHeaders(scope=message)
                 mutable["X-Request-ID"] = request_id
             await send(message)
@@ -153,12 +156,15 @@ class HttpBoundaryMiddleware:
                 )
                 await response(scope, receive, send_with_request_id)
         finally:
-            logger.info(
-                "request_complete request_id=%s method=%s path=%s duration_ms=%d",
-                request_id,
-                scope["method"],
-                scope["path"],
-                int((time.monotonic() - started_at) * 1000),
+            route = getattr(scope.get("route"), "path", "<unmatched>")
+            safe_log(
+                logger,
+                "request_complete",
+                request_id=request_id,
+                method=scope["method"],
+                route=route,
+                status_code=status_code,
+                duration_ms=int((time.monotonic() - started_at) * 1000),
             )
 
     @staticmethod

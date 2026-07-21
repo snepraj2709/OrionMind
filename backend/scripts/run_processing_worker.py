@@ -15,6 +15,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.main import create_app
 from app.shared.config.settings import get_settings
+from app.shared.observability.logging import safe_log
 
 
 logger = logging.getLogger("orion.processing.worker_entrypoint")
@@ -70,7 +71,11 @@ def main() -> None:
                 batch_size=args.backfill_batch_size,
                 uow=sessions.unit_of_work_factory,
             )
-            logger.info("processing_backfill_planned run_id=%s", run_id)
+            safe_log(
+                logger,
+                "processing_backfill_planned",
+                run_id=run_id,
+            )
             return
         if args.backfill_action:
             if args.backfill_action == "status":
@@ -89,18 +94,17 @@ def main() -> None:
                     action=args.backfill_action,
                     uow=sessions.unit_of_work_factory,
                 )
-            logger.info(
-                "processing_backfill_status run_id=%s status=%s planned=%d "
-                "enqueued=%d queue_depth=%d oldest_pending_seconds=%d "
-                "throttled=%s throttle_reason=%s",
-                status.run_id,
-                status.status,
-                status.planned_count,
-                status.enqueued_count,
-                status.queue_depth,
-                status.oldest_pending_seconds,
-                status.throttled,
-                status.throttle_reason or "NONE",
+            safe_log(
+                logger,
+                "processing_backfill_status",
+                run_id=status.run_id,
+                status=status.status,
+                planned_count=status.planned_count,
+                enqueued=status.enqueued_count,
+                queue_depth=status.queue_depth,
+                oldest_pending_seconds=status.oldest_pending_seconds,
+                throttled=status.throttled,
+                throttle_reason=status.throttle_reason or "NONE",
             )
             return
         worker.run(worker_id=worker_id, uow=sessions.unit_of_work_factory)
@@ -109,6 +113,9 @@ def main() -> None:
         tracer_provider = getattr(application.state, "tracer_provider", None)
         if tracer_provider is not None:
             tracer_provider.shutdown()
+        meter_provider = getattr(application.state, "meter_provider", None)
+        if meter_provider is not None:
+            meter_provider.shutdown()
 
 
 if __name__ == "__main__":

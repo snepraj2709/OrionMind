@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -25,7 +26,12 @@ from app.modules.processing.types import (
     ThemeDefinition,
 )
 from app.shared.database.unit_of_work import UnitOfWorkFactory
+from app.shared.observability.logging import safe_log
+from app.shared.observability.reflection import ReflectionTelemetry
 from app.shared.security.encryption import ContentCipher
+
+
+logger = logging.getLogger("orion.processing.service")
 
 
 SCORES: dict[tuple[int, str], tuple[float, ...]] = {
@@ -57,6 +63,7 @@ class ProcessingService:
         redactor: PiiRedactor,
         model_id: str,
         reflection_threshold: float,
+        telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         self._repository = repository
         self._provider = provider
@@ -64,6 +71,7 @@ class ProcessingService:
         self._redactor = redactor
         self._model_id = model_id
         self._reflection_threshold = reflection_threshold
+        self._telemetry = telemetry or ReflectionTelemetry()
 
     def analyze(
         self,
@@ -192,7 +200,7 @@ class ProcessingService:
         uow: UnitOfWorkFactory,
     ) -> int:
         with uow.for_worker() as work:
-            return self._repository.apply_combined_job_analysis(
+            source_version = self._repository.apply_combined_job_analysis(
                 work.session,
                 claim=claim,
                 worker_id=worker_id,
@@ -202,6 +210,30 @@ class ProcessingService:
                 signals=prepared.signals,
                 apply_legacy=apply_legacy,
             )
+        result = str(prepared.analysis["eligibility"])
+        kind = str(prepared.analysis["entry_kind"])
+        signal_types = tuple(str(item["signal_type"]) for item in prepared.signals)
+        self._telemetry.record_entry_analysis(
+            result=result,
+            kind=kind,
+            signal_types=signal_types,
+        )
+        reasons = prepared.analysis.get("exclusion_reason_codes")
+        first_reason = (
+            str(reasons[0])
+            if isinstance(reasons, list) and reasons
+            else "NONE"
+        )
+        safe_log(
+            logger,
+            "entry_analysis_materialized",
+            entry_id=claim.entry_id,
+            entry_kind=kind,
+            status=result,
+            exclusion_reason_code=first_reason,
+            signal_count=len(signal_types),
+        )
+        return source_version
 
 
 def _provider_content(content: str) -> str:

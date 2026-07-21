@@ -25,7 +25,10 @@ from app.modules.processing.provider import (
     OpenAIEntryAnalysisProvider,
     UnavailableEntryAnalysisProvider,
 )
-from app.modules.processing.redaction import PiiRedactor
+from app.modules.processing.redaction import (
+    PiiRedactor,
+    initialize_offline_privacy_runtime,
+)
 from app.modules.processing.repository import ProcessingRepository
 from app.modules.processing.service import ProcessingService
 from app.modules.reflection_engine.provider import (
@@ -54,6 +57,10 @@ from app.shared.integrations.supabase_auth import (
 )
 from app.shared.integrations.openai import build_openai_client
 from app.shared.observability.logging import configure_logging
+from app.shared.observability.reflection import (
+    ReflectionTelemetry,
+    configure_reflection_telemetry,
+)
 from app.shared.observability.tracing import configure_tracing
 from app.shared.security.encryption import AesGcmContentCipher, UnavailableContentCipher
 
@@ -90,7 +97,7 @@ def _build_account_auth(settings: Settings):
     return SupabaseAccountAuthGateway(verification_client, administration_client)
 
 
-def _build_extraction_provider(settings: Settings):
+def _build_extraction_provider(settings: Settings, telemetry: ReflectionTelemetry):
     api_key = settings.OPENAI_API_KEY.get_secret_value().strip()
     if not api_key:
         return UnavailableEntryAnalysisProvider()
@@ -100,6 +107,7 @@ def _build_extraction_provider(settings: Settings):
         connect_timeout=settings.OPENAI_CONNECT_TIMEOUT_SECONDS,
         response_timeout=settings.OPENAI_RESPONSE_TIMEOUT_SECONDS,
         total_timeout=settings.PROCESSING_TOTAL_TIMEOUT_SECONDS,
+        telemetry=telemetry,
     )
 
 
@@ -112,7 +120,7 @@ def _build_content_cipher(settings: Settings):
         return UnavailableContentCipher()
 
 
-def _build_reflection_provider(settings: Settings):
+def _build_reflection_provider(settings: Settings, telemetry: ReflectionTelemetry):
     api_key = settings.OPENAI_API_KEY.get_secret_value().strip()
     if not api_key:
         return UnavailableReflectionProvider()
@@ -123,6 +131,7 @@ def _build_reflection_provider(settings: Settings):
         connect_timeout=settings.OPENAI_CONNECT_TIMEOUT_SECONDS,
         response_timeout=settings.OPENAI_RESPONSE_TIMEOUT_SECONDS,
         total_timeout=settings.PROCESSING_TOTAL_TIMEOUT_SECONDS,
+        telemetry=telemetry,
     )
 
 
@@ -140,19 +149,26 @@ def create_app(
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     configure_logging(json_logs=resolved_settings.LOG_FORMAT == "json")
+    reflection_telemetry, meter_provider = configure_reflection_telemetry(
+        resolved_settings
+    )
     sessions = database_sessions or build_database_sessions(resolved_settings)
     verifier = token_verifier or _build_token_verifier(resolved_settings)
     resolved_account_auth = account_auth or _build_account_auth(resolved_settings)
     resolved_extraction_provider = extraction_provider or _build_extraction_provider(
-        resolved_settings
+        resolved_settings, reflection_telemetry
     )
     resolved_reflection_provider = reflection_provider or _build_reflection_provider(
-        resolved_settings
+        resolved_settings, reflection_telemetry
     )
     resolved_content_cipher = content_cipher or _build_content_cipher(resolved_settings)
-    resolved_pii_redactor = pii_redactor or PiiRedactor.from_local_model(
-        cipher=resolved_content_cipher
-    )
+    if pii_redactor is None:
+        initialize_offline_privacy_runtime()
+        resolved_pii_redactor = PiiRedactor.from_local_model(
+            cipher=resolved_content_cipher
+        )
+    else:
+        resolved_pii_redactor = pii_redactor
     resolved_transcriber = transcriber
     if resolved_transcriber is None:
         api_key = resolved_settings.OPENAI_API_KEY.get_secret_value().strip()
@@ -198,6 +214,9 @@ def create_app(
             tracer_provider = getattr(_app.state, "tracer_provider", None)
             if tracer_provider is not None:
                 tracer_provider.shutdown()
+            current_meter_provider = getattr(_app.state, "meter_provider", None)
+            if current_meter_provider is not None:
+                current_meter_provider.shutdown()
 
     docs_enabled = (
         resolved_settings.ENVIRONMENT != "production" and resolved_settings.ENABLE_API_DOCS
@@ -211,6 +230,8 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
+    app.state.reflection_telemetry = reflection_telemetry
+    app.state.meter_provider = meter_provider
     app.state.database_sessions = sessions
     app.state.authentication_service = AuthenticationService(
         verifier=verifier,
@@ -227,12 +248,14 @@ def create_app(
         redactor=resolved_pii_redactor,
         model_id=resolved_settings.OPENAI_ENTRY_ANALYSIS_MODEL,
         reflection_threshold=resolved_settings.REFLECTION_REVIEW_THRESHOLD,
+        telemetry=reflection_telemetry,
     )
     app.state.reflection_engine_service = ReflectionEngineService(
         repository=ReflectionEngineRepository(),
         provider=resolved_reflection_provider,
         cipher=resolved_content_cipher,
         basis_days=resolved_settings.REFLECTION_BASIS_DAYS,
+        telemetry=reflection_telemetry,
     )
     app.state.reflections_service = ReflectionsService(
         repository=ReflectionsRepository(),
@@ -240,6 +263,7 @@ def create_app(
         basis_days=resolved_settings.REFLECTION_BASIS_DAYS,
         enabled=resolved_settings.REFLECTION_API_ENABLED,
         allowed_user_ids=resolved_settings.reflection_rollout_user_ids(),
+        telemetry=reflection_telemetry,
     )
     app.state.content_cipher = resolved_content_cipher
     app.state.entry_service = EntryService(
@@ -269,6 +293,7 @@ def create_app(
         heartbeat_interval_seconds=(
             resolved_settings.PROCESSING_JOB_HEARTBEAT_SECONDS
         ),
+        telemetry=reflection_telemetry,
     )
     app.state.processing_worker = ProcessingWorker(
         service=app.state.job_service,

@@ -39,8 +39,9 @@ worker login only the `orion_worker` capability.
 Set `OPENAI_ENTRY_ANALYSIS_MODEL` to an available structured-output model; the committed default is
 `gpt-5.6-luna`. Entry analysis uses one Responses API call with provider storage and SDK retries
 disabled. The worker retries only the durable queue's allowlisted transient failures. Local Presidio
-redaction must load the bundled `en_core_web_sm` model at startup and must not download models at
-runtime.
+redaction loads the installed `en_core_web_sm` model before startup completes. `tldextract` uses its
+packaged public-suffix snapshot with cache and remote suffix URLs disabled. Neither dependency may
+download data at runtime; missing local data fails startup.
 
 Use HTTPS Supabase and CORS origins. Keep API docs disabled. Retain the fixed reflection threshold,
 request limits, one-worker setting, and separate application/worker URLs enforced by production
@@ -98,10 +99,37 @@ migrations. `/health` remains an opaque liveness response: `{"status":"ok"}`.
 
 ## Observability
 
-Structured logs contain request ID, method, route path, status timing, and safe worker event codes.
-They contain no journal content, transcript, raw audio, bearer token, provider payload, envelope, or
-secret. Set `OTEL_ENABLED=true` with an HTTPS `OTEL_EXPORTER_OTLP_ENDPOINT` to enable FastAPI and
-SQLAlchemy traces. No public metrics route exists.
+Structured Reflection logs accept only the documented event and field allowlist. Request completion
+uses the matched route template and records status plus timing. Model attempts record role, configured
+model ID, prompt version, duration, input/output tokens when returned, outcome, and retry class. Logs
+and manual spans contain no journal or redacted text, transcript, raw audio, bearer token, prompt,
+evidence, provider response, PII mapping, envelope, exception string, or secret.
+
+Set `OTEL_ENABLED=true` with an HTTPS `OTEL_EXPORTER_OTLP_ENDPOINT` to enable FastAPI/SQLAlchemy
+traces and periodic OTLP Reflection metric export. No public metrics route exists. The worker-only
+observability RPC reports pending depth and oldest pending age for both job types. Scheduler events
+and metrics separately report users checked, eligible, and enqueued. Instrument names, labels, and
+the privacy test are documented in `REFLECTION_OBSERVABILITY.md`.
+
+Do not infer model availability from configuration. With separately authorized network access and
+the existing secret-managed `OPENAI_API_KEY`, run this non-content Models API preflight from
+`backend/`; it performs no Responses request and submits no journal or evidence content:
+
+```bash
+.venv/bin/python scripts/check_reflection_model_access.py
+```
+
+Do not run the evaluation gate on production journals or ad-hoc exports. Supply a frozen internal
+result set containing no text, at least 100 unique records, and explicit per-record consent:
+
+```bash
+.venv/bin/python scripts/run_reflection_evaluation.py /authorized/path/results.json
+```
+
+The command exits non-zero unless exact idea/memory span precision is at least `0.90`, top-theme
+agreement is at least `0.95`, invalid structured outputs do not increase from the legacy baseline,
+and known Reflection polarity regressions are zero. The repository intentionally contains no
+fabricated 100-entry dataset or claimed result.
 
 ## Release blockers
 

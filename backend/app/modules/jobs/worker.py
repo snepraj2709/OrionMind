@@ -10,6 +10,7 @@ from uuid import UUID
 from app.modules.jobs.service import JobService
 from app.modules.jobs.types import BackfillStatus
 from app.shared.database.unit_of_work import UnitOfWorkFactory
+from app.shared.observability.logging import safe_log
 
 
 logger = logging.getLogger("orion.processing.worker")
@@ -64,6 +65,9 @@ class ProcessingWorker:
     def schedule_reflections(self, *, uow: UnitOfWorkFactory) -> int:
         return self._service.schedule_reflections(uow=uow)
 
+    def observe_queue(self, *, uow: UnitOfWorkFactory) -> None:
+        self._service.observe_queue(uow=uow)
+
     def run(self, *, worker_id: str, uow: UnitOfWorkFactory) -> None:
         stop = Event()
 
@@ -80,24 +84,38 @@ class ProcessingWorker:
                 if now - last_recovery >= self._recovery_interval:
                     try:
                         recovered = self.recover_stale(uow=uow)
-                        logger.info("processing_recovery_complete recovered=%d", recovered)
+                        self.observe_queue(uow=uow)
+                        safe_log(
+                            logger,
+                            "processing_recovery_complete",
+                            recovered=recovered,
+                            stale_recoveries=recovered,
+                        )
                     except Exception:
-                        logger.error("processing_recovery_failed")
+                        safe_log(
+                            logger,
+                            "processing_recovery_failed",
+                            level=logging.ERROR,
+                        )
                     last_recovery = now
                 if now - last_scheduler >= self._scheduler_interval:
                     try:
-                        enqueued = self.schedule_reflections(uow=uow)
-                        logger.info(
-                            "reflection_scheduler_complete enqueued=%d",
-                            enqueued,
-                        )
+                        self.schedule_reflections(uow=uow)
                     except Exception:
-                        logger.error("reflection_scheduler_failed")
+                        safe_log(
+                            logger,
+                            "reflection_scheduler_failed",
+                            level=logging.ERROR,
+                        )
                     last_scheduler = now
                 try:
                     processed = self.run_one(worker_id=worker_id, uow=uow)
                 except Exception:
-                    logger.error("processing_attempt_failed")
+                    safe_log(
+                        logger,
+                        "processing_attempt_failed",
+                        level=logging.ERROR,
+                    )
                     processed = False
                 if not processed:
                     stop.wait(self._poll_seconds)

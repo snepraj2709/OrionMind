@@ -70,6 +70,31 @@ Each batch stops before enqueueing when the configured total queue-depth or olde
 is reached. Commands and logs expose counts, state, budgets, and opaque IDs only; they never load or
 print raw journal content.
 
+Reflection observability is OTLP-only and exposes no HTTP metrics route. When `OTEL_ENABLED=true`,
+the API and worker export the nine contract metrics plus queue-age and scheduler-user instruments.
+Reflection events use a strict field allowlist; model attempts record only configured model role/ID,
+prompt version, duration, available token counts, controlled outcome, and retry class. Journal or
+redacted text, prompts, evidence, provider responses, mappings, envelopes, and exception strings are
+never recorded. See `docs/REFLECTION_OBSERVABILITY.md` for the exact instruments and runbook.
+
+Presidio and `tldextract` initialize before the application is returned. The spaCy model must already
+be installed; public-suffix parsing uses only `tldextract`'s packaged snapshot with no cache or network
+fallback. Missing local privacy dependencies fail startup.
+
+After external access is explicitly authorized, verify the configured Luna, Terra, and Sol IDs with
+the non-content Models API preflight. It never creates a Response:
+
+```bash
+.venv/bin/python scripts/check_reflection_model_access.py
+```
+
+The frozen evaluation runner accepts extracted spans and classifications only, not journal content.
+It refuses fewer than 100 unique records or any record without explicit consent:
+
+```bash
+.venv/bin/python scripts/run_reflection_evaluation.py path/to/consented-frozen-results.json
+```
+
 The API uses in-process rate limiting and must run as exactly one instance with one Uvicorn worker.
 Before horizontal scale, replace it with a shared Redis-compatible limiter. See
 `docs/DEPLOYMENT.md` for the controlled migration, role, worker, readiness, tracing, and scale-out
