@@ -2,15 +2,15 @@
 
 ## Stage gates
 
-| Stage                             | Status            | Implementation evidence                             | Review passes | Verification                                                                                                                 | Blockers |
-| --------------------------------- | ----------------- | --------------------------------------------------- | ------------: | ---------------------------------------------------------------------------------------------------------------------------- | -------- |
-| 0 — Reference contract            | Verified complete | `reference-manifest.md`, blueprint, trimmed OpenAPI |             2 | 13 operations; sole anonymous health; 41 reachable refs; zero dangling/unreachable refs; source parity and diff hygiene pass | None     |
-| 1 — Shared platform               | Verified complete | HTTP/auth/config/UoW/health platform                |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass              | None     |
-| 2 — Database/profile/account      | Not started       |                                                     |             0 |                                                                                                                              |          |
-| 3 — Processing core               | Not started       |                                                     |             0 |                                                                                                                              |          |
-| 4 — Drafts/text/list/detail/retry | Not started       |                                                     |             0 |                                                                                                                              |          |
-| 5 — Voice/past imports            | Not started       |                                                     |             0 |                                                                                                                              |          |
-| 6 — Contract freeze/release proof | Not started       |                                                     |             0 |                                                                                                                              |          |
+| Stage                             | Status                               | Implementation evidence                                 | Review passes | Verification                                                                                                                  | Blockers                                                                                                                                        |
+| --------------------------------- | ------------------------------------ | ------------------------------------------------------- | ------------: | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0 — Reference contract            | Verified complete                    | `reference-manifest.md`, blueprint, trimmed OpenAPI     |             2 | 13 operations; sole anonymous health; 41 reachable refs; zero dangling/unreachable refs; source parity and diff hygiene pass  | None                                                                                                                                            |
+| 1 — Shared platform               | Verified complete                    | HTTP/auth/config/UoW/health platform                    |             3 | 25 focused/full non-live tests; compile/import; version, privacy, Docker build/runtime, and hygiene checks pass               | None                                                                                                                                            |
+| 2 — Database/profile/account      | Locally verified; live proof pending | Fresh schema, migration runner, profile/account feature |             3 | 45 full tests; clean concurrent install; real SQLAlchemy API; two-user RLS, grants, constraints, checksums, and cascades pass | Live two-account Supabase Auth/RLS/account-deletion proof unavailable: no target credentials and no live/shared database mutation authorization |
+| 3 — Processing core               | Not started                          |                                                         |             0 |                                                                                                                               |                                                                                                                                                 |
+| 4 — Drafts/text/list/detail/retry | Not started                          |                                                         |             0 |                                                                                                                               |                                                                                                                                                 |
+| 5 — Voice/past imports            | Not started                          |                                                         |             0 |                                                                                                                               |                                                                                                                                                 |
+| 6 — Contract freeze/release proof | Not started                          |                                                         |             0 |                                                                                                                               |                                                                                                                                                 |
 
 ## Stage 0 findings
 
@@ -189,6 +189,81 @@ Status: fixed
 - Docker image `orion-backend:stage1`: built successfully with Python 3.11 slim and FFmpeg.
 - Docker runtime smoke: `/health` 200 exact body; `/docs` and `/openapi.json` 404.
 - Final Stage 1 findings-first review: zero open actionable findings.
+
+## Stage 2 findings
+
+### ST2-001
+
+Finding ID: ST2-001
+Severity: High
+Requirement: Authentication must run before request parsing on every protected product route.
+Evidence: The initially nested profile router retained FastAPI's default route class instead of the
+parent router's pre-body protected route class, so valid bearer requests reached the dependency
+without an authenticated context.
+Impact: All Stage 2 product operations returned `401`, and malformed bodies were not being tested at
+the real feature boundary.
+Fix: Made the profile feature router explicitly use `ProtectedAPIRoute`.
+Regression test: All profile/account HTTP cases pass, including auth-before-malformed-body proof.
+Status: fixed
+
+### ST2-002
+
+Finding ID: ST2-002
+Severity: High
+Requirement: Persistent entry and active-draft ciphertext must be a strict canonical envelope v2.
+Evidence: The first schema pass accepted arbitrary JSON objects in entry and draft envelope columns.
+Impact: Invalid, non-decryptable, or non-canonical ciphertext could cross the database boundary.
+Fix: Added an immutable strict eight-key validator with exact algorithms, key IDs, canonical base64,
+byte lengths, ciphertext bounds, and table constraints; active drafts also require keyed fingerprints.
+Regression test: Fresh-install proof rejects an invalid envelope and accepts the exact valid shape.
+Status: fixed
+
+### ST2-003
+
+Finding ID: ST2-003
+Severity: High
+Requirement: Derived and queue writes are execute-only capabilities; the worker role is restricted.
+Evidence: The first schema pass granted the worker role direct write access and permissive policies on
+all user-owned tables.
+Impact: Worker code could bypass the transactional RPC boundaries required by later stages.
+Fix: Removed worker table grants and policies, retaining only schema usage until narrowly scoped
+`SECURITY DEFINER` RPC execution is granted in later stages.
+Regression test: Direct worker access to the queue table fails with insufficient privilege.
+Status: fixed
+
+### ST2-004
+
+Finding ID: ST2-004
+Severity: High
+Requirement: The transitive entry-detail tables must preserve the frozen public data vocabulary.
+Evidence: The first schema pass represented derived idea/memory/reflection text as envelopes, used
+`pending` instead of `pending_approval`, and stored theme tiers as integers.
+Impact: Later detail mapping and structured persistence would diverge from the frozen response contract.
+Fix: Restored bounded derived text/activity fields, exact candidate statuses and reflection types, and
+the `primary`/`secondary`/`tertiary` tier vocabulary; corrected the fixed config display name.
+Regression test: Schema constraint and exact Default 8 catalog assertions in the disposable proof.
+Status: fixed
+
+## Stage 2 verification evidence
+
+- Full non-live plus disposable-database suite: 45 passed; one expected pinned-Starlette multipart
+  deprecation warning.
+- Compile/import pass under Python 3.11.15.
+- Fresh PostgreSQL 15 install from two concurrent runners: exactly one apply; the other observes the
+  checksum ledger after the advisory lock.
+- Migration rerun is idempotent; a tampered checksum fails closed.
+- `supabase_schema.sql` is byte-identical to `migrations/0001_foundation.sql`.
+- Existing-user bootstrap and new-user trigger pass; fixed Default 8 contains exactly eight rows.
+- Real HTTP -> controller -> service -> repository -> SQLAlchemy UoW profile read/partial-update pass.
+- Direct two-user profile select/update isolation, foreign-parent rejection, invalid-envelope rejection,
+  revoked anon/worker/derived/queue access, and Auth-rooted table cascades pass.
+- Account HTTP contract, same/other/invalid proof, safe retryable provider failure, and already-missing
+  idempotence pass through isolated Supabase gateway doubles.
+- Reference HEAD/status recheck: `1a993c3438460dcdf5d0680a272e43c6c09e34e3`, clean.
+- Final local findings-first review: zero open actionable local findings.
+- Live gate remains open: no target `.env` or Supabase/database credentials are configured, and no
+  authorization was given to mutate a live/shared project. Real two-account Supabase API RLS and Auth
+  identity deletion/cascade proof was therefore not run.
 
 ## Final route evidence
 

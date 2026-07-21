@@ -6,6 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.modules.health.routes import router as health_router
+from app.modules.profile.repository import ProfileRepository
+from app.modules.profile.service import ProfileService
 from app.openapi_contract import install_local_openapi
 from app.router import router as api_router
 from app.shared.auth.service import AuthenticationService
@@ -13,7 +15,12 @@ from app.shared.config.settings import Settings, get_settings
 from app.shared.database.session import DatabaseSessions, build_database_sessions
 from app.shared.exceptions.handlers import install_error_handlers
 from app.shared.http.middleware import install_http_middleware
-from app.shared.integrations.supabase_auth import SupabaseTokenVerifier, UnavailableTokenVerifier
+from app.shared.integrations.supabase_auth import (
+    SupabaseAccountAuthGateway,
+    SupabaseTokenVerifier,
+    UnavailableAccountAuthGateway,
+    UnavailableTokenVerifier,
+)
 from app.shared.observability.logging import configure_logging
 
 
@@ -29,16 +36,38 @@ def _build_token_verifier(settings: Settings):
     return SupabaseTokenVerifier(client)
 
 
+def _build_account_auth(settings: Settings):
+    if (
+        not settings.SUPABASE_URL.strip()
+        or not settings.SUPABASE_PUBLISHABLE_KEY.get_secret_value()
+        or not settings.SUPABASE_SECRET_KEY.get_secret_value()
+    ):
+        return UnavailableAccountAuthGateway()
+    from supabase import create_client
+
+    verification_client = create_client(
+        settings.SUPABASE_URL,
+        settings.SUPABASE_PUBLISHABLE_KEY.get_secret_value(),
+    )
+    administration_client = create_client(
+        settings.SUPABASE_URL,
+        settings.SUPABASE_SECRET_KEY.get_secret_value(),
+    )
+    return SupabaseAccountAuthGateway(verification_client, administration_client)
+
+
 def create_app(
     *,
     settings: Settings | None = None,
     database_sessions: DatabaseSessions | None = None,
     token_verifier=None,
+    account_auth=None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
     configure_logging(json_logs=resolved_settings.LOG_FORMAT == "json")
     sessions = database_sessions or build_database_sessions(resolved_settings)
     verifier = token_verifier or _build_token_verifier(resolved_settings)
+    resolved_account_auth = account_auth or _build_account_auth(resolved_settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -61,6 +90,10 @@ def create_app(
     app.state.authentication_service = AuthenticationService(
         verifier=verifier,
         unit_of_work_factory=sessions.unit_of_work_factory,
+    )
+    app.state.profile_service = ProfileService(
+        repository=ProfileRepository(),
+        account_auth=resolved_account_auth,
     )
 
     install_error_handlers(app)

@@ -117,7 +117,7 @@ def assert_error(response, status: int, code: str) -> dict:
     return body
 
 
-def test_health_is_exact_and_only_registered_operation_at_stage_one() -> None:
+def test_health_is_exact_and_only_stage_two_operations_are_registered() -> None:
     app = create_app(
         settings=settings(), database_sessions=empty_sessions(), token_verifier=ValidVerifier()
     )
@@ -131,7 +131,12 @@ def test_health_is_exact_and_only_registered_operation_at_stage_one() -> None:
         for method in sorted(route.methods or ())
         if method in {"GET", "POST", "PUT", "PATCH", "DELETE"}
     ]
-    assert operations == [("GET", "/health")]
+    assert operations == [
+        ("GET", "/api/v1/profile"),
+        ("PATCH", "/api/v1/profile"),
+        ("DELETE", "/api/v1/account"),
+        ("GET", "/health"),
+    ]
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from app.modules.profile.routes import router as profile_router
 from app.shared.auth.dependencies import get_auth_context
 from app.shared.http.protected_route import ProtectedAPIRoute
 
@@ -9,3 +10,4 @@ router = APIRouter(
     dependencies=[Depends(get_auth_context)],
     route_class=ProtectedAPIRoute,
 )
+router.include_router(profile_router)

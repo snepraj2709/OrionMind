@@ -26,3 +26,13 @@ keys, fingerprint keys, bearer tokens, journal text, transcripts, or provider pa
 
 Database migrations are a controlled pre-deploy action and never run during normal application
 startup. Do not target a shared or production database without explicit authorization.
+
+After creating the Supabase project or authorized disposable database, apply the ordered,
+checksum-locked migration set explicitly:
+
+```bash
+ORION_MIGRATION_DATABASE_URL='postgresql://migration-role:secret@host/database' \
+  .venv/bin/python scripts/migrate.py
+```
+
+The committed `supabase_schema.sql` is byte-identical to the fresh-install migration at this gate.
