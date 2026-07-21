@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.modules.health.routes import router as health_router
+from app.openapi_contract import install_local_openapi
+from app.router import router as api_router
+from app.shared.auth.service import AuthenticationService
+from app.shared.config.settings import Settings, get_settings
+from app.shared.database.session import DatabaseSessions, build_database_sessions
+from app.shared.exceptions.handlers import install_error_handlers
+from app.shared.http.middleware import install_http_middleware
+from app.shared.integrations.supabase_auth import SupabaseTokenVerifier, UnavailableTokenVerifier
+from app.shared.observability.logging import configure_logging
+
+
+def _build_token_verifier(settings: Settings):
+    if not settings.SUPABASE_URL.strip() or not settings.SUPABASE_PUBLISHABLE_KEY.get_secret_value():
+        return UnavailableTokenVerifier()
+    from supabase import create_client
+
+    client = create_client(
+        settings.SUPABASE_URL,
+        settings.SUPABASE_PUBLISHABLE_KEY.get_secret_value(),
+    )
+    return SupabaseTokenVerifier(client)
+
+
+def create_app(
+    *,
+    settings: Settings | None = None,
+    database_sessions: DatabaseSessions | None = None,
+    token_verifier=None,
+) -> FastAPI:
+    resolved_settings = settings or get_settings()
+    configure_logging(json_logs=resolved_settings.LOG_FORMAT == "json")
+    sessions = database_sessions or build_database_sessions(resolved_settings)
+    verifier = token_verifier or _build_token_verifier(resolved_settings)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        sessions.dispose()
+
+    docs_enabled = (
+        resolved_settings.ENVIRONMENT != "production" and resolved_settings.ENABLE_API_DOCS
+    )
+    app = FastAPI(
+        title="Orion profile and entry API",
+        version="1.5.0-profile-entry-trim",
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if docs_enabled else None,
+        lifespan=lifespan,
+    )
+    app.state.settings = resolved_settings
+    app.state.database_sessions = sessions
+    app.state.authentication_service = AuthenticationService(
+        verifier=verifier,
+        unit_of_work_factory=sessions.unit_of_work_factory,
+    )
+
+    install_error_handlers(app)
+    app.include_router(api_router)
+    app.include_router(health_router)
+    install_http_middleware(
+        app,
+        allow_origins=resolved_settings.cors_origins(),
+        body_limit=resolved_settings.MAX_REQUEST_BODY_BYTES,
+        request_timeout=resolved_settings.REQUEST_TIMEOUT_SECONDS,
+    )
+    install_local_openapi(app)
+    return app
