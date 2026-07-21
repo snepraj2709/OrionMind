@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.modules.jobs.types import JobClaim
+from app.modules.processing.quality import QualityHistory
 from app.modules.processing.schemas import EntryExtraction
+
+
+class StaleAnalysisClaimError(RuntimeError):
+    pass
 
 
 class ProcessingRepository:
@@ -115,6 +122,84 @@ class ProcessingRepository:
                 },
             )
         )
+
+    def recent_quality_history(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        entry_id: UUID,
+        entry_date: date,
+    ) -> tuple[QualityHistory, ...]:
+        rows = session.execute(
+            text(
+                "SELECT duplicate_cluster_key, ngram_sketch, eligibility "
+                "FROM public.get_entry_quality_history("
+                ":user_id, :entry_id, :entry_date)"
+            ),
+            {
+                "user_id": user_id,
+                "entry_id": entry_id,
+                "entry_date": entry_date,
+            },
+        ).all()
+        return tuple(
+            QualityHistory(
+                duplicate_cluster_key=(str(row[0]) if row[0] is not None else None),
+                ngram_sketch=tuple(str(value) for value in row[1]),
+                eligibility=str(row[2]),  # type: ignore[arg-type]
+            )
+            for row in rows
+        )
+
+    def apply_combined_job_analysis(
+        self,
+        session: Session,
+        *,
+        claim: JobClaim,
+        worker_id: str,
+        theme_config_id: UUID,
+        extraction: EntryExtraction,
+        analysis: dict[str, object],
+        signals: tuple[dict[str, object], ...],
+        apply_legacy: bool,
+    ) -> int:
+        try:
+            return int(
+                session.scalar(
+                    text(
+                        "SELECT public.apply_combined_entry_processing_job("
+                        ":job_id, :worker_id, :claim_token, :config_id, :mode, "
+                        "CAST(:themes AS jsonb), CAST(:ideas AS jsonb), "
+                        "CAST(:memories AS jsonb), CAST(:reflections AS jsonb), "
+                        "CAST(:analysis AS jsonb), CAST(:signals AS jsonb), :apply_legacy)"
+                    ),
+                    {
+                        "job_id": claim.job_id,
+                        "worker_id": worker_id,
+                        "claim_token": claim.claim_token,
+                        "config_id": theme_config_id,
+                        "mode": extraction.theme.mode,
+                        "themes": json.dumps(
+                            [item.model_dump() for item in extraction.theme.themes]
+                        ),
+                        "ideas": json.dumps(
+                            [item.model_dump() for item in extraction.ideas]
+                        ),
+                        "memories": json.dumps(
+                            [item.model_dump() for item in extraction.memories]
+                        ),
+                        "reflections": json.dumps(_reflection_rows(extraction)),
+                        "analysis": json.dumps(analysis),
+                        "signals": json.dumps(signals),
+                        "apply_legacy": apply_legacy,
+                    },
+                )
+            )
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "P0001":
+                raise StaleAnalysisClaimError("processing claim is no longer current") from exc
+            raise
 
     def apply_job_extraction(
         self,

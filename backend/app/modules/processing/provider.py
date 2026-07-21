@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date
 from typing import Any
 
 import httpx
+from pydantic import ValidationError
 
-from app.modules.processing.prompts import build_extraction_messages
-from app.modules.processing.schemas import ModelEntryExtraction
+from app.modules.processing.prompts import (
+    ENTRY_ANALYSIS_DEVELOPER_PROMPT,
+    build_entry_analysis_input,
+)
+from app.modules.processing.schemas import (
+    DeterministicQualityFeatures,
+    ModelEntryAnalysis,
+)
 from app.modules.processing.source_segments import create_source_segments
 from app.modules.processing.types import ThemeDefinition
 
@@ -19,14 +27,28 @@ class ProviderUnavailableError(RuntimeError):
     pass
 
 
-class UnavailableExtractionProvider:
-    def extract(self, *, content: str, themes: tuple[ThemeDefinition, ...]) -> ModelEntryExtraction:
-        raise ProviderUnavailableError("structured extraction is unavailable")
+class ProviderResponseError(ValueError):
+    pass
+
+
+class UnavailableEntryAnalysisProvider:
+    def analyze(
+        self,
+        *,
+        redacted_text: str,
+        themes: tuple[ThemeDefinition, ...],
+        deterministic_features: DeterministicQualityFeatures,
+        entry_date: date,
+        safety_identifier: str,
+    ) -> ModelEntryAnalysis:
+        raise ProviderUnavailableError("structured entry analysis is unavailable")
 
 
 def _retryable(exc: Exception) -> bool:
     status = getattr(exc, "status_code", None)
-    return status in {408, 409, 429} or (isinstance(status, int) and status >= 500) or type(exc).__name__ in {
+    return status in {408, 409, 429} or (isinstance(status, int) and status >= 500) or type(
+        exc
+    ).__name__ in {
         "APIConnectionError",
         "APITimeoutError",
         "RateLimitError",
@@ -41,82 +63,92 @@ def provider_failure_is_retryable(exc: ProviderUnavailableError) -> bool:
     return _retryable(cause)
 
 
-class OpenAIExtractionProvider:
+class OpenAIEntryAnalysisProvider:
     def __init__(
         self,
         client: Any,
         *,
-        primary_model: str,
-        fallback_model: str,
+        model: str,
         connect_timeout: float,
         response_timeout: float,
         total_timeout: float,
     ) -> None:
         self._client = client
-        self._models = (primary_model, fallback_model)
+        self._model = model
+        bounded_response = min(response_timeout, total_timeout)
+        bounded_connect = min(connect_timeout, total_timeout)
         self._timeout = httpx.Timeout(
-            response_timeout,
-            connect=connect_timeout,
-            read=response_timeout,
-            write=response_timeout,
-            pool=connect_timeout,
+            total_timeout,
+            connect=bounded_connect,
+            read=bounded_response,
+            write=bounded_response,
+            pool=bounded_connect,
         )
-        self._total_timeout = total_timeout
 
-    def extract(
+    def analyze(
         self,
         *,
-        content: str,
+        redacted_text: str,
         themes: tuple[ThemeDefinition, ...],
-    ) -> ModelEntryExtraction:
-        segments = create_source_segments(content)
-        if not any(segment.selectable for segment in segments):
-            return ModelEntryExtraction.model_validate(
-                {
-                    "ideas": [],
-                    "memories": [],
-                    "theme": {"mode": None, "themes": []},
-                    "reflection": {
-                        "filled_energy": None,
-                        "drained_energy": None,
-                        "learned_about_self": None,
-                    },
-                }
-            )
-        messages = build_extraction_messages(content=content, themes=themes, segments=segments)
+        deterministic_features: DeterministicQualityFeatures,
+        entry_date: date,
+        safety_identifier: str,
+    ) -> ModelEntryAnalysis:
+        segments = create_source_segments(redacted_text)
+        payload = build_entry_analysis_input(
+            redacted_text=redacted_text,
+            themes=themes,
+            segments=segments,
+            deterministic_features=deterministic_features,
+            entry_date=entry_date,
+        )
         client = self._client.with_options(max_retries=0, timeout=self._timeout)
-        deadline = time.monotonic() + self._total_timeout
-        for index, model in enumerate(self._models):
-            if time.monotonic() >= deadline:
-                raise ProviderUnavailableError("structured extraction deadline exceeded")
-            role = "primary" if index == 0 else "fallback"
-            started = time.monotonic()
-            try:
-                completion = client.beta.chat.completions.parse(
-                    model=model,
-                    messages=messages,
-                    response_format=ModelEntryExtraction,
-                )
-                parsed = completion.choices[0].message.parsed
-                result = (
-                    parsed
-                    if isinstance(parsed, ModelEntryExtraction)
-                    else ModelEntryExtraction.model_validate(parsed)
-                )
-            except Exception as exc:
-                logger.info(
-                    "extraction_attempt role=%s outcome=failure error_class=%s duration_ms=%d",
-                    role,
-                    type(exc).__name__,
-                    round((time.monotonic() - started) * 1000),
-                )
-                if index == 0 and _retryable(exc):
-                    continue
-                raise ProviderUnavailableError("structured extraction failed") from exc
+        started = time.monotonic()
+        try:
+            response = client.responses.parse(
+                model=self._model,
+                instructions=ENTRY_ANALYSIS_DEVELOPER_PROMPT,
+                input=payload,
+                text_format=ModelEntryAnalysis,
+                store=False,
+                truncation="disabled",
+                safety_identifier=safety_identifier,
+            )
+            if getattr(response, "status", None) == "incomplete":
+                raise ProviderResponseError("entry analysis response is incomplete")
+            parsed = getattr(response, "output_parsed", None)
+            if parsed is None:
+                raise ProviderResponseError("entry analysis response is unavailable")
+            result = (
+                parsed
+                if isinstance(parsed, ModelEntryAnalysis)
+                else ModelEntryAnalysis.model_validate(parsed)
+            )
+        except (ProviderResponseError, ValidationError) as exc:
             logger.info(
-                "extraction_attempt role=%s outcome=success duration_ms=%d",
-                role,
+                "entry_analysis_attempt model=%s outcome=invalid duration_ms=%d",
+                self._model,
                 round((time.monotonic() - started) * 1000),
             )
-            return result
-        raise ProviderUnavailableError("structured extraction failed")
+            if isinstance(exc, ValidationError):
+                raise ProviderResponseError("entry analysis schema is invalid") from exc
+            raise
+        except Exception as exc:
+            logger.info(
+                "entry_analysis_attempt model=%s outcome=failure error_class=%s duration_ms=%d",
+                self._model,
+                type(exc).__name__,
+                round((time.monotonic() - started) * 1000),
+            )
+            raise ProviderUnavailableError("structured entry analysis failed") from exc
+        logger.info(
+            "entry_analysis_attempt model=%s outcome=success duration_ms=%d",
+            self._model,
+            round((time.monotonic() - started) * 1000),
+        )
+        return result
+
+
+# Retained as a narrow import alias while callers move to the combined analyzer name.
+OpenAIExtractionProvider = OpenAIEntryAnalysisProvider
+UnavailableExtractionProvider = UnavailableEntryAnalysisProvider

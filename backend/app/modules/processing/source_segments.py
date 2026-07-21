@@ -48,6 +48,11 @@ def _selectable(value: str) -> bool:
     )
 
 
+def is_trivial_source(value: str) -> bool:
+    candidate = value.strip()
+    return bool(candidate) and any(pattern.fullmatch(candidate) for pattern in TRIVIAL)
+
+
 def _paragraphs(source: str) -> list[tuple[int, int]]:
     result: list[tuple[int, int]] = []
     cursor = 0

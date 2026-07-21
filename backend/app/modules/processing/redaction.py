@@ -4,6 +4,7 @@ import math
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Protocol, Sequence
 from uuid import UUID
 
@@ -443,7 +444,7 @@ class PiiRedactor:
 
     @classmethod
     def from_local_model(cls, *, cipher: ContentCipher) -> "PiiRedactor":
-        return cls(analyzer=PresidioEntityAnalyzer.from_local_model(), cipher=cipher)
+        return cls(analyzer=_local_entity_analyzer(), cipher=cipher)
 
     def redact(self, text: str, *, user_id: UUID, vault: PiiVault) -> RedactionResult:
         if not isinstance(text, str) or len(text) > 200_000:
@@ -570,6 +571,11 @@ def _resolve_overlaps(
             continue
         selected.append(candidate)
     return tuple(sorted(selected, key=lambda item: (item.start, item.end, item.entity_type)))
+
+
+@lru_cache(maxsize=1)
+def _local_entity_analyzer() -> PresidioEntityAnalyzer:
+    return PresidioEntityAnalyzer.from_local_model()
 
 
 def _normalize_entity(value: str) -> str:

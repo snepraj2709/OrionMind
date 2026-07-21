@@ -56,11 +56,11 @@ NEW_TABLES = (
 )
 NEW_FUNCTIONS = (
     "apply_legacy_entry_processing_job",
+    "apply_combined_entry_processing_job",
     "apply_entry_analysis",
     "apply_reflection_snapshot",
     "claim_processing_job",
     "complete_processing_job",
-    "complete_materialized_entry_processing_job",
     "delete_entry_with_reflection_for_owner",
     "enqueue_processing_job",
     "enqueue_entry_processing_backfill",
@@ -68,6 +68,7 @@ NEW_FUNCTIONS = (
     "fail_processing_job",
     "get_user_pii_vault_for_update",
     "get_entry_processing_payload",
+    "get_entry_quality_history",
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
     "put_reflection_feedback_for_owner",
@@ -262,6 +263,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
     assert apply_migrations(value, migrations) == (
         "0005_reflection_engine.sql",
         "0006_shared_entry_queue.sql",
+        "0007_combined_entry_analysis.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(

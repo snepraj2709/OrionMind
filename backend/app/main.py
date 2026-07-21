@@ -21,7 +21,11 @@ from app.modules.entries.audio import (
 )
 from app.modules.profile.repository import ProfileRepository
 from app.modules.profile.service import ProfileService
-from app.modules.processing.provider import OpenAIExtractionProvider, UnavailableExtractionProvider
+from app.modules.processing.provider import (
+    OpenAIEntryAnalysisProvider,
+    UnavailableEntryAnalysisProvider,
+)
+from app.modules.processing.redaction import PiiRedactor
 from app.modules.processing.repository import ProcessingRepository
 from app.modules.processing.service import ProcessingService
 from app.modules.past_imports.repository import PastImportRepository
@@ -81,11 +85,10 @@ def _build_account_auth(settings: Settings):
 def _build_extraction_provider(settings: Settings):
     api_key = settings.OPENAI_API_KEY.get_secret_value().strip()
     if not api_key:
-        return UnavailableExtractionProvider()
-    return OpenAIExtractionProvider(
+        return UnavailableEntryAnalysisProvider()
+    return OpenAIEntryAnalysisProvider(
         build_openai_client(api_key),
-        primary_model=settings.OPENAI_PRIMARY_EXTRACTION_MODEL,
-        fallback_model=settings.OPENAI_FALLBACK_EXTRACTION_MODEL,
+        model=settings.OPENAI_ENTRY_ANALYSIS_MODEL,
         connect_timeout=settings.OPENAI_CONNECT_TIMEOUT_SECONDS,
         response_timeout=settings.OPENAI_RESPONSE_TIMEOUT_SECONDS,
         total_timeout=settings.PROCESSING_TOTAL_TIMEOUT_SECONDS,
@@ -109,6 +112,7 @@ def create_app(
     account_auth=None,
     extraction_provider=None,
     content_cipher=None,
+    pii_redactor=None,
     transcriber=None,
 ) -> FastAPI:
     resolved_settings = settings or get_settings()
@@ -120,6 +124,9 @@ def create_app(
         resolved_settings
     )
     resolved_content_cipher = content_cipher or _build_content_cipher(resolved_settings)
+    resolved_pii_redactor = pii_redactor or PiiRedactor.from_local_model(
+        cipher=resolved_content_cipher
+    )
     resolved_transcriber = transcriber
     if resolved_transcriber is None:
         api_key = resolved_settings.OPENAI_API_KEY.get_secret_value().strip()
@@ -190,6 +197,9 @@ def create_app(
     app.state.processing_service = ProcessingService(
         repository=ProcessingRepository(),
         provider=resolved_extraction_provider,
+        cipher=resolved_content_cipher,
+        redactor=resolved_pii_redactor,
+        model_id=resolved_settings.OPENAI_ENTRY_ANALYSIS_MODEL,
         reflection_threshold=resolved_settings.REFLECTION_REVIEW_THRESHOLD,
     )
     app.state.content_cipher = resolved_content_cipher

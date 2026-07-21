@@ -31,8 +31,7 @@ class Settings(BaseSettings):
     WORKER_DATABASE_URL: SecretStr = SecretStr("")
 
     OPENAI_API_KEY: SecretStr = SecretStr("")
-    OPENAI_PRIMARY_EXTRACTION_MODEL: str = "gpt-4o"
-    OPENAI_FALLBACK_EXTRACTION_MODEL: str = "gpt-4o-mini"
+    OPENAI_ENTRY_ANALYSIS_MODEL: str = "gpt-5.6-luna"
     OPENAI_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=60)
     OPENAI_RESPONSE_TIMEOUT_SECONDS: float = Field(default=60.0, gt=0, le=180)
     PROCESSING_TOTAL_TIMEOUT_SECONDS: float = Field(default=300.0, gt=0, le=600)
@@ -88,7 +87,7 @@ class Settings(BaseSettings):
             raise ValueError("must be json or text")
         return normalized
 
-    @field_validator("OPENAI_PRIMARY_EXTRACTION_MODEL", "OPENAI_FALLBACK_EXTRACTION_MODEL")
+    @field_validator("OPENAI_ENTRY_ANALYSIS_MODEL")
     @classmethod
     def validate_model_name(cls, value: str) -> str:
         normalized = value.strip()

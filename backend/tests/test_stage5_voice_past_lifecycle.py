@@ -20,7 +20,7 @@ from sqlalchemy import text
 from app.main import create_app
 from app.modules.entries import audio
 from app.modules.processing.provider import ProviderUnavailableError
-from app.modules.processing.schemas import ModelEntryExtraction
+from app.modules.processing.schemas import ModelEntryAnalysis, ModelEntryExtraction
 from app.modules.profile.types import AccountDeletionOutcome
 from app.shared.config import Settings
 from app.shared.database.session import build_database_sessions
@@ -75,13 +75,15 @@ class Provider:
         self.calls: list[str] = []
         self.fail_next = False
 
-    def extract(self, *, content: str, themes) -> ModelEntryExtraction:
-        self.calls.append(content)
+    def analyze(
+        self, *, redacted_text: str, themes, deterministic_features, entry_date, safety_identifier
+    ) -> ModelEntryAnalysis:
+        self.calls.append(redacted_text)
         if self.fail_next:
             self.fail_next = False
             raise ProviderUnavailableError("private provider failure")
-        candidate = content.startswith("Past candidate")
-        return ModelEntryExtraction.model_validate(
+        candidate = redacted_text.startswith("Past candidate")
+        legacy = ModelEntryExtraction.model_validate(
             {
                 "ideas": [{"source_segment_id": "segment_0001"}] if candidate else [],
                 "memories": [],
@@ -91,6 +93,23 @@ class Provider:
                     "drained_energy": None,
                     "learned_about_self": None,
                 },
+            }
+        )
+        return ModelEntryAnalysis.model_validate(
+            {
+                "quality": {
+                    "entry_kind": "personal_reflection",
+                    "lived_experience_score": 0.8,
+                    "self_reference_score": 0.8,
+                    "emotional_information_score": 0.8,
+                    "causal_reasoning_score": 0.8,
+                    "personal_relevance_score": 0.8,
+                    "confidence": 0.9,
+                    "eligibility": "accepted",
+                    "exclusion_reason_codes": [],
+                },
+                "signals": [],
+                "legacy": legacy,
             }
         )
 
@@ -107,7 +126,14 @@ class Transcriber:
         if self.fail_next:
             self.fail_next = False
             raise RuntimeError("private transcription failure")
-        return "  Voice transcript should remain encrypted.  "
+        ordinal = {
+            1: "first",
+            2: "second",
+            3: "third",
+            4: "fourth",
+            5: "fifth",
+        }.get(self.calls, f"call-{self.calls}")
+        return f"  Voice transcript {ordinal} should remain encrypted.  "
 
 
 def build_cipher() -> AesGcmContentCipher:
@@ -204,7 +230,7 @@ def test_voice_and_past_import_lifecycle_and_worker_recovery(
         )
         assert created.status_code == 201
         voice_id = UUID(created.json()["id"])
-        assert created.json()["content"] == "Voice transcript should remain encrypted."
+        assert created.json()["content"] == "Voice transcript first should remain encrypted."
         assert created.json()["input_type"] == "audio"
         assert created.json()["processing_status"] == "pending"
         assert transcriber.calls == 1

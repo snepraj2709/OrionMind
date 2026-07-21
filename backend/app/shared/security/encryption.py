@@ -27,6 +27,12 @@ EnvelopePurpose: TypeAlias = Literal[
     "reflection_candidate_payload",
     "reflection_insight_payload",
 ]
+ReflectionFingerprintPurpose: TypeAlias = Literal[
+    "entry_duplicate",
+    "token_trigram",
+    "signal_label",
+    "safety_identifier",
+]
 
 ENVELOPE_PURPOSES = frozenset(
     {
@@ -73,6 +79,14 @@ class ContentCipher(Protocol):
 
     def entity_fingerprint(
         self, value: str, *, user_id: UUID, entity_type: str
+    ) -> tuple[str, str]: ...
+
+    def reflection_fingerprint(
+        self,
+        value: str,
+        *,
+        user_id: UUID,
+        purpose: ReflectionFingerprintPurpose,
     ) -> tuple[str, str]: ...
 
 
@@ -345,6 +359,31 @@ class AesGcmContentCipher:
             raise ValueError("invalid entity fingerprint input")
         return self._fingerprint(
             b"orion/pii-entity-fingerprint/v1\n" + entity_type.encode("ascii"),
+            value.encode("utf-8", errors="strict"),
+            user_id,
+        )
+
+    def reflection_fingerprint(
+        self,
+        value: str,
+        *,
+        user_id: UUID,
+        purpose: ReflectionFingerprintPurpose,
+    ) -> tuple[str, str]:
+        if (
+            not isinstance(value, str)
+            or not value
+            or purpose
+            not in {
+                "entry_duplicate",
+                "token_trigram",
+                "signal_label",
+                "safety_identifier",
+            }
+        ):
+            raise ValueError("invalid reflection fingerprint input")
+        return self._fingerprint(
+            b"orion/reflection-fingerprint/v1\n" + purpose.encode("ascii"),
             value.encode("utf-8", errors="strict"),
             user_id,
         )

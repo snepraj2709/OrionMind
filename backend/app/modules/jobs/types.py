@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 from uuid import UUID
 
@@ -22,6 +23,7 @@ class JobClaim:
 class EntryJobPayload:
     envelope: dict
     theme_config_id: UUID
+    entry_date: date
     past_import: bool
     already_materialized: bool
 

@@ -1,13 +1,31 @@
 from __future__ import annotations
 
-from uuid import UUID
+from datetime import date
+from uuid import UUID, uuid4
 
 from app.modules.jobs.types import JobClaim
+from app.modules.processing.prompts import ENTRY_ANALYSIS_PROMPT_VERSION
+from app.modules.processing.quality import (
+    DeterministicQualityResult,
+    compute_quality_features,
+    finalize_quality,
+)
+from app.modules.processing.redaction import OffsetMap, PiiRedactor
 from app.modules.processing.repository import ProcessingRepository
-from app.modules.processing.schemas import EntryExtraction, ModelEntryExtraction
+from app.modules.processing.schemas import (
+    EntryExtraction,
+    EntryQualityResult,
+    ModelEntryAnalysis,
+    ModelEntryExtraction,
+)
 from app.modules.processing.source_segments import SourceSegment, create_source_segments
-from app.modules.processing.types import ExtractionProvider, ProcessingRequest, ThemeDefinition
+from app.modules.processing.types import (
+    EntryAnalysisProvider,
+    PreparedEntryAnalysis,
+    ThemeDefinition,
+)
 from app.shared.database.unit_of_work import UnitOfWorkFactory
+from app.shared.security.encryption import ContentCipher
 
 
 SCORES: dict[tuple[int, str], tuple[float, ...]] = {
@@ -21,106 +39,182 @@ PROVIDER_MAX_SCALARS = 50_000
 PROVIDER_MAX_UTF8_BYTES = 200_000
 
 
+class AnalysisValidationError(ValueError):
+    pass
+
+
+class PrivacyValidationError(ValueError):
+    pass
+
+
 class ProcessingService:
     def __init__(
         self,
         *,
         repository: ProcessingRepository,
-        provider: ExtractionProvider,
+        provider: EntryAnalysisProvider,
+        cipher: ContentCipher,
+        redactor: PiiRedactor,
+        model_id: str,
         reflection_threshold: float,
     ) -> None:
         self._repository = repository
         self._provider = provider
+        self._cipher = cipher
+        self._redactor = redactor
+        self._model_id = model_id
         self._reflection_threshold = reflection_threshold
 
-    def process(self, request: ProcessingRequest, unit_of_work_factory: UnitOfWorkFactory) -> None:
-        try:
-            with unit_of_work_factory.for_user(request.user_id) as work:
-                raw_themes = self._repository.fixed_themes(work.session, request.theme_config_id)
-            themes = tuple(ThemeDefinition(key=key, name=name) for key, name in raw_themes)
-            if len(themes) != 8:
-                raise RuntimeError("fixed theme catalog invariant failed")
-            provider_content = _provider_content(request.content)
-            model_result = self._provider.extract(content=provider_content, themes=themes)
-            extraction = materialize_extraction(
-                model_result,
-                content=provider_content,
-                allowed_keys={theme.key for theme in themes},
-                reflection_threshold=self._reflection_threshold,
-            )
-            with unit_of_work_factory.for_user(request.user_id) as work:
-                self._repository.apply_extraction(
-                    work.session,
-                    user_id=request.user_id,
-                    entry_id=request.entry_id,
-                    processing_token=request.processing_token,
-                    theme_config_id=request.theme_config_id,
-                    extraction=extraction,
-                    past_import=request.past_import,
-                )
-        except Exception:
-            try:
-                with unit_of_work_factory.for_user(request.user_id) as work:
-                    self._repository.mark_failed(
-                        work.session,
-                        user_id=request.user_id,
-                        entry_id=request.entry_id,
-                        processing_token=request.processing_token,
-                        error_code="PROCESSING_FAILED",
-                    )
-            except Exception:
-                pass
-            raise
-
-    def extract(
+    def analyze(
         self,
         *,
         user_id: UUID,
+        entry_id: UUID,
+        entry_date: date,
         theme_config_id: UUID,
         content: str,
         uow: UnitOfWorkFactory,
-    ) -> EntryExtraction:
+    ) -> PreparedEntryAnalysis:
         with uow.for_user(user_id) as work:
             raw_themes = self._repository.fixed_themes(work.session, theme_config_id)
         themes = tuple(ThemeDefinition(key=key, name=name) for key, name in raw_themes)
         if len(themes) != 8:
             raise RuntimeError("fixed theme catalog invariant failed")
-        provider_content = _provider_content(content)
-        return materialize_extraction(
-            self._provider.extract(content=provider_content, themes=themes),
-            content=provider_content,
-            allowed_keys={theme.key for theme in themes},
-            reflection_threshold=self._reflection_threshold,
+        with uow.for_worker() as work:
+            history = self._repository.recent_quality_history(
+                work.session,
+                user_id=user_id,
+                entry_id=entry_id,
+                entry_date=entry_date,
+            )
+        deterministic = compute_quality_features(
+            content,
+            user_id=user_id,
+            cipher=self._cipher,
+            history=history,
+        )
+        analysis_id = uuid4()
+        try:
+            with uow.for_worker() as work:
+                vault_envelope, vault_version = self._repository.load_pii_vault_for_update(
+                    work.session, user_id=user_id
+                )
+                protected = self._redactor.redact_and_encrypt(
+                    content,
+                    user_id=user_id,
+                    analysis_id=analysis_id,
+                    vault_envelope=vault_envelope,
+                )
+                self._repository.save_pii_vault(
+                    work.session,
+                    user_id=user_id,
+                    mapping_envelope=protected.vault_envelope,
+                    expected_version=vault_version,
+                )
+        except ValueError as exc:
+            raise PrivacyValidationError("local PII redaction failed") from exc
+
+        provider_text = _provider_content(protected.redacted_text)
+        if deterministic.features.hard_exclusion_codes:
+            model_result = _deterministic_exclusion(deterministic)
+            model_id = "deterministic"
+        else:
+            _, safety_identifier = self._cipher.reflection_fingerprint(
+                str(user_id), user_id=user_id, purpose="safety_identifier"
+            )
+            model_result = self._provider.analyze(
+                redacted_text=provider_text,
+                themes=themes,
+                deterministic_features=deterministic.features,
+                entry_date=entry_date,
+                safety_identifier=safety_identifier,
+            )
+            model_id = self._model_id
+        try:
+            _validate_model_offsets(model_result, redacted_text=provider_text)
+            final_quality = finalize_quality(
+                model_result.quality,
+                deterministic=deterministic.features,
+            )
+            extraction = materialize_extraction(
+                model_result.legacy,
+                content=provider_text,
+                allowed_keys={theme.key for theme in themes},
+                reflection_threshold=self._reflection_threshold,
+                original_content=content,
+                offset_map=protected.offset_map,
+            )
+            signals = (
+                _materialize_signals(
+                    model_result,
+                    user_id=user_id,
+                    original_content=content,
+                    redacted_text=provider_text,
+                    offset_map=protected.offset_map,
+                    duplicate_cluster_key=deterministic.duplicate_cluster_key,
+                    cipher=self._cipher,
+                )
+                if final_quality.eligibility == "accepted"
+                else ()
+            )
+        except ValueError as exc:
+            raise AnalysisValidationError("combined entry analysis is invalid") from exc
+        analysis: dict[str, object] = {
+            "id": str(analysis_id),
+            "entry_kind": model_result.quality.entry_kind,
+            "model_eligibility": model_result.quality.eligibility,
+            "eligibility": final_quality.eligibility,
+            "deterministic_features": deterministic.features.model_dump(mode="json"),
+            "semantic_scores": final_quality.semantic_scores(model_result.quality),
+            "exclusion_reason_codes": list(final_quality.exclusion_reason_codes),
+            "ngram_sketch": list(deterministic.ngram_sketch),
+            "redacted_text_envelope": protected.redacted_text_envelope,
+            "offset_map_envelope": protected.offset_map_envelope,
+            "reflective_word_count": deterministic.features.word_count,
+            "duplicate_cluster_key": deterministic.duplicate_cluster_key,
+            "model_id": model_id,
+            "prompt_version": ENTRY_ANALYSIS_PROMPT_VERSION,
+        }
+        return PreparedEntryAnalysis(
+            analysis=analysis,
+            signals=signals,
+            extraction=extraction,
         )
 
-    def apply_job_extraction(
+    def apply_job_analysis(
         self,
         *,
         claim: JobClaim,
         worker_id: str,
         theme_config_id: UUID,
-        extraction: EntryExtraction,
+        prepared: PreparedEntryAnalysis,
+        apply_legacy: bool,
         uow: UnitOfWorkFactory,
-    ) -> None:
+    ) -> int:
         with uow.for_worker() as work:
-            self._repository.apply_job_extraction(
+            return self._repository.apply_combined_job_analysis(
                 work.session,
                 claim=claim,
                 worker_id=worker_id,
                 theme_config_id=theme_config_id,
-                extraction=extraction,
+                extraction=prepared.extraction,
+                analysis=prepared.analysis,
+                signals=prepared.signals,
+                apply_legacy=apply_legacy,
             )
 
 
 def _provider_content(content: str) -> str:
     limited = content[:PROVIDER_MAX_SCALARS]
     encoded = limited.encode("utf-8")
-    if len(encoded) <= PROVIDER_MAX_UTF8_BYTES:
-        return limited
-    end = len(limited)
-    while len(limited[:end].encode("utf-8")) > PROVIDER_MAX_UTF8_BYTES:
-        end -= 1
-    return limited[:end]
+    if len(encoded) > PROVIDER_MAX_UTF8_BYTES:
+        end = len(limited)
+        while len(limited[:end].encode("utf-8")) > PROVIDER_MAX_UTF8_BYTES:
+            end -= 1
+        limited = limited[:end]
+    if limited.count("<") > limited.count(">"):
+        limited = limited[: limited.rfind("<")]
+    return limited
 
 
 def _resolve_segment(
@@ -128,11 +222,22 @@ def _resolve_segment(
     *,
     content: str,
     segments: dict[str, SourceSegment],
+    original_content: str | None,
+    offset_map: OffsetMap | None,
 ) -> str:
     segment = segments.get(segment_id)
     if segment is None or not segment.selectable:
         raise ValueError("invalid source segment reference")
-    return segment.text(content)
+    value = segment.text(content)
+    if original_content is None or offset_map is None:
+        return value
+    return offset_map.translate_redacted_span(
+        redacted_text=content,
+        original_text=original_content,
+        source_quote=value,
+        source_start=segment.start,
+        source_end=segment.end,
+    ).original_quote
 
 
 def materialize_extraction(
@@ -141,6 +246,8 @@ def materialize_extraction(
     content: str,
     allowed_keys: set[str],
     reflection_threshold: float,
+    original_content: str | None = None,
+    offset_map: OffsetMap | None = None,
 ) -> EntryExtraction:
     segments = {segment.id: segment for segment in create_source_segments(content)}
     selected_keys = {item.key for item in result.theme.themes}
@@ -152,15 +259,18 @@ def materialize_extraction(
     for key, value in tuple(reflections.items()):
         if value is not None and value["confidence"] < reflection_threshold:
             reflections[key] = None
+    resolve = lambda segment_id: _resolve_segment(  # noqa: E731
+        segment_id,
+        content=content,
+        segments=segments,
+        original_content=original_content,
+        offset_map=offset_map,
+    )
     return EntryExtraction.model_validate(
         {
-            "ideas": [
-                {"content": _resolve_segment(item.source_segment_id, content=content, segments=segments)}
-                for item in result.ideas
-            ],
+            "ideas": [{"content": resolve(item.source_segment_id)} for item in result.ideas],
             "memories": [
-                {"content": _resolve_segment(item.source_segment_id, content=content, segments=segments)}
-                for item in result.memories
+                {"content": resolve(item.source_segment_id)} for item in result.memories
             ],
             "theme": {
                 "mode": result.theme.mode,
@@ -168,14 +278,123 @@ def materialize_extraction(
                     {
                         "key": item.key,
                         "tier": item.tier,
-                        "evidence": _resolve_segment(
-                            item.evidence_segment_id, content=content, segments=segments
-                        ),
+                        "evidence": resolve(item.evidence_segment_id),
                         "score": scores[index],
                     }
                     for index, item in enumerate(result.theme.themes)
                 ],
             },
             "reflection": reflections,
+        }
+    )
+
+
+def _validate_model_offsets(result: ModelEntryAnalysis, *, redacted_text: str) -> None:
+    for signal in result.signals:
+        if (
+            signal.source_end > len(redacted_text)
+            or redacted_text[signal.source_start : signal.source_end]
+            != signal.source_quote
+        ):
+            raise ValueError("redacted source quote mismatch")
+
+
+def _materialize_signals(
+    result: ModelEntryAnalysis,
+    *,
+    user_id: UUID,
+    original_content: str,
+    redacted_text: str,
+    offset_map: OffsetMap,
+    duplicate_cluster_key: str | None,
+    cipher: ContentCipher,
+) -> tuple[dict[str, object], ...]:
+    rows: list[dict[str, object]] = []
+    for signal in result.signals:
+        translated = offset_map.translate_redacted_span(
+            redacted_text=redacted_text,
+            original_text=original_content,
+            source_quote=signal.source_quote,
+            source_start=signal.source_start,
+            source_end=signal.source_end,
+        )
+        signal_id = uuid4()
+        normalized_label = " ".join(signal.normalized_label.split()).casefold()
+        _, label_fingerprint = cipher.reflection_fingerprint(
+            normalized_label, user_id=user_id, purpose="signal_label"
+        )
+        payload = {
+            "normalized_label": normalized_label,
+            "interpretation": signal.interpretation,
+            "source_quote": translated.original_quote,
+        }
+        rows.append(
+            {
+                "id": str(signal_id),
+                "signal_type": signal.signal_type,
+                "normalized_label_fingerprint": label_fingerprint,
+                "payload_envelope": cipher.encrypt_json(
+                    payload,
+                    user_id=user_id,
+                    record_id=signal_id,
+                    purpose="entry_signal_payload",
+                ),
+                "themes": signal.themes,
+                "need_tags": signal.need_tags,
+                "loop_role": signal.loop_role,
+                "confidence": signal.confidence,
+                "source_start": translated.original_start,
+                "source_end": translated.original_end,
+                "occurred_on": signal.occurred_on.isoformat(),
+                "duplicate_cluster_key": duplicate_cluster_key,
+            }
+        )
+    return tuple(rows)
+
+
+def _deterministic_exclusion(
+    deterministic: DeterministicQualityResult,
+) -> ModelEntryAnalysis:
+    kind = (
+        "test_or_noise"
+        if any(
+            code
+            in {
+                "EMPTY_CONTENT",
+                "TEST_OR_NOISE",
+                "REPEATED_NGRAMS",
+                "NO_MEANINGFUL_CONTENT",
+            }
+            for code in deterministic.features.hard_exclusion_codes
+        )
+        else "unclear"
+    )
+    quality = EntryQualityResult.model_validate(
+        {
+            "entry_kind": kind,
+            "lived_experience_score": 0,
+            "self_reference_score": 0,
+            "emotional_information_score": 0,
+            "causal_reasoning_score": 0,
+            "personal_relevance_score": 0,
+            "confidence": 1,
+            "eligibility": "excluded",
+            "exclusion_reason_codes": deterministic.features.hard_exclusion_codes,
+        }
+    )
+    return ModelEntryAnalysis.model_validate(
+        {
+            "quality": quality,
+            "signals": [],
+            "legacy": {
+                "ideas": [],
+                "memories": [],
+                "theme": {"mode": None, "themes": []},
+                "reflection": {
+                    "filled_energy": None,
+                    "drained_energy": None,
+                    "learned_about_self": None,
+                },
+            },
         }
     )

@@ -10,9 +10,15 @@ from app.modules.jobs.repository import JobRepository
 from app.modules.jobs.types import DispatchResult, JobClaim
 from app.modules.processing.provider import (
     ProviderUnavailableError,
+    ProviderResponseError,
     provider_failure_is_retryable,
 )
-from app.modules.processing.service import ProcessingService
+from app.modules.processing.repository import StaleAnalysisClaimError
+from app.modules.processing.service import (
+    AnalysisValidationError,
+    PrivacyValidationError,
+    ProcessingService,
+)
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 from app.shared.security.encryption import ContentCipher, ContentUnavailableError
 
@@ -21,7 +27,8 @@ logger = logging.getLogger("orion.processing.jobs")
 ALLOWED_FAILURES = frozenset(
     {
         "ENTRY_CONTENT_UNAVAILABLE",
-        "INVALID_EXTRACTION",
+        "INVALID_ANALYSIS",
+        "PRIVACY_VALIDATION_FAILED",
         "PROCESSING_FAILED",
         "PROVIDER_UNAVAILABLE",
         "UNSUPPORTED_JOB_TYPE",
@@ -96,38 +103,29 @@ class JobService:
                     )
                 if payload is None:
                     raise LostJobClaimError("processing claim is no longer current")
-                if payload.already_materialized:
-                    extraction = None
-                else:
-                    content = self._cipher.decrypt(
-                        payload.envelope,
-                        user_id=claim.user_id,
-                        record_id=claim.entry_id,
-                    )
-                    extraction = self._processing.extract(
-                        user_id=claim.user_id,
-                        theme_config_id=payload.theme_config_id,
-                        content=content,
-                        uow=uow,
-                    )
-            if payload.already_materialized:
-                with uow.for_worker() as work:
-                    completed = self._repository.complete_materialized(
-                        work.session, claim=claim, worker_id=worker_id
-                    )
-                if not completed:
-                    raise LostJobClaimError("processing claim is no longer current")
-            else:
-                assert extraction is not None
-                self._processing.apply_job_extraction(
-                    claim=claim,
-                    worker_id=worker_id,
+                content = self._cipher.decrypt(
+                    payload.envelope,
+                    user_id=claim.user_id,
+                    record_id=claim.entry_id,
+                )
+                prepared = self._processing.analyze(
+                    user_id=claim.user_id,
+                    entry_id=claim.entry_id,
+                    entry_date=payload.entry_date,
                     theme_config_id=payload.theme_config_id,
-                    extraction=extraction,
+                    content=content,
                     uow=uow,
                 )
+            self._processing.apply_job_analysis(
+                claim=claim,
+                worker_id=worker_id,
+                theme_config_id=payload.theme_config_id,
+                prepared=prepared,
+                apply_legacy=not payload.already_materialized,
+                uow=uow,
+            )
             return DispatchResult("completed")
-        except LostJobClaimError:
+        except (LostJobClaimError, StaleAnalysisClaimError):
             return DispatchResult("stale", "WORKER_INTERRUPTED")
         except Exception as exc:
             error_code, retryable = _classify_failure(exc)
@@ -202,6 +200,10 @@ def _classify_failure(exc: Exception) -> tuple[str, bool]:
         return "ENTRY_CONTENT_UNAVAILABLE", False
     if isinstance(exc, ProviderUnavailableError):
         return "PROVIDER_UNAVAILABLE", provider_failure_is_retryable(exc)
+    if isinstance(exc, (ProviderResponseError, AnalysisValidationError)):
+        return "INVALID_ANALYSIS", False
+    if isinstance(exc, PrivacyValidationError):
+        return "PRIVACY_VALIDATION_FAILED", False
     if isinstance(exc, ValueError):
-        return "INVALID_EXTRACTION", False
+        return "INVALID_ANALYSIS", False
     return "PROCESSING_FAILED", False

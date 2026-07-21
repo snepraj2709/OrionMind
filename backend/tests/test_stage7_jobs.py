@@ -17,7 +17,7 @@ from psycopg import sql
 from app.main import create_app
 from app.modules.jobs.repository import JobRepository
 from app.modules.jobs.schemas import ProcessingJob
-from app.modules.processing.schemas import ModelEntryExtraction
+from app.modules.processing.schemas import ModelEntryAnalysis, ModelEntryExtraction
 from app.shared.config import Settings
 from app.shared.database.session import build_database_sessions
 from app.shared.security.encryption import AesGcmContentCipher
@@ -121,24 +121,23 @@ def enqueue_owner(connection: psycopg.Connection, user_id: UUID, entry_id: UUID)
     ).fetchone()[0]
 
 
-def worker(connection: psycopg.Connection) -> None:
-    connection.execute("SET LOCAL ROLE orion_worker")
-
-
 class Provider:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.entered = Event()
+        self.finished = Event()
         self.release = Event()
         self.block = False
 
-    def extract(self, *, content: str, themes) -> ModelEntryExtraction:
-        self.calls.append(content)
+    def analyze(
+        self, *, redacted_text: str, themes, deterministic_features, entry_date, safety_identifier
+    ) -> ModelEntryAnalysis:
+        self.calls.append(redacted_text)
         if self.block:
             self.entered.set()
             if not self.release.wait(timeout=5):
                 raise RuntimeError("test provider release timed out")
-        return ModelEntryExtraction.model_validate(
+        legacy = ModelEntryExtraction.model_validate(
             {
                 "ideas": [],
                 "memories": [],
@@ -150,6 +149,25 @@ class Provider:
                 },
             }
         )
+        result = ModelEntryAnalysis.model_validate(
+            {
+                "quality": {
+                    "entry_kind": "personal_reflection",
+                    "lived_experience_score": 0.8,
+                    "self_reference_score": 0.8,
+                    "emotional_information_score": 0.8,
+                    "causal_reasoning_score": 0.8,
+                    "personal_relevance_score": 0.8,
+                    "confidence": 0.9,
+                    "eligibility": "accepted",
+                    "exclusion_reason_codes": [],
+                },
+                "signals": [],
+                "legacy": legacy,
+            }
+        )
+        self.finished.set()
+        return result
 
 
 def application(value: str, provider: Provider):
@@ -378,49 +396,42 @@ def test_apply_uses_per_user_lock_and_backfill_is_idempotent() -> None:
         )
         connection.commit()
         with connection.transaction():
-            job_id = enqueue_owner(connection, USER_ONE, entry_id)
+            enqueue_owner(connection, USER_ONE, entry_id)
 
-    repository = JobRepository()
     provider = Provider()
     app = application(value, provider)
     uow = app.state.database_sessions.unit_of_work_factory
-    with uow.for_worker() as work:
-        claim = repository.claim(work.session, worker_id="lock-worker")
-    assert claim is not None and claim.job_id == job_id
-
     lock_connection = psycopg.connect(value)
+    executor = ThreadPoolExecutor(max_workers=1)
     try:
         lock_connection.execute(
             "SELECT pg_catalog.pg_advisory_xact_lock("
             "pg_catalog.hashtextextended('orion-reflection:' || %s::text, 0))",
             (USER_ONE,),
         )
-        with pytest.raises(psycopg.errors.QueryCanceled):
-            with psycopg.connect(value) as blocked:
-                with blocked.transaction():
-                    worker(blocked)
-                    blocked.execute("SET LOCAL statement_timeout = '100ms'")
-                    blocked.execute(
-                        "SELECT public.apply_legacy_entry_processing_job("
-                        "%s, 'lock-worker', %s, %s, NULL, '[]'::jsonb, '[]'::jsonb, "
-                        "'[]'::jsonb, '[]'::jsonb)",
-                        (claim.job_id, claim.claim_token, CONFIG_ID),
-                    )
+        future = executor.submit(
+            app.state.processing_worker.run_one,
+            worker_id="lock-worker",
+            uow=uow,
+        )
+        assert provider.finished.wait(timeout=5)
+        assert future.done() is False
+        with psycopg.connect(value) as connection:
+            assert connection.execute(
+                "SELECT count(*) FROM public.entry_analyses WHERE entry_id = %s",
+                (entry_id,),
+            ).fetchone() == (0,)
+            assert connection.execute(
+                "SELECT count(*) FROM public.entry_classifications WHERE entry_id = %s",
+                (entry_id,),
+            ).fetchone() == (0,)
     finally:
         lock_connection.rollback()
         lock_connection.close()
+    assert future.result(timeout=5) is True
+    executor.shutdown(wait=True)
 
-    with psycopg.connect(value) as connection:
-        with connection.transaction():
-            worker(connection)
-            assert connection.execute(
-                "SELECT public.apply_legacy_entry_processing_job("
-                "%s, 'lock-worker', %s, %s, NULL, '[]'::jsonb, '[]'::jsonb, "
-                "'[]'::jsonb, '[]'::jsonb)",
-                (claim.job_id, claim.claim_token, CONFIG_ID),
-            ).fetchone() == (True,)
-
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc) - timedelta(seconds=1)
     assert app.state.job_service.enqueue_backfill(
         batch_size=100, uow=uow, run_after=now
     ) == 1
@@ -430,12 +441,14 @@ def test_apply_uses_per_user_lock_and_backfill_is_idempotent() -> None:
     assert app.state.processing_worker.run_one(
         worker_id="backfill-worker", uow=uow
     ) is True
-    assert provider.calls == []
+    assert provider.calls == ["locked content", "already processed"]
     with psycopg.connect(value) as connection:
         assert connection.execute(
-            "SELECT job.status, entry.processing_status "
+            "SELECT job.status, entry.processing_status, analysis.eligibility "
             "FROM public.processing_jobs AS job JOIN public.entries AS entry "
-            "ON entry.id = job.entry_id WHERE entry.id = %s",
+            "ON entry.id = job.entry_id JOIN public.entry_analyses AS analysis "
+            "ON analysis.entry_id = entry.id AND analysis.user_id = entry.user_id "
+            "WHERE entry.id = %s",
             (materialized_id,),
-        ).fetchone() == ("completed", "completed")
+        ).fetchone() == ("completed", "completed", "accepted")
     app.state.database_sessions.dispose()

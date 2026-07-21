@@ -18,7 +18,7 @@ from psycopg import sql
 
 from app.main import create_app
 from app.modules.processing.provider import ProviderUnavailableError
-from app.modules.processing.schemas import ModelEntryExtraction
+from app.modules.processing.schemas import ModelEntryAnalysis, ModelEntryExtraction
 from app.modules.profile.types import AccountDeletionOutcome
 from app.shared.config import Settings
 from app.shared.database.session import build_database_sessions
@@ -92,8 +92,10 @@ class Provider:
         self.entered = Event()
         self.release = Event()
 
-    def extract(self, *, content: str, themes) -> ModelEntryExtraction:
-        self.calls.append(content)
+    def analyze(
+        self, *, redacted_text: str, themes, deterministic_features, entry_date, safety_identifier
+    ) -> ModelEntryAnalysis:
+        self.calls.append(redacted_text)
         if self.fail_next or self.failures_remaining:
             self.fail_next = False
             self.failures_remaining = max(0, self.failures_remaining - 1)
@@ -103,7 +105,23 @@ class Provider:
             self.entered.set()
             if not self.release.wait(timeout=5):
                 raise RuntimeError("test provider release timed out")
-        return empty_extraction()
+        return ModelEntryAnalysis.model_validate(
+            {
+                "quality": {
+                    "entry_kind": "personal_reflection",
+                    "lived_experience_score": 0.8,
+                    "self_reference_score": 0.8,
+                    "emotional_information_score": 0.8,
+                    "causal_reasoning_score": 0.8,
+                    "personal_relevance_score": 0.8,
+                    "confidence": 0.9,
+                    "eligibility": "accepted",
+                    "exclusion_reason_codes": [],
+                },
+                "signals": [],
+                "legacy": empty_extraction(),
+            }
+        )
 
 
 def build_cipher() -> AesGcmContentCipher:

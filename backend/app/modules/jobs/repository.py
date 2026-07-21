@@ -104,25 +104,9 @@ class JobRepository:
         return EntryJobPayload(
             envelope=envelope,
             theme_config_id=row["theme_config_id"],
+            entry_date=row["entry_date"],
             past_import=bool(row["past_import"]),
             already_materialized=bool(row["already_materialized"]),
-        )
-
-    def complete_materialized(
-        self, session: Session, *, claim: JobClaim, worker_id: str
-    ) -> bool:
-        return bool(
-            session.scalar(
-                text(
-                    "SELECT public.complete_materialized_entry_processing_job("
-                    ":job_id, :worker_id, :claim_token)"
-                ),
-                {
-                    "job_id": claim.job_id,
-                    "worker_id": worker_id,
-                    "claim_token": claim.claim_token,
-                },
-            )
         )
 
     def enqueue_backfill(
