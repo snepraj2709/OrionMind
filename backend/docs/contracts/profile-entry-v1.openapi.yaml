@@ -1,0 +1,793 @@
+openapi: 3.1.0
+info:
+  title: Orion profile and entry API
+  version: 1.5.0-profile-entry-trim
+  description: >-
+    Review-stage extraction of the Orion 1.5.0 contract containing only the 13 approved profile,
+    account, health, draft, entry, voice, retry, and past-import operations. Supabase Auth remains
+    external; ownership is derived from a verified bearer token.
+  x-source-artifact: ORION-API-UI-CONTRACT-1.5.0
+  x-source-commit: 1a993c3438460dcdf5d0680a272e43c6c09e34e3
+servers:
+  - url: /
+    description: Same-origin production API
+security:
+  - bearerAuth: []
+tags:
+  - name: Operations
+  - name: Profile
+  - name: Entries
+paths:
+  /health:
+    get:
+      tags: [Operations]
+      operationId: getHealth
+      summary: Minimal liveness response
+      description: Returns a fixed liveness status and reads no user, dependency, or secret state.
+      security: []
+      responses:
+        '200':
+          description: Service is accepting requests.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+              example: { status: ok }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /api/v1/profile:
+    get:
+      tags: [Profile]
+      operationId: getProfile
+      summary: Read the authenticated profile
+      responses:
+        '200':
+          description: Profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+    patch:
+      tags: [Profile]
+      operationId: updateProfile
+      summary: Update display name and IANA timezone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileUpdate' }
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/account:
+    delete:
+      tags: [Profile]
+      operationId: deleteAccount
+      summary: Delete the authenticated Auth user and all application data
+      description: Requires a fresh Supabase reauthentication proof and exact confirmation text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountDeletionRequest' }
+      responses:
+        '204': { description: Account and application data deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/entries:
+    get:
+      tags: [Entries]
+      operationId: listEntries
+      summary: List owner-scoped entries with bounded source previews and initial themes
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: Newest-first entries
+          headers:
+            Cache-Control:
+              required: true
+              description: Prevents shared or durable caching of decrypted journal previews.
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryPage' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/entry/draft:
+    get:
+      tags: [Entries]
+      operationId: getTextEntryDraft
+      summary: Restore the authenticated user's active encrypted text draft
+      responses:
+        '200':
+          description: Active draft or empty draft response
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDraftResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    put:
+      tags: [Entries]
+      operationId: saveTextEntryDraft
+      summary: Create, replace, or clear the authenticated user's active encrypted text draft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EntryDraftUpdate' }
+      responses:
+        '200':
+          description: Saved active draft, or empty response after a blank clear
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDraftResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    delete:
+      tags: [Entries]
+      operationId: discardTextEntryDraft
+      summary: Discard only the authenticated user's active unsent text draft
+      responses:
+        '200':
+          description: Empty draft response; submitted entries and replay metadata are unchanged
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDraftResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/entry:
+    post:
+      tags: [Entries]
+      operationId: createTextEntry
+      summary: Submit the saved server draft as one text entry and synchronously process it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TextEntryCreate' }
+      responses:
+        '201':
+          description: Newly created source entry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDetail' }
+              examples:
+                completed: { $ref: '#/components/examples/CompletedEntry' }
+        '200':
+          description: Saved-draft replay or successfully reclaimed failed entry
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDetail' }
+              examples:
+                replay: { $ref: '#/components/examples/CompletedEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '502': { $ref: '#/components/responses/ProviderFailure' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/past-entries:
+    post:
+      tags: [Entries]
+      operationId: createPastEntry
+      summary: Queue one dated historical entry for durable extraction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PastEntryCreate' }
+      responses:
+        '202':
+          description: Entry and durable processing work accepted
+          headers:
+            Location:
+              required: true
+              description: Owner-scoped Entry Detail status resource.
+              schema: { type: string }
+            Cache-Control:
+              required: true
+              description: Prevents shared or durable caching of entry identity and status.
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PastEntryAccepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/entries/voice:
+    post:
+      tags: [Entries]
+      operationId: createVoiceEntry
+      summary: Transcribe and process one idempotent audio entry
+      parameters:
+        - { $ref: '#/components/parameters/IdempotencyKey' }
+        - name: entry_date
+          in: query
+          required: false
+          description: Omit to derive user-local today; explicit null is invalid.
+          schema: { type: string, format: date }
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [audio]
+              properties:
+                audio: { type: string, format: binary }
+            encoding:
+              audio:
+                contentType: audio/wav, audio/x-wav, audio/mpeg, audio/mp4, audio/x-m4a, audio/webm, audio/ogg
+      responses:
+        '201':
+          description: Created audio entry containing only encrypted transcript content
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDetail' }
+              examples:
+                completed: { $ref: '#/components/examples/CompletedAudioEntry' }
+        '200':
+          description: Same-user key/date replay resolved before reading the upload
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDetail' }
+              examples:
+                replay: { $ref: '#/components/examples/CompletedAudioEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '413': { $ref: '#/components/responses/PayloadTooLarge' }
+        '415': { $ref: '#/components/responses/UnsupportedMedia' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '502': { $ref: '#/components/responses/ProviderFailure' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/entries/{entry_id}:
+    parameters:
+      - { $ref: '#/components/parameters/EntryId' }
+    get:
+      tags: [Entries]
+      operationId: getEntry
+      summary: Read decrypted source and complete owner-scoped evidence
+      responses:
+        '200':
+          description: Entry detail
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDetail' }
+              examples:
+                completed: { $ref: '#/components/examples/CompletedEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/EntryContentUnavailable' }
+
+  /api/v1/entries/{entry_id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/EntryId' }
+    post:
+      tags: [Entries]
+      operationId: retryEntry
+      summary: Retry processing for a failed owner-scoped entry
+      responses:
+        '200':
+          description: Retry completed or entered a terminal failed state without partial rows
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EntryDetail' }
+              examples:
+                completed: { $ref: '#/components/examples/CompletedEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '502': { $ref: '#/components/responses/ProviderFailure' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Supabase JWT
+      description: Supabase access token; never a service-role key.
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+      example: 1
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      example: 20
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Opaque 1-128 character key with no leading or trailing whitespace.
+      schema:
+        { type: string, minLength: 1, maxLength: 128, pattern: '^\S(?:.*\S)?$' }
+      example: entry-018f6c6e-a12b-7a51-a222-5f934ce7b900
+    EntryId:
+      name: entry_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Unauthorized:
+      description: Missing, malformed, invalid, or expired bearer token; occurs before handler work.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Missing and other-user resources are indistinguishable.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: Stable state, idempotency, busy-claim, or active-work conflict.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: Domain or schema validation failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PayloadTooLarge:
+      description: Audio exceeds 25 MiB or 20 minutes.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UnsupportedMedia:
+      description: Declared MIME and actual signature/container do not match an allowed format.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Rate limit reached.
+      headers:
+        Retry-After:
+          required: true
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ProviderFailure:
+      description: Sanitized upstream transcription or model failure after the attempt ceiling.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: Retryable application, dependency, migration, or timeout failure.
+      headers:
+        Retry-After:
+          required: true
+          schema: { type: integer, minimum: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    EntryContentUnavailable:
+      description: Fixed response for every envelope, key, AAD, or tag failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InternalError:
+      description: Sanitized internal failure.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status: { type: string, const: ok }
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error_code, message, details, request_id]
+      properties:
+        error_code: { type: string, pattern: '^[A-Z][A-Z0-9_]*$' }
+        message: { type: string, minLength: 1 }
+        details: { type: object }
+        request_id: { type: string, minLength: 1 }
+    Profile:
+      type: object
+      additionalProperties: false
+      required: [display_name, timezone]
+      properties:
+        display_name: { type: string, maxLength: 100 }
+        timezone: { type: string, minLength: 1, maxLength: 100 }
+    ProfileUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        display_name: { type: string, maxLength: 100 }
+        timezone: { type: string, minLength: 1, maxLength: 100 }
+    AccountDeletionRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmation, reauthentication_token]
+      properties:
+        confirmation: { type: string, const: DELETE MY ACCOUNT }
+        reauthentication_token: { type: string, minLength: 1 }
+    TextEntryCreate:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content: { type: string, minLength: 1, maxLength: 200000 }
+    PastEntryCreate:
+      type: object
+      additionalProperties: false
+      required: [entry_date, content]
+      properties:
+        entry_date: { type: string, format: date }
+        content: { type: string, minLength: 1, maxLength: 200000 }
+    PastEntryAccepted:
+      type: object
+      additionalProperties: false
+      required: [entry_id, entry_date, processing_status, status_url]
+      properties:
+        entry_id: { type: string, format: uuid }
+        entry_date: { type: string, format: date }
+        processing_status: { type: string, const: pending }
+        status_url:
+          { type: string, pattern: '^/api/v1/entries/[0-9a-fA-F-]{36}$' }
+    EntryDraftUpdate:
+      type: object
+      additionalProperties: false
+      required: [content]
+      properties:
+        content:
+          type: string
+          maxLength: 200000
+          description: Blank or whitespace-only content clears the active draft.
+    EntryDraftResponse:
+      type: object
+      additionalProperties: false
+      required: [content, updated_at]
+      properties:
+        content: { type: [string, 'null'], maxLength: 200000 }
+        updated_at: { type: [string, 'null'], format: date-time }
+    ProcessingStatus:
+      type: string
+      enum: [pending, processing, completed, failed]
+    LifecycleStatus:
+      type: string
+      enum: [pending_approval, approved, rejected]
+    ReflectionType:
+      type: string
+      enum: [filled_energy, drained_energy, learned_about_self]
+    Pagination:
+      type: object
+      required: [items, total, page, page_size]
+      properties:
+        items: { type: array, items: {} }
+        total: { type: integer, minimum: 0 }
+        page: { type: integer, minimum: 1 }
+        page_size: { type: integer, minimum: 1, maximum: 100 }
+    EntrySummaryTheme:
+      type: object
+      additionalProperties: false
+      required: [key, name, color_hex, tier]
+      properties:
+        key: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        color_hex: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }
+        tier: { type: string, enum: [primary, secondary, tertiary] }
+    EntrySummary:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          input_type,
+          entry_date,
+          processing_status,
+          created_at,
+          content_preview,
+          themes,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        input_type: { type: string, enum: [text, audio] }
+        entry_date: { type: string, format: date }
+        processing_status: { $ref: '#/components/schemas/ProcessingStatus' }
+        created_at: { type: string, format: date-time }
+        content_preview: { type: string, maxLength: 200 }
+        themes:
+          type: array
+          minItems: 0
+          maxItems: 3
+          prefixItems:
+            - allOf:
+                - { $ref: '#/components/schemas/EntrySummaryTheme' }
+                - { properties: { tier: { const: primary } } }
+            - allOf:
+                - { $ref: '#/components/schemas/EntrySummaryTheme' }
+                - { properties: { tier: { const: secondary } } }
+            - allOf:
+                - { $ref: '#/components/schemas/EntrySummaryTheme' }
+                - { properties: { tier: { const: tertiary } } }
+          items: false
+    EntryPage:
+      allOf:
+        - { $ref: '#/components/schemas/Pagination' }
+        - type: object
+          properties:
+            items:
+              {
+                type: array,
+                items: { $ref: '#/components/schemas/EntrySummary' },
+              }
+    ThemeScore:
+      type: object
+      additionalProperties: false
+      required: [key, name, score, tier]
+      properties:
+        key: { type: string }
+        name: { type: string }
+        score: { type: number, minimum: 0, maximum: 1 }
+        tier: { type: string, enum: [primary, secondary, tertiary] }
+    Classification:
+      type: object
+      additionalProperties: false
+      required: [theme_config_id, source, mode, themes]
+      properties:
+        theme_config_id: { type: string, format: uuid }
+        source: { type: string, enum: [initial, backfill] }
+        mode:
+          oneOf:
+            - { type: string, enum: [dominant, balanced] }
+            - { type: 'null' }
+        themes:
+          type: array
+          minItems: 0
+          maxItems: 3
+          prefixItems:
+            - allOf:
+                - { $ref: '#/components/schemas/ThemeScore' }
+                - { properties: { tier: { const: primary } } }
+            - allOf:
+                - { $ref: '#/components/schemas/ThemeScore' }
+                - { properties: { tier: { const: secondary } } }
+            - allOf:
+                - { $ref: '#/components/schemas/ThemeScore' }
+                - { properties: { tier: { const: tertiary } } }
+          items: false
+      allOf:
+        - if:
+            required: [themes]
+            properties: { themes: { maxItems: 0 } }
+          then:
+            properties: { mode: { type: 'null' } }
+          else:
+            properties: { mode: { type: string, enum: [dominant, balanced] } }
+        - if:
+            required: [themes]
+            properties: { themes: { minItems: 1, maxItems: 1 } }
+          then:
+            properties: { mode: { const: dominant } }
+    Candidate:
+      type: object
+      additionalProperties: false
+      required:
+        [id, content, status, entry_id, entry_date, created_at, decided_at]
+      properties:
+        id: { type: string, format: uuid }
+        content: { type: string, maxLength: 4000 }
+        status: { $ref: '#/components/schemas/LifecycleStatus' }
+        entry_id: { type: string, format: uuid }
+        entry_date: { type: string, format: date }
+        created_at: { type: string, format: date-time }
+        decided_at: { type: [string, 'null'], format: date-time }
+      allOf:
+        - if: { properties: { status: { const: pending_approval } } }
+          then: { properties: { decided_at: { type: 'null' } } }
+          else:
+            { properties: { decided_at: { type: string, format: date-time } } }
+    Reflection:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          reflection_type,
+          activity,
+          confidence_score,
+          status,
+          entry_id,
+          entry_date,
+          created_at,
+          decided_at,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        reflection_type: { $ref: '#/components/schemas/ReflectionType' }
+        activity: { type: string, maxLength: 1000 }
+        confidence_score: { type: number, minimum: 0, maximum: 1 }
+        status: { $ref: '#/components/schemas/LifecycleStatus' }
+        entry_id: { type: string, format: uuid }
+        entry_date: { type: string, format: date }
+        created_at: { type: string, format: date-time }
+        decided_at: { type: [string, 'null'], format: date-time }
+      allOf:
+        - if: { properties: { status: { const: pending_approval } } }
+          then: { properties: { decided_at: { type: 'null' } } }
+          else:
+            { properties: { decided_at: { type: string, format: date-time } } }
+    EntryDetail:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - content
+        - input_type
+        - entry_date
+        - original_theme_config_id
+        - processing_status
+        - processing_error_code
+        - created_at
+        - classification
+        - ideas
+        - extracted_memories
+        - reflections
+      properties:
+        id: { type: string, format: uuid }
+        content: { type: string }
+        input_type: { type: string, enum: [text, audio] }
+        entry_date: { type: string, format: date }
+        original_theme_config_id: { type: string, format: uuid }
+        processing_status: { $ref: '#/components/schemas/ProcessingStatus' }
+        processing_error_code: { type: [string, 'null'] }
+        created_at: { type: string, format: date-time }
+        classification:
+          oneOf:
+            - { $ref: '#/components/schemas/Classification' }
+            - { type: 'null' }
+        ideas:
+          { type: array, items: { $ref: '#/components/schemas/Candidate' } }
+        extracted_memories:
+          { type: array, items: { $ref: '#/components/schemas/Candidate' } }
+        reflections:
+          { type: array, items: { $ref: '#/components/schemas/Reflection' } }
+      allOf:
+        - if:
+            required: [processing_status]
+            properties: { processing_status: { const: completed } }
+          then:
+            properties:
+              {
+                classification: { $ref: '#/components/schemas/Classification' },
+              }
+
+  examples:
+    CompletedOneThemeEntry:
+      value:
+        {
+          id: 10000000-0000-4000-8000-000000000002,
+          content: I felt calmer after speaking this aloud.,
+          input_type: audio,
+          entry_date: '2026-07-08',
+          original_theme_config_id: 00000000-0000-0000-0000-000000000801,
+          processing_status: completed,
+          processing_error_code: null,
+          created_at: '2026-07-08T09:30:00Z',
+          classification:
+            {
+              theme_config_id: 00000000-0000-0000-0000-000000000801,
+              source: initial,
+              mode: dominant,
+              themes:
+                [{ key: health, name: Health, score: 1.0, tier: primary }],
+            },
+          ideas: [],
+          extracted_memories:
+            [
+              {
+                id: 30000000-0000-4000-8000-000000000002,
+                content: I felt calmer after speaking this aloud.,
+                status: pending_approval,
+                entry_id: 10000000-0000-4000-8000-000000000002,
+                entry_date: '2026-07-08',
+                created_at: '2026-07-08T09:31:00Z',
+                decided_at: null,
+              },
+            ],
+          reflections: [],
+        }
+    CompletedThreeThemeEntry:
+      value:
+        {
+          id: 10000000-0000-4000-8000-000000000001,
+          content: I walked before work and felt calmer. I decided to protect two quiet hours for the proposal. I noticed how much steadier I feel when I keep that promise to myself.,
+          input_type: text,
+          entry_date: '2026-07-08',
+          original_theme_config_id: 00000000-0000-0000-0000-000000000801,
+          processing_status: completed,
+          processing_error_code: null,
+          created_at: '2026-07-08T08:30:00Z',
+          classification:
+            {
+              theme_config_id: 00000000-0000-0000-0000-000000000801,
+              source: initial,
+              mode: dominant,
+              themes:
+                [
+                  { key: health, name: Health, score: 0.52, tier: primary },
+                  { key: career, name: Career, score: 0.31, tier: secondary },
+                  {
+                    key: personal_growth,
+                    name: Personal Growth,
+                    score: 0.17,
+                    tier: tertiary,
+                  },
+                ],
+            },
+          ideas:
+            [
+              {
+                id: 20000000-0000-4000-8000-000000000001,
+                content: I decided to protect two quiet hours for the proposal.,
+                status: pending_approval,
+                entry_id: 10000000-0000-4000-8000-000000000001,
+                entry_date: '2026-07-08',
+                created_at: '2026-07-08T08:31:00Z',
+                decided_at: null,
+              },
+            ],
+          extracted_memories:
+            [
+              {
+                id: 30000000-0000-4000-8000-000000000001,
+                content: I walked before work and felt calmer.,
+                status: pending_approval,
+                entry_id: 10000000-0000-4000-8000-000000000001,
+                entry_date: '2026-07-08',
+                created_at: '2026-07-08T08:31:10Z',
+                decided_at: null,
+              },
+            ],
+          reflections: [],
+        }
+    CompletedEntry:
+      $ref: '#/components/examples/CompletedThreeThemeEntry'
+    CompletedAudioEntry:
+      $ref: '#/components/examples/CompletedOneThemeEntry'
