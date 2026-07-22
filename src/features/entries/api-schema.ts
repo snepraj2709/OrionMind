@@ -74,8 +74,13 @@ const entryReflectionApiSchema = z.object({
   decided_at: z.iso.datetime().nullable(),
 });
 
+// PostgreSQL/Python UUIDs allow fixed identifiers without RFC version bits.
+const databaseUuidSchema = z
+  .string()
+  .regex(/^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/i);
+
 const entryClassificationApiSchema = z.object({
-  theme_config_id: z.uuid(),
+  theme_config_id: databaseUuidSchema,
   source: z.enum(['initial', 'backfill']),
   mode: z.enum(['dominant', 'balanced']).nullable(),
   themes: z.array(createdEntryThemeSchema).max(3),
@@ -86,7 +91,7 @@ export const entryDetailApiResponseSchema = z.object({
   content: z.string(),
   input_type: z.enum(['text', 'audio']),
   entry_date: z.iso.date(),
-  original_theme_config_id: z.uuid(),
+  original_theme_config_id: databaseUuidSchema,
   processing_status: entryProcessingStatusSchema,
   processing_error_code: z.string().nullable(),
   created_at: z.iso.datetime(),

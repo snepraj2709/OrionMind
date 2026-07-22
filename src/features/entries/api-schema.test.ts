@@ -77,7 +77,33 @@ describe('Entries API schemas', () => {
     },
   );
 
+  it('accepts the fixed backend theme configuration identifier', () => {
+    const fixedThemeConfigId = '00000000-0000-0000-0000-000000000801';
+
+    expect(
+      entryDetailApiResponseSchema.parse({
+        ...detailResponse,
+        original_theme_config_id: fixedThemeConfigId,
+        classification: {
+          theme_config_id: fixedThemeConfigId,
+          source: 'initial',
+          mode: 'dominant',
+          themes: [],
+        },
+      }),
+    ).toMatchObject({
+      original_theme_config_id: fixedThemeConfigId,
+      classification: { theme_config_id: fixedThemeConfigId },
+    });
+  });
+
   it('rejects malformed detail records', () => {
+    expect(
+      entryDetailApiResponseSchema.safeParse({
+        ...detailResponse,
+        original_theme_config_id: 'not-a-uuid',
+      }).success,
+    ).toBe(false);
     expect(
       entryDetailApiResponseSchema.safeParse({
         ...detailResponse,
