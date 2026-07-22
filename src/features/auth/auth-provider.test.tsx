@@ -264,13 +264,18 @@ describe('AuthProvider session ownership', () => {
     renderProvider(fake.client, { strict: true });
 
     expect(await screen.findByTestId('flow')).toHaveTextContent(
-      'confirmation_success',
+      'email_confirmed',
     );
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
     expect(fake.verifyOtp).toHaveBeenCalledOnce();
     expect(fake.verifyOtp).toHaveBeenCalledWith({
       token_hash: 'secret-hash',
       type: 'signup',
     });
+    expect(fake.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(navigationMocks.replace).toHaveBeenCalledWith(
+      '/login?state=email_confirmed',
+    );
     expect(window.location.search).toBe('');
     expect(window.location.hash).toBe('');
   });
@@ -282,9 +287,14 @@ describe('AuthProvider session ownership', () => {
     renderProvider(fake.client, { strict: true });
 
     expect(await screen.findByTestId('flow')).toHaveTextContent(
-      'confirmation_success',
+      'email_confirmed',
     );
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
     expect(fake.initialize).toHaveBeenCalledOnce();
+    expect(fake.signOut).toHaveBeenCalledWith({ scope: 'local' });
+    expect(navigationMocks.replace).toHaveBeenCalledWith(
+      '/login?state=email_confirmed',
+    );
     expect(window.location.search).toBe('');
   });
 

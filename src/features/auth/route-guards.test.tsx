@@ -153,6 +153,25 @@ describe('client route guards', () => {
     expect(mocks.replace).not.toHaveBeenCalled();
   });
 
+  it('keeps confirmed-email state on login until the user signs in', () => {
+    mocks.useAuth.mockReturnValue(
+      authValue({
+        status: 'authenticated',
+        flow: 'email_confirmed',
+        isAuthenticated: true,
+        isInitialized: true,
+      }),
+    );
+
+    render(
+      <AuthRouteGuard>
+        <div>Login form</div>
+      </AuthRouteGuard>,
+    );
+    expect(screen.getByText('Login form')).toBeVisible();
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
   it('shows a safe configuration screen instead of auth content', () => {
     mocks.useAuth.mockReturnValue(
       authValue({ status: 'unconfigured', isInitialized: true }),

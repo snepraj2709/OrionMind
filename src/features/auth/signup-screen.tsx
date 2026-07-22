@@ -1,7 +1,5 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-
 import { AppButton, Typography } from '@/components/design-system';
 import { AuthShell, BrandMark } from '@/components/layout';
 import { AppLink } from '@/components/navigation';
@@ -12,7 +10,6 @@ import { SignUpForm } from './sign-up-form';
 import { useAuth } from './use-auth';
 
 export function SignupScreen() {
-  const router = useRouter();
   const { flow, setFlow } = useAuth();
 
   if (flow === 'confirmation_email_sent') {
@@ -44,26 +41,6 @@ export function SignupScreen() {
         <Typography role="status" variant="body">
           Please wait…
         </Typography>
-      </AuthShell>
-    );
-  }
-
-  if (flow === 'confirmation_success') {
-    return (
-      <AuthShell
-        brand={<BrandMark />}
-        description="Your account is ready."
-        title="Email confirmed"
-      >
-        <AppButton
-          className="w-full"
-          onClick={() => {
-            setFlow('default');
-            router.replace(routes.entries.path);
-          }}
-        >
-          Continue to application
-        </AppButton>
       </AuthShell>
     );
   }

@@ -258,6 +258,15 @@ export function LoginScreen({ returnTo }: LoginScreenProps) {
       title="Welcome back"
       variant="prominent"
     >
+      {flow === 'email_confirmed' ? (
+        <Typography
+          className="bg-secondary text-secondary-foreground radius-control mb-6 p-3"
+          role="status"
+          variant="bodySmall"
+        >
+          Your email is confirmed. Sign in to continue.
+        </Typography>
+      ) : null}
       {flow === 'session_expired' ? (
         <Typography
           className="bg-secondary text-secondary-foreground radius-control mb-6 p-3"

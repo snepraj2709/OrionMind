@@ -20,7 +20,7 @@ export function AuthRouteGuard({ children }: AuthRouteGuardProps) {
   const isPinnedAuthFlow =
     isRequiredRecoveryActive ||
     flow === 'confirmation_token_validation' ||
-    flow === 'confirmation_success' ||
+    flow === 'email_confirmed' ||
     flow === 'recovery_complete';
 
   useEffect(() => {

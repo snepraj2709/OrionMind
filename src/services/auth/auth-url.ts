@@ -113,6 +113,7 @@ export function readInitialAuthFlow(location: Location): AuthFlow {
     return 'confirmation_token_validation';
   }
   if (callback) return 'expired_or_invalid_link';
+  if (search.get('state') === 'email_confirmed') return 'email_confirmed';
   if (search.get('state') === 'session_expired') return 'session_expired';
   if (search.get('mode') === 'forgot') return 'forgot_password';
   return 'default';

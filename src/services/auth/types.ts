@@ -18,7 +18,7 @@ export type AuthFlow =
   | 'recovery_complete'
   | 'confirmation_email_sent'
   | 'confirmation_token_validation'
-  | 'confirmation_success'
+  | 'email_confirmed'
   | 'expired_or_invalid_link'
   | 'session_expired';
 

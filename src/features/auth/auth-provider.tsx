@@ -116,6 +116,7 @@ export function AuthProvider({
   client: suppliedClient,
 }: AuthProviderProps) {
   const router = useRouter();
+  const replaceRoute = router.replace;
   const queryClient = useQueryClient();
   const client = useMemo(
     () => resolveSupabaseBrowserClient(suppliedClient),
@@ -188,6 +189,7 @@ export function AuthProvider({
     let active = true;
     let authEventVersion = 0;
     let eventSession: Session | null | undefined;
+    let confirmationFinalized = false;
     const shouldScrub = hasSensitiveAuthMaterial(window.location);
     const callbackRejected =
       shouldScrub &&
@@ -199,7 +201,7 @@ export function AuthProvider({
       if (!active) return;
       authEventVersion += 1;
       const eventVersion = authEventVersion;
-      if (callbackRejected) {
+      if (callbackRejected || confirmationFinalized) {
         eventSession = null;
         void applyResolvedSession(null, {
           forceClear: true,
@@ -286,11 +288,22 @@ export function AuthProvider({
                 : 'expired_or_invalid_link',
             );
           } else if (initialFlow.current === 'confirmation_token_validation') {
-            setFlow(
-              callbackValidated
-                ? 'confirmation_success'
-                : 'expired_or_invalid_link',
-            );
+            if (!callbackValidated) {
+              setFlow('expired_or_invalid_link');
+              return;
+            }
+
+            confirmationFinalized = true;
+            eventSession = null;
+            try {
+              await client.auth.signOut({ scope: 'local' });
+            } catch {
+              // Email confirmation already succeeded; local state is cleared below.
+            }
+            await applyResolvedSession(null, { forceClear: true });
+            if (!active) return;
+            setFlow('email_confirmed');
+            replaceRoute(`${routes.login.path}?state=email_confirmed` as Route);
           }
         },
       )
@@ -319,7 +332,7 @@ export function AuthProvider({
       active = false;
       subscription.unsubscribe();
     };
-  }, [applyResolvedSession, client]);
+  }, [applyResolvedSession, client, replaceRoute]);
 
   const signIn = useCallback(
     async (input: SignInInput): Promise<AuthActionResult> => {

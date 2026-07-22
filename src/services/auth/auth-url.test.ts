@@ -89,6 +89,12 @@ describe('Supabase auth URL handling', () => {
     });
   });
 
+  it('restores the confirmed-email login state without auth credentials', () => {
+    window.history.replaceState({}, '', '/login?state=email_confirmed');
+    expect(readSupabaseAuthCallback(window.location)).toBeNull();
+    expect(readInitialAuthFlow(window.location)).toBe('email_confirmed');
+  });
+
   it.each([
     '/signup?type=signup',
     '/signup?code=one-time-code&type=recovery',

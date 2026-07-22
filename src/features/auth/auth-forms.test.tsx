@@ -142,6 +142,14 @@ describe('authentication forms', () => {
     expect(screen.getByRole('status')).not.toHaveTextContent('@');
   });
 
+  it('shows confirmation success on the login form', () => {
+    renderWithAuth(<LoginScreen />, { flow: 'email_confirmed' });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Your email is confirmed. Sign in to continue.',
+    );
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible();
+  });
+
   it('requests recovery on login and updates matching new passwords', async () => {
     const requestPasswordReset = vi.fn().mockResolvedValue({ ok: true });
     const first = renderWithAuth(<LoginScreen />, {
