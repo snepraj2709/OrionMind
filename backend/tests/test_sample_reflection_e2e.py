@@ -19,10 +19,12 @@ from scripts.run_sample_reflection_e2e import (
     estimate_call_cost,
     failure_report,
     latency_summary,
+    load_continuation_events,
     load_sample_entries,
     model_usage_report,
     parse_args,
     pipeline_event_report,
+    prior_model_attempts,
     schedule_synthesis,
     verify_application_database,
     verify_worker_database,
@@ -465,6 +467,69 @@ def test_failure_report_is_controlled_and_atomic(tmp_path: Path) -> None:
     ]
     assert stored["modelUsage"]["estimatedTotalCostUsd"] == 0.0
     assert "password" not in args.output.read_text(encoding="utf-8").lower()
+
+
+def test_continuation_telemetry_accepts_exactly_one_terra_and_sol(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.json"
+    base = {
+        "event": "reflection_model_attempt",
+        "prompt_version": "v1",
+        "status": "success",
+        "retry_class": "none",
+        "service_tier": "default",
+        "duration_ms": 10,
+        "input_tokens": 20,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 19,
+        "output_tokens": 5,
+        "reasoning_output_tokens": 1,
+    }
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    **base,
+                    "model_role": "synthesis",
+                    "model_id": "gpt-5.6-terra",
+                },
+                {
+                    **base,
+                    "model_role": "critic",
+                    "model_id": "gpt-5.6-sol",
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    events = load_continuation_events(path)
+
+    assert [event["model_role"] for event in events] == ["synthesis", "critic"]
+    assert all(set(event) <= set(base) | {"model_role", "model_id"} for event in events)
+
+
+def test_prior_model_attempts_requires_30_successful_luna_calls() -> None:
+    call = {
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 10,
+        "inputTokens": 20,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 19,
+        "outputTokens": 5,
+        "reasoningOutputTokens": 1,
+    }
+
+    events = prior_model_attempts({"modelUsage": {"calls": [call] * 30}})
+
+    assert len(events) == 30
+    assert {event["model_role"] for event in events} == {"entry_analysis"}
 
 
 def test_schedule_synthesis_uses_timestamp_aware_job_service() -> None:

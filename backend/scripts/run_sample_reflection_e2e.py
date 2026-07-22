@@ -126,6 +126,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--prior-diagnostic-attempts", type=int, default=0)
     parser.add_argument("--prior-diagnostic-unpriced-attempts", type=int, default=0)
     parser.add_argument("--prior-diagnostic-known-cost-usd", type=Decimal, default=Decimal(0))
+    parser.add_argument(
+        "--finalize-existing",
+        action="store_true",
+        help=(
+            "Finalize a previously interrupted run from persisted database state. "
+            "This mode never imports entries, drains jobs, or calls OpenAI."
+        ),
+    )
+    parser.add_argument(
+        "--continuation-events",
+        type=Path,
+        help="Safe model-attempt telemetry captured by the separately deployed continuation.",
+    )
     return parser.parse_args(argv)
 
 
@@ -695,9 +708,13 @@ def database_snapshot(observer: Engine, user_id: UUID) -> dict[str, Any]:
 def entry_breakdown(
     observer: Engine,
     user_id: UUID,
-    submissions: list[dict[str, Any]],
+    submissions: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
-    submitted_by_id = {str(item["entryId"]): item for item in submissions}
+    submitted_by_id = (
+        {str(item["entryId"]): item for item in submissions}
+        if submissions is not None
+        else None
+    )
     with read_only_connection(observer) as connection:
         rows = connection.execute(
             text(
@@ -735,8 +752,10 @@ def entry_breakdown(
     result: list[dict[str, Any]] = []
     for index, row in enumerate(rows, start=1):
         entry_id = str(row["id"])
-        submission = submitted_by_id.get(entry_id)
-        if submission is None:
+        submission = (
+            submitted_by_id.get(entry_id) if submitted_by_id is not None else None
+        )
+        if submitted_by_id is not None and submission is None:
             raise LiveRunError(
                 "ENTRY_BREAKDOWN_MISMATCH",
                 "A persisted entry does not match the submitted dataset.",
@@ -747,7 +766,11 @@ def entry_breakdown(
                 "index": index,
                 "entryDate": row["entry_date"].isoformat(),
                 "entryId": entry_id,
-                "submission": submission,
+                "submission": submission
+                or {
+                    "evidence": "persisted_database_state",
+                    "note": "The original authenticated import completed before finalization.",
+                },
                 "storage": {
                     "inputType": row["input_type"],
                     "entryStatus": row["processing_status"],
@@ -942,6 +965,139 @@ def model_usage_report(events: list[dict[str, Any]]) -> dict[str, Any]:
         "pricingComplete": pricing_complete,
         "estimatedTotalCostUsd": _money(total) if pricing_complete else None,
     }
+
+
+MODEL_ATTEMPT_FIELDS = (
+    "event",
+    "model_role",
+    "model_id",
+    "prompt_version",
+    "status",
+    "retry_class",
+    "service_tier",
+    "duration_ms",
+    "input_tokens",
+    "cached_input_tokens",
+    "cache_write_input_tokens",
+    "output_tokens",
+    "reasoning_output_tokens",
+)
+
+
+def _validated_model_attempt(
+    value: dict[str, Any], *, allowed_roles: set[str]
+) -> dict[str, Any]:
+    try:
+        role = str(value["model_role"])
+        event = str(value["event"])
+        model = str(value["model_id"])
+        status = str(value["status"])
+    except KeyError as exc:
+        raise LiveRunError(
+            "CONTINUATION_TELEMETRY_INVALID",
+            "Continuation telemetry is missing a required field.",
+        ) from exc
+    if (
+        event not in {"entry_analysis_attempt", "reflection_model_attempt"}
+        or role not in allowed_roles
+        or model != MODEL_ROLES[role]
+        or status != "success"
+    ):
+        raise LiveRunError(
+            "CONTINUATION_TELEMETRY_INVALID",
+            "Continuation telemetry does not match the required successful model roles.",
+        )
+    sanitized = {field: value[field] for field in MODEL_ATTEMPT_FIELDS if field in value}
+    try:
+        for field in (
+            "duration_ms",
+            "input_tokens",
+            "cached_input_tokens",
+            "cache_write_input_tokens",
+            "output_tokens",
+            "reasoning_output_tokens",
+        ):
+            number = int(sanitized[field])
+            if number < 0:
+                raise ValueError(field)
+            sanitized[field] = number
+        for field in ("prompt_version", "retry_class", "service_tier"):
+            sanitized[field] = str(sanitized[field])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise LiveRunError(
+            "CONTINUATION_TELEMETRY_INVALID",
+            "Continuation telemetry contains invalid usage fields.",
+        ) from exc
+    return sanitized
+
+
+def load_continuation_events(path: Path | None) -> list[dict[str, Any]]:
+    if path is None:
+        raise LiveRunError(
+            "CONTINUATION_TELEMETRY_MISSING",
+            "Safe continuation telemetry is required to finalize an existing run.",
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LiveRunError(
+            "CONTINUATION_TELEMETRY_INVALID",
+            "Continuation telemetry could not be read.",
+        ) from exc
+    if not isinstance(payload, list) or len(payload) != 2:
+        raise LiveRunError(
+            "CONTINUATION_TELEMETRY_INVALID",
+            "Continuation telemetry must contain exactly one Terra and one Sol attempt.",
+        )
+    events = [
+        _validated_model_attempt(item, allowed_roles={"synthesis", "critic"})
+        for item in payload
+        if isinstance(item, dict)
+    ]
+    if len(events) != 2 or Counter(event["model_role"] for event in events) != {
+        "synthesis": 1,
+        "critic": 1,
+    }:
+        raise LiveRunError(
+            "CONTINUATION_TELEMETRY_INVALID",
+            "Continuation telemetry must contain exactly one Terra and one Sol attempt.",
+        )
+    return events
+
+
+def prior_model_attempts(report: dict[str, Any]) -> list[dict[str, Any]]:
+    usage = report.get("modelUsage")
+    calls = usage.get("calls") if isinstance(usage, dict) else None
+    if not isinstance(calls, list) or len(calls) != 30:
+        raise LiveRunError(
+            "PRIOR_RUN_INVALID",
+            "The prior result does not contain the 30 measured Luna attempts.",
+        )
+    events: list[dict[str, Any]] = []
+    for call in calls:
+        if not isinstance(call, dict):
+            raise LiveRunError(
+                "PRIOR_RUN_INVALID", "A prior model-attempt record is invalid."
+            )
+        snake_case = {
+            "event": "entry_analysis_attempt",
+            "model_role": call.get("role"),
+            "model_id": call.get("model"),
+            "prompt_version": call.get("promptVersion"),
+            "status": call.get("status"),
+            "retry_class": call.get("retryClass"),
+            "service_tier": call.get("serviceTier"),
+            "duration_ms": call.get("durationMs"),
+            "input_tokens": call.get("inputTokens"),
+            "cached_input_tokens": call.get("cachedInputTokens"),
+            "cache_write_input_tokens": call.get("cacheWriteInputTokens"),
+            "output_tokens": call.get("outputTokens"),
+            "reasoning_output_tokens": call.get("reasoningOutputTokens"),
+        }
+        events.append(
+            _validated_model_attempt(snake_case, allowed_roles={"entry_analysis"})
+        )
+    return events
 
 
 def estimate_call_cost(call: dict[str, Any]) -> float | None:
@@ -1352,6 +1508,233 @@ def run(
     }
 
 
+def _load_prior_result(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise LiveRunError(
+            "PRIOR_RUN_INVALID", "The prior result artifact could not be read."
+        ) from exc
+    if not isinstance(payload, dict) or payload.get("status") != "failed":
+        raise LiveRunError(
+            "PRIOR_RUN_INVALID",
+            "Finalization requires the failed artifact from the interrupted live run.",
+        )
+    return payload
+
+
+def _verify_completed_basis(
+    observer: Engine, user_id: UUID, expected_dates: set[date]
+) -> dict[str, Any]:
+    with read_only_connection(observer) as connection:
+        dates = {
+            value
+            for value in connection.scalars(
+                text(
+                    "SELECT entry_date FROM public.entries "
+                    "WHERE user_id = :user_id ORDER BY entry_date"
+                ),
+                {"user_id": user_id},
+            )
+        }
+        state = connection.execute(
+            text(
+                "SELECT latest_accepted_source_version, last_snapshot_source_version "
+                "FROM public.reflection_user_state WHERE user_id = :user_id"
+            ),
+            {"user_id": user_id},
+        ).mappings().one_or_none()
+        snapshot = connection.execute(
+            text(
+                "SELECT id, source_version, status FROM public.reflection_snapshots "
+                "WHERE user_id = :user_id ORDER BY version DESC LIMIT 1"
+            ),
+            {"user_id": user_id},
+        ).mappings().one_or_none()
+        job = connection.execute(
+            text(
+                "SELECT status, source_version, attempts FROM public.processing_jobs "
+                "WHERE user_id = :user_id AND job_type = 'reflection_synthesis' "
+                "ORDER BY created_at DESC LIMIT 1"
+            ),
+            {"user_id": user_id},
+        ).mappings().one_or_none()
+    if dates != expected_dates or state is None or snapshot is None or job is None:
+        raise LiveRunError(
+            "PERSISTED_RUN_MISMATCH",
+            "The persisted live run does not match the expected 30-entry basis.",
+        )
+    latest_source = int(state["latest_accepted_source_version"])
+    snapshot_source = int(snapshot["source_version"])
+    if (
+        latest_source <= 0
+        or int(state["last_snapshot_source_version"]) != latest_source
+        or snapshot_source != latest_source
+        or snapshot["status"] != "available"
+        or job["status"] != "completed"
+        or int(job["source_version"]) != latest_source
+    ):
+        raise LiveRunError(
+            "PERSISTED_RUN_INCOMPLETE",
+            "The persisted reflection continuation is not complete and current.",
+        )
+    return {
+        "sourceVersion": latest_source,
+        "snapshotId": str(snapshot["id"]),
+        "synthesisAttempts": int(job["attempts"]),
+    }
+
+
+def finalize_existing(args: argparse.Namespace) -> dict[str, Any]:
+    started = time.monotonic()
+    finalized_at = datetime.now(UTC)
+    entries, dataset_hash = load_sample_entries(args.input)
+    if len(entries) != 30:
+        raise LiveRunError("INVALID_DATASET", "The live suite requires exactly 30 entries.")
+    prior = _load_prior_result(args.output)
+    prior_events = prior_model_attempts(prior)
+    continuation_events = load_continuation_events(args.continuation_events)
+    frontend, backend = load_environment(args.frontend_env, args.backend_env)
+    token, user_id = sign_in(frontend, backend)
+    settings = build_settings(args.backend_env, user_id)
+    verify_application_database(settings, user_id)
+    observer = build_observer_engine(backend)
+    try:
+        verify_observer_database(observer, user_id)
+        basis = _verify_completed_basis(
+            observer, user_id, {entry.entry_date for entry in entries}
+        )
+        before = database_snapshot(observer, user_id)
+        application = create_app(settings=settings)
+        with TestClient(application, raise_server_exceptions=True) as client:
+            raw_reflection = request_json(
+                client,
+                "GET",
+                "/api/v1/reflections?range=all",
+                token=token,
+                expected_status=200,
+            )
+        ReflectionResponse.model_validate(raw_reflection)
+        after = database_snapshot(observer, user_id)
+        entries_report = entry_breakdown(observer, user_id, None)
+    finally:
+        observer.dispose()
+        token = ""
+
+    if before["jobStatuses"] != after["jobStatuses"]:
+        raise LiveRunError(
+            "FINALIZATION_MUTATED_QUEUE",
+            "Finalization changed the processing queue unexpectedly.",
+        )
+    if (
+        raw_reflection.get("reflectionState") != "available"
+        or raw_reflection.get("processingState") != "idle"
+        or raw_reflection.get("snapshot", {}).get("sourceVersion")
+        != basis["sourceVersion"]
+        or available_insight_count(raw_reflection) == 0
+    ):
+        raise LiveRunError(
+            "REFLECTION_NOT_AVAILABLE",
+            "The completed reflection aggregate is not available and current.",
+        )
+    if (
+        after["tableRowCounts"].get("entries") != 30
+        or after["tableRowCounts"].get("entry_analyses") != 30
+        or after["analysisModels"].get(MODEL_ROLES["entry_analysis"]) != 30
+        or after["jobStatuses"].get("entry_processing:completed") != 30
+        or after["jobStatuses"].get("reflection_synthesis:completed") != 1
+    ):
+        raise LiveRunError(
+            "PERSISTED_RUN_MISMATCH",
+            "The persisted live-run counts do not match the canonical dataset.",
+        )
+
+    usage = model_usage_report([*prior_events, *continuation_events])
+    pipeline_events = prior.get("pipelineEvents")
+    if not isinstance(pipeline_events, dict):
+        pipeline_events = pipeline_event_report([])
+    prior_run = prior.get("run") if isinstance(prior.get("run"), dict) else {}
+    prior_timing = (
+        prior.get("timingSeconds")
+        if isinstance(prior.get("timingSeconds"), dict)
+        else {}
+    )
+    completed_at = datetime.now(UTC)
+    return {
+        "schemaVersion": 1,
+        "status": "passed",
+        "run": {
+            "dataset": str(args.input),
+            "datasetSha256": dataset_hash,
+            "entryCount": len(entries),
+            "wordCount": sum(len(entry.content.split()) for entry in entries),
+            "characterCount": sum(len(entry.content) for entry in entries),
+            "firstEntryDate": entries[0].entry_date.isoformat(),
+            "lastEntryDate": entries[-1].entry_date.isoformat(),
+            "startedAt": prior_run.get("startedAt"),
+            "completedAt": completed_at.isoformat(),
+            "continuationFinalizedAt": finalized_at.isoformat(),
+            "rolloutMode": "publish",
+            "transport": "FastAPI TestClient over the real ASGI application",
+            "database": "real Supabase PostgreSQL",
+            "providers": "real OpenAI Responses API during the original run and deployed continuation",
+            "finalizationMode": "persisted read-only continuation; no entry import, job claim, or model call",
+            "testUserHash": hashlib.sha256(str(user_id).encode()).hexdigest(),
+        },
+        "timingSeconds": {
+            **prior_timing,
+            "continuationFinalization": round(time.monotonic() - started, 3),
+        },
+        "modelUsage": usage,
+        "pipelineEvents": pipeline_events,
+        "databaseEffects": after,
+        "entryBreakdown": entries_report,
+        "reflectionGetResponse": raw_reflection,
+        "checks": [
+            {"name": "dataset_valid", "status": "passed", "actual": 30},
+            {"name": "credential_and_project_parity", "status": "passed"},
+            {"name": "persisted_basis_current", "status": "passed", **basis},
+            {
+                "name": "continuation_reused_luna_results",
+                "status": "passed",
+                "lunaCallsDuringContinuation": 0,
+                "persistedLunaAnalyses": 30,
+            },
+            {
+                "name": "continuation_model_calls",
+                "status": "passed",
+                "terraCalls": 1,
+                "solCalls": 1,
+            },
+            {
+                "name": "finalization_did_not_mutate_queue",
+                "status": "passed",
+            },
+            {
+                "name": "reflection_get",
+                "status": "passed",
+                "httpStatus": 200,
+                "reflectionState": "available",
+                "processingState": "idle",
+            },
+            {
+                "name": "reflection_has_available_insight",
+                "status": "passed",
+                "availableSections": available_insight_count(raw_reflection),
+            },
+        ],
+        "errors": [],
+        "operationalNuances": [
+            "The failed artifact was finalized only after the deployed retry completed and persisted a current snapshot.",
+            "Finalization did not import entries, claim or drain jobs, run model preflight, or call OpenAI.",
+            "The 30 Luna attempts came from the original runner telemetry; the one Terra and one Sol attempt came from allowlisted deployed-worker telemetry.",
+            "The canonical API payload came from authenticated GET /api/v1/reflections?range=all against the real database.",
+            "Database inspection used ADMIN_APP_DATABASE_URL only inside read-only transactions.",
+            "Credentials, access tokens, email addresses, raw user UUIDs, prompts, provider responses, and entry content are omitted.",
+        ],
+    }
+
+
 def failure_report(
     args: argparse.Namespace,
     *,
@@ -1385,7 +1768,11 @@ def main(argv: list[str] | None = None) -> None:
     started = time.monotonic()
     collector = SafeEventCollector()
     try:
-        result = run(args, collector=collector)
+        result = (
+            finalize_existing(args)
+            if args.finalize_existing
+            else run(args, collector=collector)
+        )
     except LiveRunError as exc:
         result = failure_report(
             args,

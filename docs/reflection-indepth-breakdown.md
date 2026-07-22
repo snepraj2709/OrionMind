@@ -231,13 +231,16 @@ score**. This is not a production-readiness score.
 | Aggregate API contract                |      5 |      5 | Strict API state matrix covered by backend tests                       |
 | Observability and reproducibility     |      5 |      5 | Deterministic artifact, per-entry breakdown, explicit limitations      |
 
+### Completed live continuation
+
+The canonical test account now has a current source-version `76` snapshot from
+the exact 30-entry basis. `data/sample-reflection-result.json` records the
+authenticated aggregate, database effects, per-entry breakdown, 30 measured
+Luna attempts, and the separately captured one-Terra/one-Sol continuation. The
+artifact finalizer did not import entries, claim jobs, or call OpenAI.
+
 ### Recommended next steps
 
-1. Keep `data/sample-reflection-result.json` labeled as historical and
-   non-canonical; do not replace it with this fixture artifact.
-2. Run the canonical harness only in an approved environment using an empty
-   test account. Preserve its safe proposal-discard events.
-3. If the live run is all-insufficient, rank the captured reason codes and add
-   a regression at the exact proposal/validator seam before changing
-   production logic or prompts.
-4. Rotate the test-account password that was shared during setup.
+1. Keep the rollout restricted to the test-user cohort until broader release
+   criteria are approved.
+2. Rotate the test-account password that was shared during setup.

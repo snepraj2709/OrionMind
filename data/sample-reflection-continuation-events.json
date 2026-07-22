@@ -1,0 +1,32 @@
+[
+  {
+    "event": "reflection_model_attempt",
+    "model_role": "synthesis",
+    "model_id": "gpt-5.6-terra",
+    "prompt_version": "reflection-synthesis-v1",
+    "status": "success",
+    "retry_class": "none",
+    "service_tier": "default",
+    "duration_ms": 29641,
+    "input_tokens": 50204,
+    "cached_input_tokens": 0,
+    "cache_write_input_tokens": 50201,
+    "output_tokens": 4892,
+    "reasoning_output_tokens": 174
+  },
+  {
+    "event": "reflection_model_attempt",
+    "model_role": "critic",
+    "model_id": "gpt-5.6-sol",
+    "prompt_version": "reflection-critic-v1",
+    "status": "success",
+    "retry_class": "none",
+    "service_tier": "default",
+    "duration_ms": 7406,
+    "input_tokens": 3510,
+    "cached_input_tokens": 0,
+    "cache_write_input_tokens": 3507,
+    "output_tokens": 304,
+    "reasoning_output_tokens": 247
+  }
+]

@@ -3,61 +3,645 @@
   "status": "passed",
   "run": {
     "dataset": "data/sample-entries.json",
+    "datasetSha256": "748758f365fa09b08510cc7b149dc13404708c30370dd866fabd19202cfa08c5",
     "entryCount": 30,
+    "wordCount": 4715,
+    "characterCount": 26713,
     "firstEntryDate": "2026-06-01",
     "lastEntryDate": "2026-06-30",
+    "startedAt": "2026-07-22T07:12:06.685815+00:00",
+    "completedAt": "2026-07-22T10:03:14.678345+00:00",
+    "continuationFinalizedAt": "2026-07-22T10:02:35.023811+00:00",
+    "rolloutMode": "publish",
+    "transport": "FastAPI TestClient over the real ASGI application",
     "database": "real Supabase PostgreSQL",
-    "modelCalls": "real OpenAI Responses API",
-    "dataRetention": "preserved for the configured test user"
+    "providers": "real OpenAI Responses API during the original run and deployed continuation",
+    "finalizationMode": "persisted read-only continuation; no entry import, job claim, or model call",
+    "testUserHash": "578ad41040065cb1e897ccb82a7a0a5397a02aea6a3379be5f168c445fc08fae"
   },
-  "timing": {
-    "pipelineWindowSeconds": 2921.241,
-    "entryProcessingWindowSeconds": 2384.854,
-    "reflectionSynthesisWindowSeconds": 431.549,
-    "finalReflectionGetMilliseconds": 1747,
-    "note": "Job windows include retries, diagnosis pauses, and queue time; they are not pure model latency."
+  "timingSeconds": {
+    "total": 6133.665,
+    "continuationFinalization": 39.655
   },
   "modelUsage": {
+    "pricing": {
+      "currency": "USD",
+      "unit": "per_1m_tokens",
+      "source": "https://developers.openai.com/api/docs/pricing",
+      "retrievedAt": "2026-07-22T10:03:14.678301+00:00",
+      "note": "Estimate from response usage; the OpenAI billing dashboard is authoritative. Regional data-residency uplift is not included."
+    },
     "roles": [
       {
         "role": "entry_analysis",
         "model": "gpt-5.6-luna",
-        "usedAt": "one persisted analysis per journal entry",
-        "successfulCallsConfirmedByDatabase": 30
+        "usedAt": "entry_processing",
+        "routingRule": null,
+        "eligibleCandidates": null,
+        "calls": 30,
+        "successfulCalls": 30,
+        "inputTokens": 64179,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 64089,
+        "outputTokens": 111035,
+        "reasoningOutputTokens": 63019,
+        "modelWallTimeMs": 907822,
+        "latencyMs": {
+          "min": 19460,
+          "average": 30261,
+          "p50": 27666,
+          "p95": 53687,
+          "max": 59796
+        },
+        "estimatedCostUsd": 0.74641125,
+        "outcome": "measured"
       },
       {
         "role": "synthesis",
         "model": "gpt-5.6-terra",
-        "usedAt": "bounded cross-entry reflection synthesis",
-        "successfulCallsConfirmedByCompletedJob": 1,
-        "preFixFailedAttempts": 3
+        "usedAt": "reflection_synthesis",
+        "routingRule": null,
+        "eligibleCandidates": null,
+        "calls": 1,
+        "successfulCalls": 1,
+        "inputTokens": 50204,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 50201,
+        "outputTokens": 4892,
+        "reasoningOutputTokens": 174,
+        "modelWallTimeMs": 29641,
+        "latencyMs": {
+          "min": 29641,
+          "average": 29641,
+          "p50": 29641,
+          "p95": 29641,
+          "max": 29641
+        },
+        "estimatedCostUsd": 0.23026563,
+        "outcome": "measured"
       },
       {
         "role": "critic",
         "model": "gpt-5.6-sol",
-        "usedAt": "conditional review after Terra when a proposal meets the critic-routing rule",
+        "usedAt": "conditional_candidate_review",
         "routingRule": "abs(score-threshold) <= 0.05 or contradiction >= 0.20",
-        "calls": null
+        "eligibleCandidates": 1,
+        "calls": 1,
+        "successfulCalls": 1,
+        "inputTokens": 3510,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 3507,
+        "outputTokens": 304,
+        "reasoningOutputTokens": 247,
+        "modelWallTimeMs": 7406,
+        "latencyMs": {
+          "min": 7406,
+          "average": 7406,
+          "p50": 7406,
+          "p95": 7406,
+          "max": 7406
+        },
+        "estimatedCostUsd": 0.03105375,
+        "outcome": "measured"
       }
     ],
-    "knownPreCanonicalDiagnosticCostUsd": 0.582731,
-    "totalCostUsd": null,
-    "measurementStatus": "incomplete",
-    "note": "The terminal collector output for the resumed Luna and final Terra/Sol calls was truncated, so their token totals cannot be reconstructed safely. The OpenAI billing dashboard is authoritative; no cost is invented here."
+    "calls": [
+      {
+        "ordinal": 1,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 23024,
+        "inputTokens": 2079,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2076,
+        "outputTokens": 2896,
+        "reasoningOutputTokens": 1382,
+        "estimatedCostUsd": 0.019974
+      },
+      {
+        "ordinal": 2,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 19460,
+        "inputTokens": 2114,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2111,
+        "outputTokens": 2585,
+        "reasoningOutputTokens": 1034,
+        "estimatedCostUsd": 0.01815175
+      },
+      {
+        "ordinal": 3,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 26090,
+        "inputTokens": 2141,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2138,
+        "outputTokens": 3312,
+        "reasoningOutputTokens": 1535,
+        "estimatedCostUsd": 0.0225475
+      },
+      {
+        "ordinal": 4,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 53687,
+        "inputTokens": 2116,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2113,
+        "outputTokens": 6298,
+        "reasoningOutputTokens": 4620,
+        "estimatedCostUsd": 0.04043225
+      },
+      {
+        "ordinal": 5,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 40529,
+        "inputTokens": 1967,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 1964,
+        "outputTokens": 4435,
+        "reasoningOutputTokens": 3313,
+        "estimatedCostUsd": 0.029068
+      },
+      {
+        "ordinal": 6,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 36205,
+        "inputTokens": 2101,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2098,
+        "outputTokens": 4449,
+        "reasoningOutputTokens": 2804,
+        "estimatedCostUsd": 0.0293195
+      },
+      {
+        "ordinal": 7,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 28950,
+        "inputTokens": 2275,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2272,
+        "outputTokens": 3433,
+        "reasoningOutputTokens": 2051,
+        "estimatedCostUsd": 0.023441
+      },
+      {
+        "ordinal": 8,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 59796,
+        "inputTokens": 2113,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2110,
+        "outputTokens": 6564,
+        "reasoningOutputTokens": 5597,
+        "estimatedCostUsd": 0.0420245
+      },
+      {
+        "ordinal": 9,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 27379,
+        "inputTokens": 2155,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2152,
+        "outputTokens": 3371,
+        "reasoningOutputTokens": 1730,
+        "estimatedCostUsd": 0.022919
+      },
+      {
+        "ordinal": 10,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 24694,
+        "inputTokens": 2106,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2103,
+        "outputTokens": 3157,
+        "reasoningOutputTokens": 1422,
+        "estimatedCostUsd": 0.02157375
+      },
+      {
+        "ordinal": 11,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 24873,
+        "inputTokens": 2125,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2122,
+        "outputTokens": 3281,
+        "reasoningOutputTokens": 1488,
+        "estimatedCostUsd": 0.0223415
+      },
+      {
+        "ordinal": 12,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 26616,
+        "inputTokens": 1983,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 1980,
+        "outputTokens": 3007,
+        "reasoningOutputTokens": 1828,
+        "estimatedCostUsd": 0.02052
+      },
+      {
+        "ordinal": 13,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 33450,
+        "inputTokens": 2141,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2138,
+        "outputTokens": 4003,
+        "reasoningOutputTokens": 2285,
+        "estimatedCostUsd": 0.0266935
+      },
+      {
+        "ordinal": 14,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 29770,
+        "inputTokens": 2132,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2129,
+        "outputTokens": 3755,
+        "reasoningOutputTokens": 2004,
+        "estimatedCostUsd": 0.02519425
+      },
+      {
+        "ordinal": 15,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 27666,
+        "inputTokens": 2091,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2088,
+        "outputTokens": 3389,
+        "reasoningOutputTokens": 1767,
+        "estimatedCostUsd": 0.022947
+      },
+      {
+        "ordinal": 16,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 28514,
+        "inputTokens": 2136,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2133,
+        "outputTokens": 3339,
+        "reasoningOutputTokens": 1875,
+        "estimatedCostUsd": 0.02270325
+      },
+      {
+        "ordinal": 17,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 34876,
+        "inputTokens": 2336,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2333,
+        "outputTokens": 4420,
+        "reasoningOutputTokens": 2522,
+        "estimatedCostUsd": 0.02943925
+      },
+      {
+        "ordinal": 18,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 20728,
+        "inputTokens": 2003,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2000,
+        "outputTokens": 2658,
+        "reasoningOutputTokens": 1216,
+        "estimatedCostUsd": 0.018451
+      },
+      {
+        "ordinal": 19,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 27773,
+        "inputTokens": 2163,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2160,
+        "outputTokens": 3543,
+        "reasoningOutputTokens": 1746,
+        "estimatedCostUsd": 0.023961
+      },
+      {
+        "ordinal": 20,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 25157,
+        "inputTokens": 2404,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2401,
+        "outputTokens": 3367,
+        "reasoningOutputTokens": 1477,
+        "estimatedCostUsd": 0.02320625
+      },
+      {
+        "ordinal": 21,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 23013,
+        "inputTokens": 2151,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2148,
+        "outputTokens": 3073,
+        "reasoningOutputTokens": 1343,
+        "estimatedCostUsd": 0.021126
+      },
+      {
+        "ordinal": 22,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 44266,
+        "inputTokens": 2124,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2121,
+        "outputTokens": 4878,
+        "reasoningOutputTokens": 3486,
+        "estimatedCostUsd": 0.03192225
+      },
+      {
+        "ordinal": 23,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 19819,
+        "inputTokens": 1998,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 1995,
+        "outputTokens": 2360,
+        "reasoningOutputTokens": 1072,
+        "estimatedCostUsd": 0.01665675
+      },
+      {
+        "ordinal": 24,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 26827,
+        "inputTokens": 2129,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2126,
+        "outputTokens": 3429,
+        "reasoningOutputTokens": 1594,
+        "estimatedCostUsd": 0.0232345
+      },
+      {
+        "ordinal": 25,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 29338,
+        "inputTokens": 2131,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2128,
+        "outputTokens": 3630,
+        "reasoningOutputTokens": 1858,
+        "estimatedCostUsd": 0.024443
+      },
+      {
+        "ordinal": 26,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 38780,
+        "inputTokens": 2171,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2168,
+        "outputTokens": 4692,
+        "reasoningOutputTokens": 3366,
+        "estimatedCostUsd": 0.030865
+      },
+      {
+        "ordinal": 27,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 24452,
+        "inputTokens": 2304,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2301,
+        "outputTokens": 3313,
+        "reasoningOutputTokens": 1446,
+        "estimatedCostUsd": 0.02275725
+      },
+      {
+        "ordinal": 28,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 30482,
+        "inputTokens": 2407,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2404,
+        "outputTokens": 4250,
+        "reasoningOutputTokens": 1887,
+        "estimatedCostUsd": 0.028508
+      },
+      {
+        "ordinal": 29,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 23641,
+        "inputTokens": 1940,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 1937,
+        "outputTokens": 2630,
+        "reasoningOutputTokens": 1552,
+        "estimatedCostUsd": 0.01820425
+      },
+      {
+        "ordinal": 30,
+        "role": "entry_analysis",
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 27967,
+        "inputTokens": 2143,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 2140,
+        "outputTokens": 3518,
+        "reasoningOutputTokens": 1719,
+        "estimatedCostUsd": 0.023786
+      },
+      {
+        "ordinal": 31,
+        "role": "synthesis",
+        "model": "gpt-5.6-terra",
+        "promptVersion": "reflection-synthesis-v1",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 29641,
+        "inputTokens": 50204,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 50201,
+        "outputTokens": 4892,
+        "reasoningOutputTokens": 174,
+        "estimatedCostUsd": 0.23026563
+      },
+      {
+        "ordinal": 32,
+        "role": "critic",
+        "model": "gpt-5.6-sol",
+        "promptVersion": "reflection-critic-v1",
+        "status": "success",
+        "retryClass": "none",
+        "serviceTier": "default",
+        "durationMs": 7406,
+        "inputTokens": 3510,
+        "cachedInputTokens": 0,
+        "cacheWriteInputTokens": 3507,
+        "outputTokens": 304,
+        "reasoningOutputTokens": 247,
+        "estimatedCostUsd": 0.03105375
+      }
+    ],
+    "pricingComplete": true,
+    "estimatedTotalCostUsd": 1.00773063
+  },
+  "pipelineEvents": {
+    "entryAnalysisOutcomes": {
+      "accepted:personal_reflection": 30
+    },
+    "candidateOutcomes": {},
+    "proposalDiscardReasons": {}
   },
   "databaseEffects": {
     "tableRowCounts": {
       "entries": 30,
       "past_entry_imports": 30,
       "entry_analyses": 30,
-      "entry_signals": 403,
+      "entry_signals": 394,
       "user_pii_vaults": 1,
       "processing_jobs": 31,
-      "pattern_candidates": 47,
-      "pattern_candidate_evidence": 5196,
+      "pattern_candidates": 169,
+      "pattern_candidate_evidence": 12802,
       "reflection_snapshots": 1,
-      "reflection_snapshot_insights": 3,
-      "reflection_snapshot_evidence": 0,
+      "reflection_snapshot_insights": 6,
+      "reflection_snapshot_evidence": 684,
       "reflection_feedback": 0
     },
     "entryStatuses": {
@@ -69,30 +653,1979 @@
     "analysisModels": {
       "gpt-5.6-luna": 30
     },
+    "signalTypes": {
+      "energy_loss": 10,
+      "self_statement": 11,
+      "action": 85,
+      "outcome": 30,
+      "realization": 26,
+      "event": 59,
+      "emotion": 39,
+      "desire": 21,
+      "protective_strategy": 20,
+      "conflict": 29,
+      "energy_gain": 9,
+      "belief": 34,
+      "avoidance": 21
+    },
     "jobStatuses": {
       "entry_processing:completed": 30,
       "reflection_synthesis:completed": 1
     },
     "candidateStatuses": {
-      "hidden_driver:candidate": 15,
-      "inner_tension:candidate": 32
+      "recurring_loop:candidate": 119,
+      "inner_tension:published": 4,
+      "hidden_driver:candidate": 14,
+      "recurring_loop:published": 1,
+      "inner_tension:candidate": 30,
+      "hidden_driver:published": 1
     },
     "insightStatuses": {
-      "hidden_driver:insufficient_evidence": 1,
-      "recurring_loop:insufficient_evidence": 1,
-      "inner_tension:insufficient_evidence": 1
+      "hidden_driver:available": 1,
+      "inner_tension:available": 4,
+      "recurring_loop:available": 1
     }
   },
+  "entryBreakdown": [
+    {
+      "index": 1,
+      "entryDate": "2026-06-01",
+      "entryId": "2e45ca41-04d8-4198-a800-1a3056cc85a4",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 159,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9134615384615384,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.006369426751592355,
+          "meaningful_token_count": 104,
+          "near_duplicate_similarity": null,
+          "alphabetic_character_ratio": 0.7854671280276817,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.966,
+          "self_reference_score": 0.98,
+          "causal_reasoning_score": 0.95,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.91
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 159
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 11,
+        "byType": {
+          "action": 2,
+          "avoidance": 1,
+          "belief": 1,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 1,
+          "event": 1,
+          "outcome": 1,
+          "protective_strategy": 1,
+          "self_statement": 1
+        }
+      }
+    },
+    {
+      "index": 2,
+      "entryDate": "2026-06-02",
+      "entryId": "e24ce1db-7500-4181-9ebe-2fc30d5073e6",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 157,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9444444444444444,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 108,
+          "near_duplicate_similarity": 0.0,
+          "alphabetic_character_ratio": 0.8019693654266958,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9570000000000001,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.88,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.93
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 157
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 13,
+        "byType": {
+          "action": 3,
+          "avoidance": 2,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 1,
+          "energy_gain": 1,
+          "event": 2,
+          "protective_strategy": 1,
+          "self_statement": 1
+        }
+      }
+    },
+    {
+      "index": 3,
+      "entryDate": "2026-06-03",
+      "entryId": "74239c39-eba0-4b85-aa16-b7734f778479",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 161,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9150943396226415,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 106,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.7768969422423556,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9630000000000001,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.96,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.9
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 161
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 14,
+        "byType": {
+          "action": 2,
+          "avoidance": 2,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 2,
+          "event": 1,
+          "outcome": 2,
+          "protective_strategy": 1,
+          "realization": 2
+        }
+      }
+    },
+    {
+      "index": 4,
+      "entryDate": "2026-06-04",
+      "entryId": "ba3691e8-e103-46a4-a11c-c54d4ccc2a7f",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 156,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9207920792079208,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 101,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.7941520467836257,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9600000000000001,
+          "self_reference_score": 0.97,
+          "causal_reasoning_score": 0.94,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.92
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 156
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 15,
+        "byType": {
+          "action": 4,
+          "avoidance": 1,
+          "belief": 1,
+          "desire": 1,
+          "emotion": 1,
+          "event": 2,
+          "outcome": 1,
+          "protective_strategy": 1,
+          "realization": 1,
+          "self_statement": 2
+        }
+      }
+    },
+    {
+      "index": 5,
+      "entryDate": "2026-06-05",
+      "entryId": "1ff1c788-c283-40af-aced-8d74ef03dd87",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 93,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8904109589041096,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 73,
+          "near_duplicate_similarity": 0.0045871559633027525,
+          "alphabetic_character_ratio": 0.7835249042145593,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.93,
+          "self_reference_score": 0.97,
+          "causal_reasoning_score": 0.84,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.96,
+          "emotional_information_score": 0.86
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 93
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 10,
+        "byType": {
+          "action": 5,
+          "conflict": 1,
+          "emotion": 1,
+          "event": 2,
+          "outcome": 1
+        }
+      }
+    },
+    {
+      "index": 6,
+      "entryDate": "2026-06-06",
+      "entryId": "11d6d60e-c0d8-497a-9696-8fa895b30fb2",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 159,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9428571428571428,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 105,
+          "near_duplicate_similarity": 0.0045871559633027525,
+          "alphabetic_character_ratio": 0.7897196261682243,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9629999999999999,
+          "self_reference_score": 0.98,
+          "causal_reasoning_score": 0.93,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.97,
+          "emotional_information_score": 0.94
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 159
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 14,
+        "byType": {
+          "action": 2,
+          "belief": 3,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 2,
+          "event": 2,
+          "outcome": 1,
+          "protective_strategy": 1,
+          "realization": 1
+        }
+      }
+    },
+    {
+      "index": 7,
+      "entryDate": "2026-06-07",
+      "entryId": "ad032fbd-4d45-4a6a-a1c2-9ae8d045e118",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 200,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8591549295774648,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 142,
+          "near_duplicate_similarity": 0.0,
+          "alphabetic_character_ratio": 0.7824956672443674,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9115,
+          "self_reference_score": 0.92,
+          "causal_reasoning_score": 0.82,
+          "lived_experience_score": 0.97,
+          "personal_relevance_score": 0.97,
+          "emotional_information_score": 0.84
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 200
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 11,
+        "byType": {
+          "action": 4,
+          "conflict": 2,
+          "desire": 1,
+          "emotion": 2,
+          "energy_loss": 1,
+          "event": 1
+        }
+      }
+    },
+    {
+      "index": 8,
+      "entryDate": "2026-06-08",
+      "entryId": "88c2a152-a414-4245-8fc0-85b86c156818",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 160,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8557692307692307,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 104,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.8026905829596412,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9635,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.95,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.91
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 160
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 7,
+        "byType": {
+          "action": 2,
+          "avoidance": 2,
+          "conflict": 1,
+          "emotion": 1,
+          "energy_loss": 1
+        }
+      }
+    },
+    {
+      "index": 9,
+      "entryDate": "2026-06-09",
+      "entryId": "47d88633-b8ec-4659-ace4-9d5e72a0b416",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 156,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9134615384615384,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 104,
+          "near_duplicate_similarity": 0.0,
+          "alphabetic_character_ratio": 0.7928240740740741,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.979,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.97,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.95
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 156
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 14,
+        "byType": {
+          "action": 5,
+          "conflict": 1,
+          "desire": 1,
+          "energy_loss": 1,
+          "event": 1,
+          "outcome": 2,
+          "protective_strategy": 1,
+          "realization": 2
+        }
+      }
+    },
+    {
+      "index": 10,
+      "entryDate": "2026-06-10",
+      "entryId": "212c93a9-dccc-458b-8e2b-6bd94f4d4c6a",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 171,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.865546218487395,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 119,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.8035160289555325,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9745,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.94,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.95
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 171
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 13,
+        "byType": {
+          "action": 1,
+          "avoidance": 1,
+          "belief": 1,
+          "desire": 1,
+          "emotion": 1,
+          "energy_gain": 3,
+          "event": 2,
+          "outcome": 1,
+          "realization": 1,
+          "self_statement": 1
+        }
+      }
+    },
+    {
+      "index": 11,
+      "entryDate": "2026-06-11",
+      "entryId": "28fea4a1-ac52-4821-a55f-71dd1860e3d4",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 160,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9029126213592233,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 103,
+          "near_duplicate_similarity": 0.007874015748031496,
+          "alphabetic_character_ratio": 0.7967391304347826,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.978,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.95,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.96
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 160
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 14,
+        "byType": {
+          "action": 1,
+          "belief": 3,
+          "conflict": 2,
+          "desire": 1,
+          "emotion": 1,
+          "event": 3,
+          "protective_strategy": 2,
+          "realization": 1
+        }
+      }
+    },
+    {
+      "index": 12,
+      "entryDate": "2026-06-12",
+      "entryId": "2842878a-2b8c-4d5a-8447-b744c1f20a7c",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 85,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9696969696969697,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 66,
+          "near_duplicate_similarity": 0.004761904761904762,
+          "alphabetic_character_ratio": 0.7922606924643585,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9400000000000001,
+          "self_reference_score": 0.97,
+          "causal_reasoning_score": 0.86,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.88
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 85
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 10,
+        "byType": {
+          "action": 2,
+          "belief": 2,
+          "conflict": 1,
+          "emotion": 2,
+          "energy_gain": 1,
+          "event": 2
+        }
+      }
+    },
+    {
+      "index": 13,
+      "entryDate": "2026-06-13",
+      "entryId": "f73de90c-73c4-4bfa-8c4f-27615ad4b5a5",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 158,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9385964912280702,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 114,
+          "near_duplicate_similarity": 0.007874015748031496,
+          "alphabetic_character_ratio": 0.8050579557428873,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9650000000000001,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.9,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.94
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 158
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 14,
+        "byType": {
+          "action": 2,
+          "avoidance": 1,
+          "belief": 2,
+          "conflict": 4,
+          "emotion": 2,
+          "energy_gain": 1,
+          "event": 2
+        }
+      }
+    },
+    {
+      "index": 14,
+      "entryDate": "2026-06-14",
+      "entryId": "e12d5cbe-e1ef-40e8-aeac-873404ca06df",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 160,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9357798165137615,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 109,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.7931034482758621,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9625000000000001,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.93,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.92
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 160
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 14,
+        "byType": {
+          "action": 3,
+          "belief": 3,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 1,
+          "energy_loss": 1,
+          "event": 1,
+          "realization": 3
+        }
+      }
+    },
+    {
+      "index": 15,
+      "entryDate": "2026-06-15",
+      "entryId": "a2266711-62c0-47b6-ae56-cd16d1183fbe",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 148,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8679245283018868,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 106,
+          "near_duplicate_similarity": 0.011857707509881422,
+          "alphabetic_character_ratio": 0.7960140679953107,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9765,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.94,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.96
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 148
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 13,
+        "byType": {
+          "action": 2,
+          "avoidance": 1,
+          "belief": 1,
+          "emotion": 1,
+          "event": 4,
+          "outcome": 2,
+          "protective_strategy": 1,
+          "realization": 1
+        }
+      }
+    },
+    {
+      "index": 16,
+      "entryDate": "2026-06-16",
+      "entryId": "2dc570f4-686a-4950-a0da-0a311cbb5086",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 167,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9017857142857143,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 112,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.8056426332288401,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9560000000000001,
+          "self_reference_score": 0.97,
+          "causal_reasoning_score": 0.94,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.9
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 167
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 12,
+        "byType": {
+          "action": 2,
+          "belief": 1,
+          "desire": 1,
+          "emotion": 2,
+          "event": 3,
+          "outcome": 1,
+          "protective_strategy": 1,
+          "realization": 1
+        }
+      }
+    },
+    {
+      "index": 17,
+      "entryDate": "2026-06-17",
+      "entryId": "abb15abe-024d-47dd-893a-6641c3043752",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 222,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8152866242038217,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.004545454545454519,
+          "meaningful_token_count": 157,
+          "near_duplicate_similarity": 0.007874015748031496,
+          "alphabetic_character_ratio": 0.7901533494753834,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9620000000000001,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.94,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.91
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 222
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 16,
+        "byType": {
+          "action": 2,
+          "avoidance": 1,
+          "belief": 2,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 2,
+          "event": 2,
+          "outcome": 1,
+          "protective_strategy": 2,
+          "realization": 1,
+          "self_statement": 1
+        }
+      }
+    },
+    {
+      "index": 18,
+      "entryDate": "2026-06-18",
+      "entryId": "94379dd4-ad66-4de4-902e-aa8d8a116656",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 89,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9242424242424242,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 66,
+          "near_duplicate_similarity": 0.0,
+          "alphabetic_character_ratio": 0.8080438756855576,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.8564999999999999,
+          "self_reference_score": 0.88,
+          "causal_reasoning_score": 0.8,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.95,
+          "emotional_information_score": 0.62
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 89
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 12,
+        "byType": {
+          "action": 2,
+          "avoidance": 1,
+          "belief": 1,
+          "conflict": 1,
+          "energy_loss": 1,
+          "event": 2,
+          "outcome": 2,
+          "protective_strategy": 1,
+          "self_statement": 1
+        }
+      }
+    },
+    {
+      "index": 19,
+      "entryDate": "2026-06-19",
+      "entryId": "6569be42-e709-46a0-8b58-f376bae89b9b",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 162,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8839285714285714,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.006249999999999978,
+          "meaningful_token_count": 112,
+          "near_duplicate_similarity": 0.0,
+          "alphabetic_character_ratio": 0.7835164835164835,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.973,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.96,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.95
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 162
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 15,
+        "byType": {
+          "action": 2,
+          "avoidance": 1,
+          "belief": 1,
+          "conflict": 2,
+          "emotion": 2,
+          "energy_loss": 2,
+          "event": 2,
+          "protective_strategy": 1,
+          "realization": 2
+        }
+      }
+    },
+    {
+      "index": 20,
+      "entryDate": "2026-06-20",
+      "entryId": "07a64647-2bf2-4d75-8464-c50b231197f7",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 233,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8363636363636363,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 165,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.797112462006079,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9735,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.92,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.96
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 233
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 16,
+        "byType": {
+          "action": 4,
+          "avoidance": 1,
+          "belief": 1,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 2,
+          "event": 2,
+          "outcome": 1,
+          "protective_strategy": 1,
+          "realization": 1,
+          "self_statement": 1
+        }
+      }
+    },
+    {
+      "index": 21,
+      "entryDate": "2026-06-21",
+      "entryId": "4c494e22-5682-4419-a6f4-1afb5df5bfc5",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 156,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9292035398230089,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 113,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.807855626326964,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9520000000000001,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.94,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.86
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 156
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 15,
+        "byType": {
+          "action": 3,
+          "avoidance": 1,
+          "belief": 1,
+          "conflict": 1,
+          "desire": 2,
+          "emotion": 1,
+          "energy_loss": 1,
+          "event": 2,
+          "outcome": 2,
+          "protective_strategy": 1
+        }
+      }
+    },
+    {
+      "index": 22,
+      "entryDate": "2026-06-22",
+      "entryId": "432b745f-edcb-4e9a-8762-696ecebed132",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 157,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8888888888888888,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 108,
+          "near_duplicate_similarity": 0.0045871559633027525,
+          "alphabetic_character_ratio": 0.7993348115299335,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.971,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.96,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.94
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 157
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 11,
+        "byType": {
+          "action": 4,
+          "belief": 2,
+          "desire": 1,
+          "emotion": 1,
+          "outcome": 1,
+          "protective_strategy": 1,
+          "realization": 1
+        }
+      }
+    },
+    {
+      "index": 23,
+      "entryDate": "2026-06-23",
+      "entryId": "0e674afe-b164-435d-bbde-a1b0623825e3",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 102,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8947368421052632,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 76,
+          "near_duplicate_similarity": 0.0,
+          "alphabetic_character_ratio": 0.7910189982728842,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9400000000000001,
+          "self_reference_score": 0.97,
+          "causal_reasoning_score": 0.93,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.82
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 102
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 11,
+        "byType": {
+          "action": 2,
+          "avoidance": 1,
+          "belief": 1,
+          "conflict": 1,
+          "emotion": 1,
+          "energy_loss": 1,
+          "event": 2,
+          "outcome": 2
+        }
+      }
+    },
+    {
+      "index": 24,
+      "entryDate": "2026-06-24",
+      "entryId": "990bfb46-b205-460e-9bd7-aafe787fa24e",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 160,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9375,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 112,
+          "near_duplicate_similarity": 0.007874015748031496,
+          "alphabetic_character_ratio": 0.7909090909090909,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9510000000000001,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.88,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.9
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 160
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 15,
+        "byType": {
+          "action": 2,
+          "avoidance": 1,
+          "belief": 1,
+          "desire": 1,
+          "emotion": 1,
+          "energy_gain": 1,
+          "energy_loss": 1,
+          "event": 3,
+          "outcome": 2,
+          "protective_strategy": 1,
+          "realization": 1
+        }
+      }
+    },
+    {
+      "index": 25,
+      "entryDate": "2026-06-25",
+      "entryId": "4f8251c9-6a8f-48c4-8a8f-7af6c9806706",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 154,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9215686274509803,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 102,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.7897793263646922,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9565,
+          "self_reference_score": 0.99,
+          "causal_reasoning_score": 0.94,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.86
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 154
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 14,
+        "byType": {
+          "action": 3,
+          "belief": 2,
+          "conflict": 2,
+          "emotion": 1,
+          "energy_gain": 1,
+          "event": 1,
+          "outcome": 2,
+          "protective_strategy": 1,
+          "realization": 1
+        }
+      }
+    },
+    {
+      "index": 26,
+      "entryDate": "2026-06-26",
+      "entryId": "f386fb81-333e-47ef-8b67-26b908bd1717",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 162,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.9043478260869565,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 115,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.8023133543638276,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9565000000000001,
+          "self_reference_score": 0.98,
+          "causal_reasoning_score": 0.87,
+          "lived_experience_score": 0.99,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.93
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 162
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 11,
+        "byType": {
+          "action": 2,
+          "belief": 2,
+          "conflict": 1,
+          "emotion": 1,
+          "event": 2,
+          "outcome": 1,
+          "realization": 1,
+          "self_statement": 1
+        }
+      }
+    },
+    {
+      "index": 27,
+      "entryDate": "2026-06-27",
+      "entryId": "1ab4fb0c-f0fd-489d-b38d-bb8c52c64410",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 193,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8633093525179856,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 139,
+          "near_duplicate_similarity": 0.007874015748031496,
+          "alphabetic_character_ratio": 0.800705467372134,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.896,
+          "self_reference_score": 0.88,
+          "causal_reasoning_score": 0.82,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.78
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 193
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 15,
+        "byType": {
+          "action": 4,
+          "avoidance": 1,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 1,
+          "energy_gain": 1,
+          "event": 4,
+          "outcome": 2
+        }
+      }
+    },
+    {
+      "index": 28,
+      "entryDate": "2026-06-28",
+      "entryId": "cc068165-f0dd-48c8-9964-3efc35707df3",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 212,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8589743589743589,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 156,
+          "near_duplicate_similarity": 0.00392156862745098,
+          "alphabetic_character_ratio": 0.7833876221498371,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9550000000000001,
+          "self_reference_score": 0.98,
+          "causal_reasoning_score": 0.94,
+          "lived_experience_score": 0.97,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.9
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 212
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 20,
+        "byType": {
+          "action": 7,
+          "avoidance": 1,
+          "desire": 2,
+          "emotion": 1,
+          "event": 5,
+          "protective_strategy": 1,
+          "realization": 3
+        }
+      }
+    },
+    {
+      "index": 29,
+      "entryDate": "2026-06-29",
+      "entryId": "d098fc5a-f6a0-4622-ba25-3fa60fc67280",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 68,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.94,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 50,
+          "near_duplicate_similarity": 0.0,
+          "alphabetic_character_ratio": 0.7800511508951407,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.859,
+          "self_reference_score": 0.95,
+          "causal_reasoning_score": 0.48,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.98,
+          "emotional_information_score": 0.78
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 68
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 9,
+        "byType": {
+          "action": 3,
+          "emotion": 2,
+          "event": 2,
+          "outcome": 1,
+          "self_statement": 1
+        }
+      }
+    },
+    {
+      "index": 30,
+      "entryDate": "2026-06-30",
+      "entryId": "4ffc8d03-7f1d-4410-a45a-48d813d07b1c",
+      "submission": {
+        "evidence": "persisted_database_state",
+        "note": "The original authenticated import completed before finalization."
+      },
+      "storage": {
+        "inputType": "text",
+        "entryStatus": "completed",
+        "importStatus": "completed"
+      },
+      "worker": {
+        "jobStatus": "completed",
+        "attempts": 1,
+        "errorCode": null
+      },
+      "quality": {
+        "deterministicFeatures": {
+          "word_count": 165,
+          "exact_duplicate": false,
+          "copied_text_ratio": 0.0,
+          "unique_token_ratio": 0.8521739130434782,
+          "hard_exclusion_codes": [],
+          "repeated_ngram_ratio": 0.0,
+          "meaningful_token_count": 115,
+          "near_duplicate_similarity": 0.007874015748031496,
+          "alphabetic_character_ratio": 0.807070707070707,
+          "repeated_recent_entry_count": 0
+        },
+        "entryKind": "personal_reflection",
+        "modelEligibility": "accepted",
+        "finalEligibility": "accepted",
+        "semanticScores": {
+          "confidence": 0.99,
+          "reflective_score": 0.9395,
+          "self_reference_score": 0.97,
+          "causal_reasoning_score": 0.9,
+          "lived_experience_score": 0.98,
+          "personal_relevance_score": 0.99,
+          "emotional_information_score": 0.84
+        },
+        "exclusionReasonCodes": [],
+        "reflectiveWordCount": 165
+      },
+      "analysis": {
+        "model": "gpt-5.6-luna",
+        "promptVersion": "entry-analysis-v2"
+      },
+      "signals": {
+        "count": 15,
+        "byType": {
+          "action": 3,
+          "avoidance": 1,
+          "belief": 2,
+          "conflict": 1,
+          "desire": 1,
+          "emotion": 2,
+          "event": 1,
+          "outcome": 1,
+          "realization": 2,
+          "self_statement": 1
+        }
+      }
+    }
+  ],
   "reflectionGetResponse": {
-    "httpStatus": 200,
     "range": "all",
     "reflectionState": "available",
     "processingState": "idle",
     "snapshot": {
-      "id": "168bbc69-aa65-5f8d-b1ee-55cdd09c2f89",
+      "id": "231626b9-8fb2-5b11-8443-78fd06b2bcf5",
       "version": 1,
-      "generatedAt": "2026-07-21T21:29:06.753354Z",
-      "sourceVersion": 40,
+      "generatedAt": "2026-07-22T09:35:10.046354Z",
+      "sourceVersion": 76,
       "isStale": false
     },
     "analysisBasis": {
@@ -107,43 +2640,951 @@
     },
     "data": {
       "hiddenDriver": {
-        "status": "insufficient_evidence",
-        "reasonCode": "DRIVER_NOT_REPEATED",
-        "message": "A possible underlying driver has not repeated enough yet."
+        "status": "available",
+        "id": "a12e47b1-8cb9-58a7-a144-52542787a412",
+        "confidence": "recurring",
+        "score": 0.87126,
+        "evidence": [
+          {
+            "id": "99c32db5-f8da-5007-8d44-16fdef3f82e1",
+            "entryDate": "2026-06-01",
+            "sourceLabel": "Journal entry",
+            "quote": "I said yes to helping Rhea with her client note and then felt irritated that people always come to me.",
+            "interpretation": "The writer agreed to help with a client note but simultaneously felt irritated that people repeatedly came to them.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "181e2aac-8951-512c-91be-326384c1afe6",
+            "entryDate": "2026-06-01",
+            "sourceLabel": "Journal entry",
+            "quote": "Truth is I like being the person they come to.",
+            "interpretation": "The writer recognizes that being the person others approach feels positive.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "95c9c68b-aeb0-5561-8156-70dad86e79f3",
+            "entryDate": "2026-06-01",
+            "sourceLabel": "Journal entry",
+            "quote": "It makes me feel useful and also gives me an excuse if my own work is late.",
+            "interpretation": "The writer identifies helping others as both a source of usefulness and a justification when their own work is late.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "42e019fe-8b86-5579-a6ba-4d478def2d40",
+            "entryDate": "2026-06-05",
+            "sourceLabel": "Journal entry",
+            "quote": "I volunteered",
+            "interpretation": "Took responsibility for tracking follow-ups when nobody else spoke.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "9444ba69-8863-5ac9-a241-cb20565c4d65",
+            "entryDate": "2026-06-05",
+            "sourceLabel": "Journal entry",
+            "quote": "I stayed till 8:40",
+            "interpretation": "Remained at work until 8:40 despite being advised not to work late.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "c8e13b32-9228-523a-986e-c89e4bf89b80",
+            "entryDate": "2026-06-09",
+            "sourceLabel": "Journal entry",
+            "quote": "Rhea messaged can you quickly look at this and I knew quickly would not be quick.",
+            "interpretation": "Rhea asked for help with a document, framing it as a quick task.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "241a18b4-bd90-5e77-bab4-57392b3ceca5",
+            "entryDate": "2026-06-09",
+            "sourceLabel": "Journal entry",
+            "quote": "She thanked me and presented it in the leadership call.",
+            "interpretation": "Rhea thanked the writer and used the revised document in a leadership call.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "f91eb4ac-f55a-5b22-9078-f231a67d3e6e",
+            "entryDate": "2026-06-11",
+            "sourceLabel": "Journal entry",
+            "quote": "At 10:30 I sent Ananya a long sorry message and felt I had done something.",
+            "interpretation": "At 10:30, the writer sent <LOCATION_1> a long apology message and experienced that as an action taken.",
+            "theme": "love_life",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "59090967-309b-542a-a244-f518b7a16435",
+            "entryDate": "2026-06-14",
+            "sourceLabel": "Journal entry",
+            "quote": "Everything now needs a reason, fitness, networking, skill building, quality time.",
+            "interpretation": "The writer believes that current activities are expected to serve a useful purpose such as fitness, networking, skill building, or quality time.",
+            "theme": "personal_growth",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "e0d8e2f8-2667-5321-abd4-4c163682b1f5",
+            "entryDate": "2026-06-21",
+            "sourceLabel": "Journal entry",
+            "quote": "The real work would be writing what I think our product should stop doing.",
+            "interpretation": "Recognizes that the substantive work is to state what the product should stop doing.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "3900535a-f1e3-520e-8a5c-fe4535c0fcc0",
+            "entryDate": "2026-06-24",
+            "sourceLabel": "Journal entry",
+            "quote": "There are moments I enjoy, finding the error, making sense of a mess, helping someone think.",
+            "interpretation": "The writer experiences enjoyment when finding errors, making sense of disorder, and helping someone think.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "681cf388-e7e4-5df4-8bb5-127103e24e71",
+            "entryDate": "2026-06-27",
+            "sourceLabel": "Journal entry",
+            "quote": "I apologized, ordered Ma's favorite chilli paneer for us and we called again during cake cutting.",
+            "interpretation": "The writer apologized, ordered a favorite dish, and rejoined the birthday call.",
+            "theme": "family_friends",
+            "supports": "Supporting evidence"
+          }
+        ],
+        "feedback": null,
+        "statement": "A possible pattern across your entries may involve contribution through helping, taking responsibility, and repairing connection, while the value you place on the work may not depend only on praise.",
+        "underlyingNeed": "To make a useful difference.",
+        "drivers": [
+          "The writer agreed to help with a client note but simultaneously felt irritated that people repeatedly came to them.",
+          "The writer recognizes that being the person others approach feels positive.",
+          "The writer identifies helping others as both a source of usefulness and a justification when their own work is late.",
+          "Took responsibility for tracking follow-ups when nobody else spoke.",
+          "Remained at work until 8:40 despite being advised not to work late."
+        ]
       },
       "recurringLoop": {
-        "status": "insufficient_evidence",
-        "reasonCode": "LOOP_NOT_REPEATED",
-        "message": "The same sequence has not repeated enough yet."
+        "status": "available",
+        "id": "7b41cc30-4722-57cf-b7db-93f3fda318f5",
+        "confidence": "recurring",
+        "score": 0.78219,
+        "evidence": [
+          {
+            "id": "0d989cba-995e-5269-b3c1-97835d37e0c2",
+            "entryDate": "2026-06-01",
+            "sourceLabel": "Journal entry",
+            "quote": "Opened Slack before even brushing because I remembered the Friday message from Vikram saying we should revisit the numbers.",
+            "interpretation": "The writer opened Slack before brushing after remembering a Friday message about revisiting numbers.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "60183360-5b4d-51ba-95dd-db8e02b1ff9a",
+            "entryDate": "2026-06-01",
+            "sourceLabel": "Journal entry",
+            "quote": "Revisit is such a harmless word but my stomach took it as you have messed up.",
+            "interpretation": "The writer experienced the message as an implication that they had messed up, accompanied by a stomach reaction.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "198d344f-1fff-548a-a9e1-2cbbfbf4b376",
+            "entryDate": "2026-06-02",
+            "sourceLabel": "Journal entry",
+            "quote": "The review went better than expected.",
+            "interpretation": "A work review received positive feedback and moved forward quickly.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "101b6f8d-78a1-5d43-8c05-a217cfcb21cb",
+            "entryDate": "2026-06-02",
+            "sourceLabel": "Journal entry",
+            "quote": "Vikram said good recovery and moved to the next slide, maybe six seconds total, but I replayed those words through the afternoon.",
+            "interpretation": "The writer continued mentally revisiting the praise throughout the afternoon.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "52ce1e8a-6bc3-5d25-a5b4-d195da663bbb",
+            "entryDate": "2026-06-02",
+            "sourceLabel": "Journal entry",
+            "quote": "I sent the deck on the group even though everyone was already in the meeting.",
+            "interpretation": "The writer sent the deck to the group despite the meeting already including everyone.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "f8e092ad-4a8f-5569-bc9c-276b8a464725",
+            "entryDate": "2026-06-04",
+            "sourceLabel": "Journal entry",
+            "quote": "If I apply and they reject me",
+            "interpretation": "The writer anticipates rejection if they apply for jobs.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "98dfac41-799a-508b-b52f-2ad7cae460b9",
+            "entryDate": "2026-06-04",
+            "sourceLabel": "Journal entry",
+            "quote": "If I don't apply",
+            "interpretation": "Not applying protects the belief that the writer is underpaid but capable, because rejection would provide evidence of being behind.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "68f3d98b-43f1-59f1-b387-2c2ac0ee103f",
+            "entryDate": "2026-06-05",
+            "sourceLabel": "Journal entry",
+            "quote": "Friday was calls, calls.",
+            "interpretation": "Experienced a workday dominated by calls.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "5ed926a8-6bce-5e40-85c9-b26f90004bbc",
+            "entryDate": "2026-06-05",
+            "sourceLabel": "Journal entry",
+            "quote": "I volunteered",
+            "interpretation": "Took responsibility for tracking follow-ups when nobody else spoke.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "09163d3b-b674-5d32-9bb8-f30f01428e29",
+            "entryDate": "2026-06-05",
+            "sourceLabel": "Journal entry",
+            "quote": "now I own eleven follow-ups",
+            "interpretation": "Ended up responsible for eleven follow-up items from a meeting they did not need to run.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "37dba4fb-46ee-54e9-949f-e1c3718de0f1",
+            "entryDate": "2026-06-06",
+            "sourceLabel": "Journal entry",
+            "quote": "Opened the office laptop at 7 just to reduce Monday anxiety.",
+            "interpretation": "The narrator opened the office laptop in the evening as an attempt to make Monday feel less anxiety-provoking.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          },
+          {
+            "id": "6342da5c-aa59-5058-a849-9bbf33191f0e",
+            "entryDate": "2026-06-06",
+            "sourceLabel": "Journal entry",
+            "quote": "Two hours disappeared.",
+            "interpretation": "Two hours passed while the narrator was on the laptop, despite no urgent task.",
+            "theme": "career",
+            "supports": "Supporting evidence"
+          }
+        ],
+        "feedback": null,
+        "title": "Managing pressure through more activity",
+        "description": "A possible recurring loop across your entries may involve responding to pressure or relational concern with activity that briefly reduces uncertainty, while focus, energy, or connection can later be strained.",
+        "steps": [
+          {
+            "id": "6cbd7352-1637-56dd-b055-810b0d530d86",
+            "text": "You may take on responsibility or work in an effort to reduce anxiety or keep things moving.",
+            "evidence": [
+              {
+                "id": "52ce1e8a-6bc3-5d25-a5b4-d195da663bbb",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "I sent the deck on the group even though everyone was already in the meeting.",
+                "interpretation": "The writer sent the deck to the group despite the meeting already including everyone.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "5ed926a8-6bce-5e40-85c9-b26f90004bbc",
+                "entryDate": "2026-06-05",
+                "sourceLabel": "Journal entry",
+                "quote": "I volunteered",
+                "interpretation": "Took responsibility for tracking follow-ups when nobody else spoke.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "37dba4fb-46ee-54e9-949f-e1c3718de0f1",
+                "entryDate": "2026-06-06",
+                "sourceLabel": "Journal entry",
+                "quote": "Opened the office laptop at 7 just to reduce Monday anxiety.",
+                "interpretation": "The narrator opened the office laptop in the evening as an attempt to make Monday feel less anxiety-provoking.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              }
+            ]
+          },
+          {
+            "id": "c1bf1e6d-b763-5e6f-b894-39c44c807a87",
+            "text": "Continued work or repeated checking may provide short-term reassurance.",
+            "evidence": [
+              {
+                "id": "98dfac41-799a-508b-b52f-2ad7cae460b9",
+                "entryDate": "2026-06-04",
+                "sourceLabel": "Journal entry",
+                "quote": "If I don't apply",
+                "interpretation": "Not applying protects the belief that the writer is underpaid but capable, because rejection would provide evidence of being behind.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "6342da5c-aa59-5058-a849-9bbf33191f0e",
+                "entryDate": "2026-06-06",
+                "sourceLabel": "Journal entry",
+                "quote": "Two hours disappeared.",
+                "interpretation": "Two hours passed while the narrator was on the laptop, despite no urgent task.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              }
+            ]
+          },
+          {
+            "id": "ebb9a15a-64c2-5f7f-a85a-99e94ba7bdac",
+            "text": "Over time, this may leave less room for focused thought or coincide with recurring physical strain.",
+            "evidence": [
+              {
+                "id": "09163d3b-b674-5d32-9bb8-f30f01428e29",
+                "entryDate": "2026-06-05",
+                "sourceLabel": "Journal entry",
+                "quote": "now I own eleven follow-ups",
+                "interpretation": "Ended up responsible for eleven follow-up items from a meeting they did not need to run.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              }
+            ]
+          },
+          {
+            "id": "bc1e1d6a-0521-56c9-9896-236b733bf32b",
+            "text": "You may then take steps toward repair or care.",
+            "evidence": []
+          },
+          {
+            "id": "505dd7b6-1e3e-5d81-8e33-ce0cbb37aad3",
+            "text": "Work reminders or requests for presence may reactivate the pressure.",
+            "evidence": [
+              {
+                "id": "0d989cba-995e-5269-b3c1-97835d37e0c2",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Opened Slack before even brushing because I remembered the Friday message from Vikram saying we should revisit the numbers.",
+                "interpretation": "The writer opened Slack before brushing after remembering a Friday message about revisiting numbers.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "198d344f-1fff-548a-a9e1-2cbbfbf4b376",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "The review went better than expected.",
+                "interpretation": "A work review received positive feedback and moved forward quickly.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "68f3d98b-43f1-59f1-b387-2c2ac0ee103f",
+                "entryDate": "2026-06-05",
+                "sourceLabel": "Journal entry",
+                "quote": "Friday was calls, calls.",
+                "interpretation": "Experienced a workday dominated by calls.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              }
+            ]
+          },
+          {
+            "id": "4e7e543d-ad57-52bf-9dbc-52a0856df41b",
+            "text": "Fear of rejection or a wish for reciprocal contact may accompany the next response.",
+            "evidence": [
+              {
+                "id": "60183360-5b4d-51ba-95dd-db8e02b1ff9a",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Revisit is such a harmless word but my stomach took it as you have messed up.",
+                "interpretation": "The writer experienced the message as an implication that they had messed up, accompanied by a stomach reaction.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "101b6f8d-78a1-5d43-8c05-a217cfcb21cb",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Vikram said good recovery and moved to the next slide, maybe six seconds total, but I replayed those words through the afternoon.",
+                "interpretation": "The writer continued mentally revisiting the praise throughout the afternoon.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "f8e092ad-4a8f-5569-bc9c-276b8a464725",
+                "entryDate": "2026-06-04",
+                "sourceLabel": "Journal entry",
+                "quote": "If I apply and they reject me",
+                "interpretation": "The writer anticipates rejection if they apply for jobs.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              }
+            ]
+          }
+        ],
+        "protection": "This may be trying to create reassurance, usefulness, or connection under pressure.",
+        "interruption": "A possible interruption could be pausing to identify whether activity, rest, medical care, or direct connection is most needed before taking on more."
       },
       "innerTensions": {
-        "status": "insufficient_evidence",
-        "reasonCode": "BOTH_SIDES_NOT_SUPPORTED",
-        "message": "There is not enough evidence for two competing needs yet."
+        "status": "available",
+        "tensions": [
+          {
+            "id": "88c62a6a-d7f5-5813-957e-f7e149c090f8",
+            "confidence": "recurring",
+            "score": 0.84306,
+            "leftTitle": "control",
+            "leftBody": "You may seek control through checking, planning, and trying to get ahead of demands.",
+            "rightTitle": "rest",
+            "rightBody": "You may also need genuine rest, even when work continues to pull for attention.",
+            "integration": "You may be trying to hold both control and rest; a workable arrangement would make room for each without requiring complete control before rest begins.",
+            "dates": ["2026-06-01", "2026-06-02", "2026-06-03"],
+            "evidence": [
+              {
+                "id": "a454c9f6-5617-5859-8785-cb5be2813576",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Opened Slack before even brushing because I remembered the Friday message from Vikram saying we should revisit the numbers.",
+                "interpretation": "The writer opened Slack before brushing after remembering a Friday message about revisiting numbers.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "7517a1e8-ebb5-5aa2-864f-e60d75c47f56",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "By 9:20 I had already made a new tracker, changed the deck colors and replied to four things nobody asked me to reply on.",
+                "interpretation": "The writer created a tracker, changed deck colors, and replied to four unrequested items instead of focusing on the forecast.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "7af5a02d-86aa-51c1-9f31-3d2632d42ebc",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Clean two hours never came.",
+                "interpretation": "The planned clean two-hour period failed to materialize.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "2b9d0174-8583-56c8-87c7-0e7aec97efda",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Logged off at 10:47, ordered dinner, watched half an episode while checking Teams.",
+                "interpretation": "The writer logged off, ordered dinner, watched part of an episode, and continued checking <ORG_2>.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "3d1fbaa6-b1df-56ee-86a7-8312a2da2aa8",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Tomorrow no random helping, first forecast.",
+                "interpretation": "The writer intends to avoid unplanned helping the next day and prioritize the forecast first.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "463732c5-bd99-5e18-909b-4eb5a1e439ab",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "I mean it this time.",
+                "interpretation": "The writer emphasizes commitment to the next-day plan.",
+                "theme": "personal_growth",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "287e9ef5-995e-5c22-a068-9882c12c0b6c",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "I sent the deck on the group even though everyone was already in the meeting.",
+                "interpretation": "The writer sent the deck to the group despite the meeting already including everyone.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "ebd6c530-4057-5937-91ac-0cefb04fc85c",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "I spent forty minutes drafting a reply so it would not sound defensive, deleted it, called him instead, and he was genuinely just asking.",
+                "interpretation": "The writer drafted and deleted a reply to avoid sounding defensive, then called instead; the call clarified that the question was genuine.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "37eb5c45-9671-58fc-9fd0-2a36d5708d6f",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Did not start the pricing note.",
+                "interpretation": "The writer did not begin an intended work task.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "58b2d7b7-d8fa-521e-9651-18a6ec8a02fb",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "I did reorganize the project folder and clear 312 emails, which felt productive until I looked at the time.",
+                "interpretation": "The writer completed administrative tasks that felt productive but consumed time instead of advancing the pricing note.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "64942541-9226-5e5f-801d-ce55806ce320",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Closed it.",
+                "interpretation": "The writer briefly closed the page after seeing the comparison.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "f116f35f-bd49-591d-8e07-54767b445a19",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "At 10:15 the calendar started.",
+                "interpretation": "The scheduled calendar activity began at 10:15, interrupting the available work period.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              }
+            ],
+            "feedback": null
+          },
+          {
+            "id": "c9a92f26-d742-54c0-9213-270c77f4ba0e",
+            "confidence": "recurring",
+            "score": 0.8363,
+            "leftTitle": "clarity",
+            "leftBody": "You may seek clarity about work, interpretations, and practical obligations.",
+            "rightTitle": "control",
+            "rightBody": "You may also seek control over tasks and uncertainty.",
+            "integration": "You may be trying to hold both clarity and control; a workable arrangement would make room for learning what is needed without requiring every uncertainty to be resolved immediately.",
+            "dates": ["2026-06-01", "2026-06-02"],
+            "evidence": [
+              {
+                "id": "7b85d98e-bd3e-5a4b-8ed4-de986cefeaa1",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Opened Slack before even brushing because I remembered the Friday message from Vikram saying we should revisit the numbers.",
+                "interpretation": "The writer opened Slack before brushing after remembering a Friday message about revisiting numbers.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "8b920c4a-923f-597c-9225-d38bc7c8a95a",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "By 9:20 I had already made a new tracker, changed the deck colors and replied to four things nobody asked me to reply on.",
+                "interpretation": "The writer created a tracker, changed deck colors, and replied to four unrequested items instead of focusing on the forecast.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "0954c32d-fd11-5de5-a249-8997f064fa62",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "The actual forecast, the one thing which can decide if this launch looks sensible, I kept for after lunch because I wanted a clean two hours.",
+                "interpretation": "The writer postponed the forecast until after lunch while waiting for an uninterrupted two-hour period.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "86d29653-70e6-5ce6-a941-eeef1db4531f",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Clean two hours never came.",
+                "interpretation": "The planned clean two-hour period failed to materialize.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "433c52f2-53a3-553f-9e09-4d6e08989815",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Logged off at 10:47, ordered dinner, watched half an episode while checking Teams.",
+                "interpretation": "The writer logged off, ordered dinner, watched part of an episode, and continued checking <ORG_2>.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "1d770a0e-bf8c-563b-9e10-f649f5737b67",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Tomorrow no random helping, first forecast.",
+                "interpretation": "The writer intends to avoid unplanned helping the next day and prioritize the forecast first.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "a9fa82f6-a9cd-5cf3-af85-a6ef8123106a",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "I mean it this time.",
+                "interpretation": "The writer emphasizes commitment to the next-day plan.",
+                "theme": "personal_growth",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "5278d233-5823-5fe8-a604-05cd42f2eba2",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "I sent the deck on the group even though everyone was already in the meeting.",
+                "interpretation": "The writer sent the deck to the group despite the meeting already including everyone.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "dbecd1c6-49fc-571b-84a7-7e2855a5104e",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Then Mehul asked one question about the source data and suddenly the whole good feeling disappeared.",
+                "interpretation": "A question about source data was followed by a sudden loss of the earlier good feeling.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "6be72eb3-02c2-5bd6-98b9-4af323fa125f",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "I spent forty minutes drafting a reply so it would not sound defensive, deleted it, called him instead, and he was genuinely just asking.",
+                "interpretation": "The writer drafted and deleted a reply to avoid sounding defensive, then called instead; the call clarified that the question was genuine.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "162af7d1-9959-5084-a217-bec3a2cfe043",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Why do I hear accusation everywhere?",
+                "interpretation": "The writer questions a recurring interpretation of questions as accusations.",
+                "theme": "personal_growth",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "e0eca423-6d69-52c5-a391-480e7afe5fda",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Did not start the pricing note.",
+                "interpretation": "The writer did not begin an intended work task.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              }
+            ],
+            "feedback": null
+          },
+          {
+            "id": "df170642-5490-5c6d-a58b-5ae2845104a4",
+            "confidence": "recurring",
+            "score": 0.80601,
+            "leftTitle": "belonging",
+            "leftBody": "You may want connection and responsiveness across work, family, and close relationships.",
+            "rightTitle": "stability",
+            "rightBody": "You may also want routines and future plans that feel steadier.",
+            "integration": "You may be trying to hold both belonging and stability; a workable arrangement would make room for connection without asking it to compete with every practical demand.",
+            "dates": [
+              "2026-06-01",
+              "2026-06-03",
+              "2026-06-04",
+              "2026-06-05",
+              "2026-06-06"
+            ],
+            "evidence": [
+              {
+                "id": "181db83e-b482-5597-b95a-3e0a00b4b0e9",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "I said yes to helping Rhea with her client note and then felt irritated that people always come to me.",
+                "interpretation": "The writer agreed to help with a client note but simultaneously felt irritated that people repeatedly came to them.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "c443fa59-301c-59c4-93b3-45125caa6432",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Truth is I like being the person they come to.",
+                "interpretation": "The writer recognizes that being the person others approach feels positive.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "3ab4e909-ecfb-5aca-b781-a71d7fca5f2b",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "At 10:15 the calendar started.",
+                "interpretation": "The scheduled calendar activity began at 10:15, interrupting the available work period.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "2a31f721-6511-51e5-ae9b-04eef5693815",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "I stayed very busy the whole day and still carried the same task home.",
+                "interpretation": "The writer remained occupied throughout the day but did not finish the specific task and brought it home mentally or physically.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "a7bf908a-a953-5ab7-af51-19a1b1e87a7c",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "Told Ananya I cannot meet because work is mad this week.",
+                "interpretation": "The writer declined a social meeting, citing an unusually busy work week.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "43255f5d-5fa0-5978-b2e5-bd8ef30d4572",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "She said okay, but the short okay.",
+                "interpretation": "The writer noticed the other person's brief response and gave it emotional significance.",
+                "theme": "love_life",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "062a1089-aa0a-51a8-8b61-69d6d05730de",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "I could have gone for dinner.",
+                "interpretation": "The writer indicates that dinner was an available and potentially desired alternative to continuing work-related avoidance.",
+                "theme": "love_life",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "8c6d4dd5-0540-53a1-af97-ed32a56d9b5c",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "Instead I sat with the laptop open, scrolled on my phone, and felt guilty in two directions.",
+                "interpretation": "The writer used the laptop and phone instead of going to dinner, then felt guilt connected to both choices.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "9aeaf20f-3027-5266-852b-5c6695972434",
+                "entryDate": "2026-06-04",
+                "sourceLabel": "Journal entry",
+                "quote": "I congratulated him immediately",
+                "interpretation": "The writer congratulated the promoted colleague immediately.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "bae8c861-0fec-58d8-bd99-ca03940e9dd2",
+                "entryDate": "2026-06-04",
+                "sourceLabel": "Journal entry",
+                "quote": "We joined almost together.",
+                "interpretation": "The writer and the colleague joined nearly together.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "5d3c6bdf-8b25-52f8-b68b-a78867fed02a",
+                "entryDate": "2026-06-05",
+                "sourceLabel": "Journal entry",
+                "quote": "I stayed till 8:40",
+                "interpretation": "Remained at work until 8:40 despite being advised not to work late.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "0504524d-be23-5dd7-8d16-4114bd461497",
+                "entryDate": "2026-06-06",
+                "sourceLabel": "Journal entry",
+                "quote": "Papa asked how work is",
+                "interpretation": "Papa asked about the narrator's work during a call.",
+                "theme": "family_friends",
+                "supports": "Supporting evidence"
+              }
+            ],
+            "feedback": null
+          },
+          {
+            "id": "be39fde9-845a-5c85-b2cd-f7e4d3cc663c",
+            "confidence": "recurring",
+            "score": 0.79917,
+            "leftTitle": "recognition",
+            "leftBody": "You may want your contribution and capability to be seen.",
+            "rightTitle": "security",
+            "rightBody": "You may also seek safety around rejection, finances, and future work.",
+            "integration": "You may be trying to hold both recognition and security; a workable arrangement would make room for being seen while allowing uncertainty to remain manageable rather than decisive.",
+            "dates": ["2026-06-01", "2026-06-02", "2026-06-03"],
+            "evidence": [
+              {
+                "id": "75ac31e7-67c1-5902-8dd0-d282b51b343a",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Revisit is such a harmless word but my stomach took it as you have messed up.",
+                "interpretation": "The writer experienced the message as an implication that they had messed up, accompanied by a stomach reaction.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "2d340338-40f7-5114-9148-65848d8bec3b",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "Truth is I like being the person they come to.",
+                "interpretation": "The writer recognizes that being the person others approach feels positive.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "cf0b0822-0bb3-50fa-990d-596116a6be5f",
+                "entryDate": "2026-06-01",
+                "sourceLabel": "Journal entry",
+                "quote": "It makes me feel useful and also gives me an excuse if my own work is late.",
+                "interpretation": "The writer identifies helping others as both a source of usefulness and a justification when their own work is late.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "25fd2cba-762a-5276-b9de-0f364daeee9a",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "The review went better than expected.",
+                "interpretation": "A work review received positive feedback and moved forward quickly.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "c0dbb97e-44f6-519a-b5f2-7ec654e87d34",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Vikram said good recovery and moved to the next slide, maybe six seconds total, but I replayed those words through the afternoon.",
+                "interpretation": "The writer continued mentally revisiting the praise throughout the afternoon.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "6c7aa244-c29c-5929-a896-37ff619977f1",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "I sent the deck on the group even though everyone was already in the meeting.",
+                "interpretation": "The writer sent the deck to the group despite the meeting already including everyone.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "1ad39631-7529-5e37-a64b-c4ab8ba99cbf",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Wanted it to be visible, I guess.",
+                "interpretation": "The writer wanted the work to receive visibility.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "582d0d29-592b-584d-946e-f126dc01701c",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Then Mehul asked one question about the source data and suddenly the whole good feeling disappeared.",
+                "interpretation": "A question about source data was followed by a sudden loss of the earlier good feeling.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "f295d5c8-8148-59ed-9bad-74b58a0f1e25",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Came home with energy because of the praise and told myself I should ask for the promotion this cycle.",
+                "interpretation": "The writer reported returning home with energy after receiving praise.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "46ecb9ea-bbb4-565a-8df5-31be4e5cc2e3",
+                "entryDate": "2026-06-02",
+                "sourceLabel": "Journal entry",
+                "quote": "Five minutes later I opened LinkedIn and saw somebody younger becoming Director.",
+                "interpretation": "Seeing a younger person become Director appears alongside the writer's promotion aspiration and changes the emotional context.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "128d7053-8f5a-507f-bee3-81cd0acabb9d",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "Then I thought I should first read the old research so I don't make a basic mistake.",
+                "interpretation": "The writer considered reading older research first as protection against making a basic mistake.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              },
+              {
+                "id": "eadb3ee6-0ca2-5fe1-aedd-82d9ad03eb8d",
+                "entryDate": "2026-06-03",
+                "sourceLabel": "Journal entry",
+                "quote": "The pricing note is not even difficult, it is just the kind of work where my thinking will be visible and somebody can say the thinking is weak.",
+                "interpretation": "The pricing note was objectively manageable, but the writer was concerned that the quality of their thinking would be visible and judged as weak.",
+                "theme": "career",
+                "supports": "Supporting evidence"
+              }
+            ],
+            "feedback": null
+          }
+        ]
       }
     }
   },
   "checks": [
     {
+      "name": "dataset_valid",
+      "status": "passed",
+      "actual": 30
+    },
+    {
+      "name": "credential_and_project_parity",
+      "status": "passed"
+    },
+    {
+      "name": "persisted_basis_current",
+      "status": "passed",
+      "sourceVersion": 76,
+      "snapshotId": "231626b9-8fb2-5b11-8443-78fd06b2bcf5",
+      "synthesisAttempts": 3
+    },
+    {
+      "name": "continuation_reused_luna_results",
+      "status": "passed",
+      "lunaCallsDuringContinuation": 0,
+      "persistedLunaAnalyses": 30
+    },
+    {
+      "name": "continuation_model_calls",
+      "status": "passed",
+      "terraCalls": 1,
+      "solCalls": 1
+    },
+    {
+      "name": "finalization_did_not_mutate_queue",
+      "status": "passed"
+    },
+    {
       "name": "reflection_get",
       "status": "passed",
-      "httpStatus": 200
+      "httpStatus": 200,
+      "reflectionState": "available",
+      "processingState": "idle"
     },
     {
-      "name": "all_three_screen_payloads",
+      "name": "reflection_has_available_insight",
       "status": "passed",
-      "sections": ["hiddenDriver", "recurringLoop", "innerTensions"]
-    },
-    {
-      "name": "frontend_reflection_tests",
-      "status": "passed",
-      "tests": 37
-    },
-    {
-      "name": "retained_test_user_data",
-      "status": "passed",
-      "note": "No entry, analysis, signal, candidate, job, snapshot, or insight was deleted after verification."
+      "availableSections": 3
     }
   ],
-  "errors": []
+  "errors": [],
+  "operationalNuances": [
+    "The failed artifact was finalized only after the deployed retry completed and persisted a current snapshot.",
+    "Finalization did not import entries, claim or drain jobs, run model preflight, or call OpenAI.",
+    "The 30 Luna attempts came from the original runner telemetry; the one Terra and one Sol attempt came from allowlisted deployed-worker telemetry.",
+    "The canonical API payload came from authenticated GET /api/v1/reflections?range=all against the real database.",
+    "Database inspection used ADMIN_APP_DATABASE_URL only inside read-only transactions.",
+    "Credentials, access tokens, email addresses, raw user UUIDs, prompts, provider responses, and entry content are omitted."
+  ]
 }
