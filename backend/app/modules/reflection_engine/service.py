@@ -1009,16 +1009,27 @@ class ReflectionEngineService:
         drafts: list[_Draft] = []
         for nodes in sorted(cycles, key=lambda value: tuple(_node_text(item) for item in value)):
             cycle_edges = tuple(zip(nodes, (*nodes[1:], nodes[0])))
+            node_set = set(nodes)
+            candidate_edges = {
+                edge: items
+                for edge, items in supported_edges.items()
+                if edge[0] in node_set and edge[1] in node_set
+            }
             observing_chains = [
                 chain
                 for chain in chains
                 if len(set(zip(chain.nodes, chain.nodes[1:])) & set(cycle_edges)) >= 2
             ]
+            supporting_chains = {
+                chain.id: chain
+                for items in candidate_edges.values()
+                for chain in items
+            }.values()
             raw_support = [
                 signal
-                for chain in observing_chains
+                for chain in supporting_chains
                 for signal in chain.signals
-                if _signal_node(signal) in set(nodes)
+                if _signal_node(signal) in node_set
             ]
             support = _collapse(raw_support)
             if not support:
@@ -1038,12 +1049,6 @@ class ReflectionEngineService:
             clusters = _clusters(support)
             entries = {signal.entry_id for signal in support}
             dates = {signal.entry_date for signal in support}
-            node_set = set(nodes)
-            candidate_edges = {
-                edge: items
-                for edge, items in supported_edges.items()
-                if edge[0] in node_set and edge[1] in node_set
-            }
             score, components = score_recurring_loop(
                 observed_chains=len({chain.id for chain in observing_chains}),
                 supported_transitions=len(candidate_edges),

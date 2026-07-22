@@ -567,6 +567,52 @@ def test_loop_construction_groups_semantically_equal_roles_across_varied_labels(
     assert any(item.publication_gate_passed for item in loops)
 
 
+def test_loop_construction_uses_edge_evidence_for_every_cycle_step() -> None:
+    role_chains = (
+        ("recovery", "trigger", "interpretation"),
+        ("interpretation", "avoidance", "reinforcement"),
+        ("reinforcement", "trigger", "action"),
+    )
+    signals: list[CandidateSignal] = []
+    for chain_index, roles in enumerate(role_chains):
+        for repetition in range(2):
+            entry_index = chain_index * 2 + repetition
+            entry_id = UUID(int=95_000 + entry_index)
+            entry_date = BASE_DATE + timedelta(days=entry_index * 5)
+            for role_index, role in enumerate(roles):
+                index = 2_000 + entry_index * len(roles) + role_index
+                signals.append(
+                    signal(
+                        index,
+                        entry_id=entry_id,
+                        entry_date=entry_date,
+                        loop_role=role,
+                        source_start=role_index * 6,
+                        source_end=role_index * 6 + 5,
+                        source_quote="cycle",
+                        entry_text="cycle " * 30,
+                    )
+                )
+
+    loops = [
+        item
+        for item in service().construct_candidates(
+            user_id=USER,
+            basis=basis(source_version=100).model_copy(
+                update={"valid_entry_count": 6, "distinct_entry_dates": 6}
+            ),
+            signals=signals,
+        ).candidates
+        if item.pattern_type == "recurring_loop"
+        and {
+            step.loop_role for step in item.structure.steps
+        } == {"trigger", "interpretation", "avoidance", "reinforcement"}
+    ]
+
+    assert loops
+    assert all(step.support_signal_ids for step in loops[0].structure.steps)
+
+
 def test_tension_requires_both_sides_and_integration_honoring_both() -> None:
     left = [signal(1, need_tags=["autonomy"]), signal(2, need_tags=["autonomy"])]
     right = [signal(3, need_tags=["competence"]), signal(4, need_tags=["competence"])]
