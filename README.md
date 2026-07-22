@@ -157,10 +157,13 @@ https://www.orionmind.in/login
 ```
 
 Keep `http://localhost:3000/signup` and `http://localhost:3000/login` as
-additional redirect URLs only when local email-flow testing is required. The
-confirmation and recovery email templates must keep their action links pointed
-at `{{ .ConfirmationURL }}` so Supabase can validate the one-time token before
-returning to the requested allowlisted URL.
+additional redirect URLs only when local email-flow testing is required.
+
+Configure the Confirm signup and Reset password templates to route Supabase
+`token_hash` values through Orion. This removes browser-local PKCE coupling and
+lets Orion validate and scrub each one-time callback before showing the login or
+password-update screen. Use the versioned templates and Management API command
+in [`docs/supabase-auth-email-templates.md`](docs/supabase-auth-email-templates.md).
 
 ### Run migrations
 

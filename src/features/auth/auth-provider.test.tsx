@@ -298,6 +298,29 @@ describe('AuthProvider session ownership', () => {
     expect(window.location.search).toBe('');
   });
 
+  it('validates token-hash recovery and opens the password update flow', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/login?token_hash=recovery-hash&type=recovery',
+    );
+    const fake = createFakeSupabase(makeSession());
+
+    renderProvider(fake.client, { strict: true });
+
+    expect(await screen.findByTestId('flow')).toHaveTextContent(
+      'set_new_password',
+    );
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated');
+    expect(fake.verifyOtp).toHaveBeenCalledOnce();
+    expect(fake.verifyOtp).toHaveBeenCalledWith({
+      token_hash: 'recovery-hash',
+      type: 'recovery',
+    });
+    expect(window.location.search).toBe('');
+    expect(window.location.hash).toBe('');
+  });
+
   it('fails closed when callback credentials arrive on the wrong auth route', async () => {
     window.history.replaceState(
       {},

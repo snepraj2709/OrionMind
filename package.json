@@ -9,6 +9,7 @@
     "dev": "next dev",
     "backend": "bash scripts/run-backend.sh",
     "build": "next build",
+    "auth:configure-emails": "node scripts/configure-supabase-auth-emails.mts",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
     "lint": "eslint . --max-warnings=0 && npm run check:design-system",
