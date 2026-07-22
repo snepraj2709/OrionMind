@@ -120,6 +120,21 @@ def test_worker_database_preflight_requires_worker_role(monkeypatch) -> None:
     assert exc_info.value.code == "WORKER_DATABASE_ROLE_UNAVAILABLE"
 
 
+def test_worker_database_preflight_controls_invalid_url(tmp_path: Path) -> None:
+    environment = tmp_path / ".env"
+    environment.write_text(
+        "APP_DATABASE_URL=postgresql+psycopg://app:secret@db.example.test/postgres\n"
+        "WORKER_DATABASE_URL=orion-worker.railway.internal\n",
+        encoding="utf-8",
+    )
+
+    settings = build_settings(environment, uuid4())
+    with pytest.raises(LiveRunError) as exc_info:
+        verify_worker_database(settings)
+
+    assert exc_info.value.code == "WORKER_DATABASE_ROLE_UNAVAILABLE"
+
+
 def test_worker_database_preflight_accepts_worker_role(monkeypatch) -> None:
     class Connection:
         def __enter__(self):

@@ -280,15 +280,12 @@ def sign_in(frontend: dict[str, str], backend: dict[str, str]) -> tuple[str, UUI
 
 
 def verify_worker_database(settings: Settings) -> None:
-    sessions = build_database_sessions(settings)
-    engine = sessions.worker_engine
-    if engine is None:
-        sessions.dispose()
-        raise LiveRunError(
-            "WORKER_DATABASE_CONFIG_MISSING",
-            "The dedicated worker database URL is unavailable.",
-        )
+    sessions = None
     try:
+        sessions = build_database_sessions(settings)
+        engine = sessions.worker_engine
+        if engine is None:
+            raise RuntimeError("worker database is unavailable")
         with engine.begin() as connection:
             connection.execute(text("SET LOCAL ROLE orion_worker"))
             active_role = connection.scalar(
@@ -302,7 +299,8 @@ def verify_worker_database(settings: Settings) -> None:
             "The worker database login cannot assume the orion_worker role.",
         ) from exc
     finally:
-        sessions.dispose()
+        if sessions is not None:
+            sessions.dispose()
 
 
 def run_model_preflight(settings: Settings) -> None:
