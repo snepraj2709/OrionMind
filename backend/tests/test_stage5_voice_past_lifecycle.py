@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
@@ -15,7 +14,6 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 from psycopg import sql
-from sqlalchemy import text
 
 from app.main import create_app
 from app.modules.entries import audio

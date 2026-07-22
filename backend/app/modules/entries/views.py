@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
+from typing import Literal, cast
 
 from app.modules.entries.schemas import (
     Candidate,
@@ -16,7 +18,10 @@ from app.modules.entries.schemas import (
 from app.modules.entries.types import EntryOperation, EntryPageData
 
 
-def draft_response(content: str | None, updated_at) -> EntryDraftResponse:
+def draft_response(
+    content: str | None,
+    updated_at: datetime | None,
+) -> EntryDraftResponse:
     return EntryDraftResponse(content=content, updated_at=updated_at)
 
 
@@ -25,9 +30,12 @@ def entry_page_response(page: EntryPageData) -> EntryPage:
         items=[
             EntrySummary(
                 id=item.entry.id,
-                input_type=item.entry.input_type,
+                input_type=cast(Literal["text", "audio"], item.entry.input_type),
                 entry_date=item.entry.entry_date,
-                processing_status=item.entry.processing_status,
+                processing_status=cast(
+                    Literal["pending", "processing", "completed", "failed"],
+                    item.entry.processing_status,
+                ),
                 created_at=item.entry.created_at,
                 content_preview=item.plaintext[:200],
                 themes=[
@@ -35,7 +43,10 @@ def entry_page_response(page: EntryPageData) -> EntryPage:
                         key=theme.key,
                         name=theme.name,
                         color_hex=theme.color_hex,
-                        tier=theme.tier,
+                        tier=cast(
+                            Literal["primary", "secondary", "tertiary"],
+                            theme.tier,
+                        ),
                     )
                     for theme in item.themes
                 ],
@@ -54,14 +65,20 @@ def entry_detail_response(operation: EntryOperation) -> EntryDetail:
     if entry.classification is not None:
         classification = Classification(
             theme_config_id=entry.classification.theme_config_id,
-            source=entry.classification.source,
-            mode=entry.classification.mode,
+            source=cast(Literal["initial", "backfill"], entry.classification.source),
+            mode=cast(
+                Literal["dominant", "balanced"] | None,
+                entry.classification.mode,
+            ),
             themes=[
                 ThemeScore(
                     key=theme.key,
                     name=theme.name,
-                    score=theme.score,
-                    tier=theme.tier,
+                    score=cast(float, theme.score),
+                    tier=cast(
+                        Literal["primary", "secondary", "tertiary"],
+                        theme.tier,
+                    ),
                 )
                 for theme in entry.classification.themes
             ],
@@ -69,10 +86,13 @@ def entry_detail_response(operation: EntryOperation) -> EntryDetail:
     return EntryDetail(
         id=entry.id,
         content=operation.plaintext,
-        input_type=entry.input_type,
+        input_type=cast(Literal["text", "audio"], entry.input_type),
         entry_date=entry.entry_date,
         original_theme_config_id=entry.original_theme_config_id,
-        processing_status=entry.processing_status,
+        processing_status=cast(
+            Literal["pending", "processing", "completed", "failed"],
+            entry.processing_status,
+        ),
         processing_error_code=entry.processing_error_code,
         created_at=entry.created_at,
         classification=classification,

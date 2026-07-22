@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from types import TracebackType
-from typing import Protocol, Self
+from typing import Literal, Protocol, Self
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, SessionTransaction
 
 from app.shared.database.rls import install_user_rls_context, install_worker_role
 
@@ -20,7 +20,7 @@ class UnitOfWork(Protocol):
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
         traceback: TracebackType | None,
-    ) -> bool: ...
+    ) -> Literal[False]: ...
 
 
 class SqlAlchemyUnitOfWork:
@@ -37,7 +37,7 @@ class SqlAlchemyUnitOfWork:
         self._user_id = user_id
         self._worker = worker
         self.session: Session
-        self._transaction = None
+        self._transaction: SessionTransaction | None = None
 
     def __enter__(self) -> Self:
         self.session = self._session_factory()
@@ -59,10 +59,11 @@ class SqlAlchemyUnitOfWork:
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
         traceback: TracebackType | None,
-    ) -> bool:
+    ) -> Literal[False]:
         try:
             assert self._transaction is not None
-            return bool(self._transaction.__exit__(exc_type, exc, traceback))
+            self._transaction.__exit__(exc_type, exc, traceback)
+            return False
         finally:
             self.session.close()
 

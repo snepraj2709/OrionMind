@@ -5,7 +5,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Protocol, Sequence
+from typing import Any, Protocol, Sequence
 from uuid import UUID
 
 from app.shared.security.encryption import ContentCipher
@@ -70,7 +70,7 @@ class EntityAnalyzer(Protocol):
 
 
 class PresidioEntityAnalyzer:
-    def __init__(self, analyzer) -> None:
+    def __init__(self, analyzer: Any) -> None:
         self._analyzer = analyzer
 
     @classmethod
@@ -580,7 +580,7 @@ def _local_entity_analyzer() -> PresidioEntityAnalyzer:
 
 
 @lru_cache(maxsize=1)
-def _offline_tldextract():
+def _offline_tldextract() -> Any:
     """Force Presidio's email recognizer onto the packaged PSL snapshot."""
 
     import tldextract
@@ -591,7 +591,7 @@ def _offline_tldextract():
         fallback_to_snapshot=True,
     )
     # Presidio's EmailRecognizer calls the module-level function at runtime.
-    tldextract.extract = extractor
+    setattr(tldextract, "extract", extractor)
     return extractor
 
 

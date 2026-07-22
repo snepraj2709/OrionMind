@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+from typing import Protocol, cast
+
 from fastapi import FastAPI
+
+
+class _RegisteredRoute(Protocol):
+    path: str
+    methods: set[str] | None
 
 
 PUBLIC_OPERATIONS = frozenset(
@@ -36,9 +43,9 @@ LOCAL_DOC_OPERATIONS = frozenset(
 
 def registered_public_operations(app: FastAPI) -> frozenset[tuple[str, str]]:
     return frozenset(
-        (method, route.path)
+        (method, cast(_RegisteredRoute, route).path)
         for route in app.routes
-        for method in route.methods or ()
+        for method in cast(_RegisteredRoute, route).methods or ()
         if method in {"GET", "POST", "PUT", "PATCH", "DELETE"}
     )
 

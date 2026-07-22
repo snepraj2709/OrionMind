@@ -5,7 +5,10 @@ from datetime import date
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.engine import RowMapping
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
+from psycopg.errors import RaiseException
 
 from app.modules.entries.types import (
     CandidateData,
@@ -17,6 +20,10 @@ from app.modules.entries.types import (
     ThemeData,
     VoiceClaim,
 )
+
+
+class MissingMatchingDraftError(RuntimeError):
+    pass
 
 
 class EntryRepository:
@@ -103,23 +110,28 @@ class EntryRepository:
         theme_config_id: UUID,
         processing_token: UUID,
     ) -> SubmissionClaim:
-        result = session.scalar(
-            text(
-                "SELECT public.submit_text_entry_from_draft_for_owner("
-                ":user_id, :entry_id, CAST(:envelope AS jsonb), :key_id, :fingerprint, "
-                ":entry_date, :config_id, :processing_token)"
-            ),
-            {
-                "user_id": user_id,
-                "entry_id": entry_id,
-                "envelope": json.dumps(envelope),
-                "key_id": fingerprint_key_id,
-                "fingerprint": fingerprint,
-                "entry_date": entry_date,
-                "config_id": theme_config_id,
-                "processing_token": processing_token,
-            },
-        )
+        try:
+            result = session.scalar(
+                text(
+                    "SELECT public.submit_text_entry_from_draft_for_owner("
+                    ":user_id, :entry_id, CAST(:envelope AS jsonb), :key_id, :fingerprint, "
+                    ":entry_date, :config_id, :processing_token)"
+                ),
+                {
+                    "user_id": user_id,
+                    "entry_id": entry_id,
+                    "envelope": json.dumps(envelope),
+                    "key_id": fingerprint_key_id,
+                    "fingerprint": fingerprint,
+                    "entry_date": entry_date,
+                    "config_id": theme_config_id,
+                    "processing_token": processing_token,
+                },
+            )
+        except DBAPIError as exc:
+            if isinstance(exc.orig, RaiseException):
+                raise MissingMatchingDraftError from exc
+            raise
         return SubmissionClaim(
             entry_id=UUID(str(result["entry_id"])),
             processing_token=(
@@ -361,7 +373,7 @@ class EntryRepository:
             )
         )
 
-def _entry(row) -> EntryData:
+def _entry(row: RowMapping) -> EntryData:
     return EntryData(
         id=row["id"],
         envelope=row["content_envelope"],

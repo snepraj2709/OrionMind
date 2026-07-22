@@ -8,11 +8,13 @@ import json
 import math
 import re
 import unicodedata
-from typing import Literal, Protocol, TypeAlias, cast
+from typing import Literal, NoReturn, Protocol, TypeAlias, cast
 from uuid import UUID
 
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
+
+from app.shared.config.settings import Settings
 
 
 class ContentUnavailableError(ValueError):
@@ -125,7 +127,7 @@ class AesGcmContentCipher:
         self._active_fingerprint_key_id = active_fingerprint_key_id
 
     @classmethod
-    def from_settings(cls, settings) -> "AesGcmContentCipher":
+    def from_settings(cls, settings: Settings) -> "AesGcmContentCipher":
         return cls(
             encryption_keys=_decode_key_map(settings.ENTRY_ENCRYPTION_KEYS.get_secret_value()),
             active_encryption_key_id=settings.ENTRY_ENCRYPTION_ACTIVE_KEY_ID,
@@ -392,7 +394,7 @@ class AesGcmContentCipher:
 
 
 class UnavailableContentCipher:
-    def __getattr__(self, _name: str):
+    def __getattr__(self, _name: str) -> NoReturn:
         raise RuntimeError("content encryption is unavailable")
 
 

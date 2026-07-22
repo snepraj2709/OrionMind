@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
+from starlette.responses import JSONResponse
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -168,7 +169,7 @@ class HttpBoundaryMiddleware:
             )
 
     @staticmethod
-    def _payload_too_large(request: Request):
+    def _payload_too_large(request: Request) -> JSONResponse:
         return error_response(
             request,
             status_code=413,

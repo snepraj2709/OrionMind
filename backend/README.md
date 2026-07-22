@@ -21,8 +21,19 @@ keys, fingerprint keys, bearer tokens, journal text, transcripts, or provider pa
 
 ```bash
 .venv/bin/python -m compileall app server.py
+.venv/bin/python -m ruff check app scripts tests server.py
+.venv/bin/python -m mypy app/bootstrap.py app/main.py app/modules/entries/repository.py app/modules/entries/service.py app/modules/jobs/contracts.py app/modules/jobs/failures.py app/modules/jobs/heartbeat.py app/modules/jobs/service.py app/modules/processing/materialization.py app/modules/processing/service.py app/modules/reflection_engine/candidates.py app/modules/reflection_engine/errors.py app/modules/reflection_engine/types.py app/modules/reflection_engine/ordering.py app/modules/reflection_engine/synthesis.py app/modules/reflection_engine/service.py app/modules/reflections/aggregate.py app/modules/reflections/state.py app/modules/reflections/service.py scripts/reflection_e2e scripts/run_sample_reflection_e2e.py
 .venv/bin/python -m pytest -m "not live_supabase"
 ```
+
+Ruff checks the complete Python application, script, and test surface without reformatting it.
+The mypy gate is intentionally strict and incremental: it covers application composition, the
+repository-owned entry conflict translation and its service consumer, the worker capability
+contracts and `JobService`, the processing and Reflection Engine facades, the Reflections API
+service, and both layers of the extracted E2E runner. Normal import following also checks the
+transitive Orion-owned boundaries used by that selected surface. Expand the explicit roots only
+after a new boundary is typed; the gate uses no silent imports, `ignore_errors`, global error-code
+exclusions, blanket `noqa`, or broad per-module suppression.
 
 Database migrations are a controlled pre-deploy action and never run during normal application
 startup. Do not target a shared or production database without explicit authorization.

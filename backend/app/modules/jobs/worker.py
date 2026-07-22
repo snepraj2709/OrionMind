@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import signal
 import time
+from types import FrameType
 from threading import Event
 from typing import Literal
 from uuid import UUID
@@ -81,7 +82,7 @@ class ProcessingWorker:
     def run(self, *, worker_id: str, uow: UnitOfWorkFactory) -> None:
         stop = Event()
 
-        def request_stop(_signal_number, _frame) -> None:
+        def request_stop(_signal_number: int, _frame: FrameType | None) -> None:
             stop.set()
 
         previous_term = signal.signal(signal.SIGTERM, request_stop)

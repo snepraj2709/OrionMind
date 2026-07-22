@@ -48,7 +48,7 @@ class UnavailableReflectionProvider:
         raise ReflectionProviderUnavailableError("reflection critic is unavailable")
 
 
-def _retryable(exc: Exception) -> bool:
+def _retryable(exc: BaseException) -> bool:
     status = getattr(exc, "status_code", None)
     return (
         status in {408, 409, 429}
@@ -134,7 +134,7 @@ class OpenAIReflectionProvider:
         payload: str,
         output_model: Any,
         safety_identifier: str,
-    ):
+    ) -> Any:
         client = self._client.with_options(max_retries=0, timeout=self._timeout)
         started = time.monotonic()
         usage = ModelTokenUsage()

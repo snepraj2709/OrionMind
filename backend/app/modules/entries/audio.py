@@ -5,11 +5,11 @@ import json
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Protocol, cast
 
 from fastapi import Request
-from multipart import MultipartParser
-from multipart.multipart import parse_options_header
+from multipart import MultipartParser  # type: ignore[import-untyped]
+from multipart.multipart import parse_options_header  # type: ignore[import-untyped]
 
 from app.shared.exceptions.domain import DomainError
 
@@ -100,7 +100,7 @@ class ParsedAudio:
 
 
 class _MultipartState:
-    def __init__(self, file_object) -> None:
+    def __init__(self, file_object: BinaryIO) -> None:
         self.file = file_object
         self.header_name = bytearray()
         self.header_value = bytearray()
@@ -155,7 +155,7 @@ async def parse_audio_upload(request: Request) -> ParsedAudio:
         raise DomainError(415, "UNSUPPORTED_AUDIO_FORMAT", "The audio format is not supported.")
     temporary = tempfile.NamedTemporaryFile(prefix="orion-audio-", suffix=".upload", delete=False)
     path = Path(temporary.name)
-    state = _MultipartState(temporary)
+    state = _MultipartState(cast(BinaryIO, temporary))
     parser = MultipartParser(
         boundary,
         {
@@ -255,7 +255,7 @@ async def validate_decodable_audio(path: Path) -> None:
 
 def _positive_duration(value: object) -> float | None:
     try:
-        duration = float(value)
+        duration = float(cast(Any, value))
     except (TypeError, ValueError):
         return None
     return duration if duration > 0 else None

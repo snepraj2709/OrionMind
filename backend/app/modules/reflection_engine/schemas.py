@@ -34,7 +34,11 @@ class AnalysisBasis(StrictReflectionModel):
     def validate_window(self) -> Self:
         if (self.basis_start is None) != (self.basis_end is None):
             raise ValueError("basis dates must both be present or absent")
-        if self.basis_start is not None and self.basis_start > self.basis_end:
+        if (
+            self.basis_start is not None
+            and self.basis_end is not None
+            and self.basis_start > self.basis_end
+        ):
             raise ValueError("basis window is invalid")
         return self
 

@@ -1,0 +1,2 @@
+class SnapshotValidationError(ValueError):
+    pass

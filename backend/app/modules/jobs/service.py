@@ -5,42 +5,30 @@ import time
 from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from threading import Event, Thread
 from typing import Literal
 from uuid import UUID
 
-from app.modules.jobs.repository import JobRepository
+from app.modules.jobs.contracts import (
+    EntryProcessingCapability,
+    JobRepositoryCapability,
+    ReflectionProcessingCapability,
+)
+from app.modules.jobs.failures import classify_failure
+from app.modules.jobs.heartbeat import LostJobClaimError, heartbeat_claim
 from app.modules.jobs.types import (
     BackfillStatus,
     DispatchResult,
     JobClaim,
     SchedulerStats,
 )
-from app.modules.processing.provider import (
-    ProviderUnavailableError,
-    ProviderResponseError,
-    provider_failure_is_retryable,
-)
 from app.modules.processing.repository import StaleAnalysisClaimError
-from app.modules.processing.service import (
-    AnalysisValidationError,
-    PrivacyValidationError,
-    ProcessingService,
-)
-from app.modules.reflection_engine.provider import (
-    ReflectionProviderResponseError,
-    ReflectionProviderUnavailableError,
-    reflection_provider_failure_is_retryable,
-)
+from app.modules.processing.service import AnalysisValidationError
 from app.modules.reflection_engine.repository import StaleSynthesisClaimError
-from app.modules.reflection_engine.service import (
-    ReflectionEngineService,
-    SnapshotValidationError,
-)
+from app.modules.reflection_engine.service import SnapshotValidationError
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 from app.shared.observability.logging import safe_log
 from app.shared.observability.reflection import QueueObservation, ReflectionTelemetry
-from app.shared.security.encryption import ContentCipher, ContentUnavailableError
+from app.shared.security.encryption import ContentCipher
 
 
 logger = logging.getLogger("orion.processing.jobs")
@@ -61,18 +49,14 @@ ALLOWED_FAILURES = frozenset(
 )
 
 
-class LostJobClaimError(RuntimeError):
-    pass
-
-
 class JobService:
     def __init__(
         self,
         *,
-        repository: JobRepository,
-        processing: ProcessingService,
+        repository: JobRepositoryCapability,
+        processing: EntryProcessingCapability,
         cipher: ContentCipher,
-        reflection: ReflectionEngineService | None = None,
+        reflection: ReflectionProcessingCapability | None = None,
         reflection_engine_enabled: bool = False,
         reflection_scheduler_enabled: bool = False,
         reflection_rollout_mode: Literal["off", "shadow", "publish"] = "off",
@@ -326,7 +310,7 @@ class JobService:
                     entry_id=claim.entry_id,
                     validation_stage=exc.stage,
                 )
-            error_code, retryable = _classify_failure(
+            error_code, retryable = classify_failure(
                 exc,
                 synthesis=claim.job_type == "reflection_synthesis",
             )
@@ -368,57 +352,15 @@ class JobService:
         uow: UnitOfWorkFactory,
         completion_inside: bool = False,
     ) -> Iterator[None]:
-        stopped = Event()
-        lost = Event()
-
-        def renew() -> bool:
-            with uow.for_worker() as work:
-                return self._repository.renew(
-                    work.session, claim=claim, worker_id=worker_id
-                )
-
-        if not renew():
-            raise LostJobClaimError("processing claim is no longer current")
-
-        def heartbeat() -> None:
-            while not stopped.wait(self._heartbeat_interval):
-                try:
-                    if not renew():
-                        lost.set()
-                        return
-                except Exception:
-                    lost.set()
-                    return
-
-        thread = Thread(target=heartbeat, name="orion-processing-heartbeat", daemon=True)
-        thread.start()
-        try:
+        with heartbeat_claim(
+            repository=self._repository,
+            interval_seconds=self._heartbeat_interval,
+            claim=claim,
+            worker_id=worker_id,
+            uow=uow,
+            completion_inside=completion_inside,
+        ):
             yield
-            if not completion_inside and (lost.is_set() or not renew()):
-                raise LostJobClaimError("processing claim is no longer current")
-        finally:
-            stopped.set()
-            thread.join(timeout=max(1.0, self._heartbeat_interval + 1.0))
 
 
-def _classify_failure(exc: Exception, *, synthesis: bool = False) -> tuple[str, bool]:
-    if isinstance(exc, ContentUnavailableError):
-        return "ENTRY_CONTENT_UNAVAILABLE", False
-    if isinstance(exc, ProviderUnavailableError):
-        return "PROVIDER_UNAVAILABLE", provider_failure_is_retryable(exc)
-    if isinstance(exc, ReflectionProviderUnavailableError):
-        return (
-            "REFLECTION_PROVIDER_UNAVAILABLE",
-            reflection_provider_failure_is_retryable(exc),
-        )
-    if isinstance(exc, (ReflectionProviderResponseError, SnapshotValidationError)):
-        return "INVALID_SYNTHESIS", False
-    if synthesis and isinstance(exc, ValueError):
-        return "INVALID_SYNTHESIS", False
-    if isinstance(exc, (ProviderResponseError, AnalysisValidationError)):
-        return "INVALID_ANALYSIS", False
-    if isinstance(exc, PrivacyValidationError):
-        return "PRIVACY_VALIDATION_FAILED", False
-    if isinstance(exc, ValueError):
-        return "INVALID_ANALYSIS", False
-    return "PROCESSING_FAILED", False
+_classify_failure = classify_failure

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Collection, Mapping
+from datetime import date
 from hashlib import sha256
 from typing import Literal, TypeAlias
 from uuid import UUID
@@ -130,8 +131,8 @@ class EvidenceValidator:
         *,
         user_id: UUID,
         signals: Mapping[UUID, CandidateSignal],
-        basis_start,
-        basis_end,
+        basis_start: date | None,
+        basis_end: date | None,
         expected_counter_signal_ids: Collection[UUID] = (),
         transition_support: Mapping[str, tuple[int, int]] | None = None,
         semantic_clusters: Mapping[UUID, str] | None = None,
@@ -189,8 +190,8 @@ class EvidenceValidator:
         signal: CandidateSignal,
         *,
         user_id: UUID,
-        basis_start,
-        basis_end,
+        basis_start: date | None,
+        basis_end: date | None,
     ) -> tuple[EvidenceRejectionCode, ...]:
         reasons: list[EvidenceRejectionCode] = []
         if (
@@ -343,6 +344,7 @@ class EvidenceValidator:
         candidate: ConstructedCandidate,
     ) -> tuple[EvidenceRejectionCode, ...]:
         structure = candidate.structure
+        statements: tuple[str, ...]
         if isinstance(structure, HiddenDriverStructure):
             statements = (structure.statement,)
             framed = "a possible pattern across your entries" in structure.statement.casefold()

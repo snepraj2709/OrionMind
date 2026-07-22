@@ -193,6 +193,7 @@ class ReflectionTelemetry:
         if duration_seconds < 0:
             raise ValueError("job duration is invalid")
         if self._jobs is not None:
+            assert self._job_duration is not None
             self._jobs.add(
                 1,
                 {"type": job_type, "status": status, "error_code": error_code},
@@ -211,6 +212,7 @@ class ReflectionTelemetry:
         for signal_type in signal_types:
             _require(signal_type, SIGNAL_TYPES, "signal type")
         if self._entry_eligibility is not None:
+            assert self._signals is not None
             self._entry_eligibility.add(1, {"result": result, "kind": kind})
             for signal_type in signal_types:
                 self._signals.add(1, {"signal_type": signal_type})

@@ -51,7 +51,7 @@ class UnavailableEntryAnalysisProvider:
         raise ProviderUnavailableError("structured entry analysis is unavailable")
 
 
-def _retryable(exc: Exception) -> bool:
+def _retryable(exc: BaseException) -> bool:
     status = getattr(exc, "status_code", None)
     return status in {408, 409, 429} or (isinstance(status, int) and status >= 500) or type(
         exc

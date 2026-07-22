@@ -5,9 +5,8 @@ from datetime import date, datetime
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
-from app.modules.entries.repository import EntryRepository
+from app.modules.entries.repository import EntryRepository, MissingMatchingDraftError
 from app.modules.entries.types import (
-    DraftData,
     EntryOperation,
     EntryPageData,
     EntrySummaryData,
@@ -130,14 +129,12 @@ class EntryService:
                     theme_config_id=config_id,
                     processing_token=processing_token,
                 )
-        except Exception as exc:
-            if getattr(exc, "orig", exc).__class__.__name__ == "RaiseException":
-                raise DomainError(
-                    status_code=409,
-                    error_code="INVALID_STATE",
-                    message="A matching saved draft is required.",
-                ) from exc
-            raise
+        except MissingMatchingDraftError as exc:
+            raise DomainError(
+                status_code=409,
+                error_code="INVALID_STATE",
+                message="A matching saved draft is required.",
+            ) from exc
         operation = self.get_detail(user_id=user_id, entry_id=claim.entry_id, uow=uow)
         return EntryOperation(
             entry=operation.entry,

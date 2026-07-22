@@ -3,14 +3,26 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Collection, Mapping
-from datetime import date, datetime, timedelta
-from typing import Any, cast
+from datetime import date
+from typing import Any, TypedDict, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.modules.reflection_engine.schemas import (
     HiddenDriverStructure,
     InnerTensionStructure,
     RecurringLoopStructure,
+)
+from app.modules.reflections.aggregate import (
+    _date,
+    _datetime,
+    _feedback_map,
+    _first,
+    _nonnegative_int,
+    _optional_date,
+    _optional_mapping,
+    _positive_int,
+    _range_bounds,
+    _required_mapping,
 )
 from app.modules.reflections.repository import (
     ReflectionResourceNotFoundError,
@@ -21,7 +33,9 @@ from app.modules.reflections.schemas import (
     AvailableHiddenDriver,
     AvailableInnerTensions,
     AvailableRecurringLoop,
+    Confidence,
     EvidenceItem,
+    FeedbackResponse,
     FeedbackResult,
     InnerTension,
     LoopStep,
@@ -31,6 +45,7 @@ from app.modules.reflections.schemas import (
     ReflectionResponse,
     SnapshotMetadata,
 )
+from app.modules.reflections.state import PersistedReflectionState
 from app.modules.reflections.types import FeedbackCommand, ReflectionQuery
 from app.modules.reflections.views import insufficient
 from app.shared.database.unit_of_work import UnitOfWorkFactory
@@ -52,6 +67,15 @@ REASON_CODES = frozenset(
         "INSUFFICIENT_EVIDENCE",
     }
 )
+
+
+class _CommonInsightFields(TypedDict):
+    id: UUID
+    confidence: Confidence
+    score: float
+    evidence_entry_count: int
+    evidence: list[EvidenceItem]
+    feedback: FeedbackResponse | None
 
 
 class ReflectionsService:
@@ -205,21 +229,10 @@ class ReflectionsService:
         snapshot_raw = _optional_mapping(raw.get("snapshot"), "snapshot")
         state = _optional_mapping(raw.get("state"), "state") or {}
         job = _optional_mapping(raw.get("job"), "job") or {}
-        latest_accepted = _nonnegative_int(
-            state.get("latest_accepted_source_version", 0),
-            "latest accepted source version",
-        )
-        last_error = state.get("last_processing_error_code")
-        if last_error is not None and not isinstance(last_error, str):
-            raise ValueError("reflection processing error state is invalid")
-        job_status = job.get("status")
-        if job_status not in {None, "pending", "running", "completed", "failed"}:
-            raise ValueError("reflection job status is invalid")
-        failed = job_status == "failed" or last_error is not None
-        pending = job_status in {"pending", "running"}
+        persisted_state = PersistedReflectionState.parse(state=state, job=job)
 
         if snapshot_raw is None:
-            if failed:
+            if persisted_state.failed:
                 raise DomainError(
                     503,
                     "SERVICE_UNAVAILABLE",
@@ -230,14 +243,7 @@ class ReflectionsService:
                     },
                     headers=NO_STORE_HEADERS,
                 )
-            reflection_state = (
-                "first_reflection_pending"
-                if pending or latest_accepted > 0
-                else "insufficient_reflective_content"
-            )
-            processing_state = (
-                "pending" if reflection_state == "first_reflection_pending" else "idle"
-            )
+            reflection_state, processing_state = persisted_state.without_snapshot()
             basis = self._analysis_basis(
                 _required_mapping(raw.get("current_basis"), "current basis"),
                 query.range,
@@ -251,16 +257,9 @@ class ReflectionsService:
                 data=_empty_data(),
             )
 
-        snapshot_source = _positive_int(
-            snapshot_raw.get("source_version"), "snapshot source version"
+        snapshot_source, reflection_state, processing_state, stale = (
+            persisted_state.with_snapshot(snapshot_raw)
         )
-        stored_status = snapshot_raw.get("status")
-        if stored_status not in {"available", "stale"}:
-            raise ValueError("snapshot status is invalid")
-        newer_entries = latest_accepted > snapshot_source
-        stale = failed or pending or newer_entries or stored_status == "stale"
-        reflection_state = "stale" if stale else "available"
-        processing_state = "failed" if failed else "pending" if stale else "idle"
         basis = self._analysis_basis(snapshot_raw, query.range)
         evidence_by_insight = self._evidence(
             query=query,
@@ -432,7 +431,7 @@ class ReflectionsService:
         query: ReflectionQuery,
         raw: Mapping[str, object],
         evidence_by_insight: Mapping[UUID, list[tuple[UUID, str, EvidenceItem]]],
-        feedback: Mapping[UUID, str],
+        feedback: Mapping[UUID, FeedbackResponse],
     ) -> ReflectionData:
         rows = raw.get("insights", [])
         if not isinstance(rows, list):
@@ -492,7 +491,7 @@ class ReflectionsService:
         row: Mapping[str, object] | None,
         pattern_type: str,
         evidence_by_insight: Mapping[UUID, list[tuple[UUID, str, EvidenceItem]]],
-        feedback: Mapping[UUID, str],
+        feedback: Mapping[UUID, FeedbackResponse],
     ) -> AvailableHiddenDriver | AvailableRecurringLoop | InnerTension | object:
         if row is None:
             default = {
@@ -531,10 +530,10 @@ class ReflectionsService:
         score = row.get("score")
         all_evidence = evidence_by_insight.get(insight_id, [])
         public_evidence = [item[2] for item in all_evidence]
-        common = {
+        common: _CommonInsightFields = {
             "id": insight_id,
-            "confidence": confidence,
-            "score": score,
+            "confidence": cast(Confidence, confidence),
+            "score": cast(float, score),
             "evidence_entry_count": _positive_int(
                 row.get("evidence_entry_count"), "evidence entry count"
             ),
@@ -542,7 +541,7 @@ class ReflectionsService:
             "feedback": feedback.get(insight_id),
         }
         if pattern_type == "hidden_driver":
-            value = HiddenDriverStructure.model_validate(structure)
+            hidden_driver = HiddenDriverStructure.model_validate(structure)
             drivers = list(
                 dict.fromkeys(
                     item.interpretation
@@ -552,12 +551,12 @@ class ReflectionsService:
             )[:5]
             return AvailableHiddenDriver(
                 **common,
-                statement=value.statement,
-                underlying_need=value.underlying_need,
-                drivers=drivers or [value.underlying_need],
+                statement=hidden_driver.statement,
+                underlying_need=hidden_driver.underlying_need,
+                drivers=drivers or [hidden_driver.underlying_need],
             )
         if pattern_type == "recurring_loop":
-            value = RecurringLoopStructure.model_validate(structure)
+            recurring_loop = RecurringLoopStructure.model_validate(structure)
             evidence_by_signal = {
                 signal_id: item for signal_id, _role, item in all_evidence
             }
@@ -571,26 +570,26 @@ class ReflectionsService:
                         if item in evidence_by_signal
                     ],
                 )
-                for ordinal, step in enumerate(value.steps)
+                for ordinal, step in enumerate(recurring_loop.steps)
             ]
-            if value.protection is None or value.interruption is None:
+            if recurring_loop.protection is None or recurring_loop.interruption is None:
                 raise ValueError("published loop display fields are unavailable")
             return AvailableRecurringLoop(
                 **common,
-                title=value.title,
-                description=value.description,
+                title=recurring_loop.title,
+                description=recurring_loop.description,
                 steps=steps,
-                protection=value.protection,
-                interruption=value.interruption,
+                protection=recurring_loop.protection,
+                interruption=recurring_loop.interruption,
             )
-        value = InnerTensionStructure.model_validate(structure)
+        inner_tension = InnerTensionStructure.model_validate(structure)
         return InnerTension(
             **common,
-            left_title=value.left_need,
-            left_body=value.left_statement,
-            right_title=value.right_need,
-            right_body=value.right_statement,
-            integration=value.integration,
+            left_title=inner_tension.left_need,
+            left_body=inner_tension.left_statement,
+            right_title=inner_tension.right_need,
+            right_body=inner_tension.right_statement,
+            integration=inner_tension.integration,
             dates=sorted({item.entry_date for item in public_evidence}),
         )
 
@@ -601,89 +600,3 @@ def _empty_data() -> ReflectionData:
         recurring_loop=insufficient("LOOP_NOT_REPEATED"),
         inner_tensions=insufficient("BOTH_SIDES_NOT_SUPPORTED"),
     )
-
-
-def _range_bounds(
-    *,
-    basis_start: date | None,
-    basis_end: date | None,
-    selected_range: ReflectionRange,
-) -> tuple[date | None, date | None]:
-    if basis_start is None or basis_end is None:
-        return None, None
-    if selected_range == "all":
-        return basis_start, basis_end
-    days = 7 if selected_range == "7d" else 30
-    return max(basis_start, basis_end - timedelta(days=days - 1)), basis_end
-
-
-def _feedback_map(value: object) -> dict[UUID, str]:
-    if value is None:
-        return {}
-    if not isinstance(value, list):
-        raise ValueError("reflection feedback payload is invalid")
-    result: dict[UUID, str] = {}
-    for item in value:
-        row = _required_mapping(item, "reflection feedback")
-        response = row.get("response")
-        if response not in {"resonates", "partly", "rejected"}:
-            raise ValueError("reflection feedback response is invalid")
-        result[UUID(str(row.get("insight_id")))] = cast(str, response)
-    return result
-
-
-def _first(value: list[Mapping[str, object]] | None) -> Mapping[str, object] | None:
-    return value[0] if value else None
-
-
-def _required_mapping(value: object, name: str) -> Mapping[str, object]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} is invalid")
-    return cast(Mapping[str, object], value)
-
-
-def _optional_mapping(value: object, name: str) -> Mapping[str, object] | None:
-    if value is None:
-        return None
-    return _required_mapping(value, name)
-
-
-def _nonnegative_int(value: object, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{name} is invalid")
-    return value
-
-
-def _positive_int(value: object, name: str) -> int:
-    result = _nonnegative_int(value, name)
-    if result < 1:
-        raise ValueError(f"{name} is invalid")
-    return result
-
-
-def _date(value: object, name: str) -> date:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value)
-        except ValueError as exc:
-            raise ValueError(f"{name} is invalid") from exc
-    raise ValueError(f"{name} is invalid")
-
-
-def _optional_date(value: object, name: str) -> date | None:
-    return None if value is None else _date(value, name)
-
-
-def _datetime(value: object, name: str) -> datetime:
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError as exc:
-            raise ValueError(f"{name} is invalid") from exc
-    raise ValueError(f"{name} is invalid")

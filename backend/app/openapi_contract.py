@@ -22,4 +22,4 @@ def install_local_openapi(app: FastAPI) -> None:
             app.openapi_schema = frozen
         return app.openapi_schema
 
-    app.openapi = custom_openapi
+    setattr(app, "openapi", custom_openapi)

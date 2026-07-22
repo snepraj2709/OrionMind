@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 from app.modules.processing.schemas import (
@@ -88,7 +88,11 @@ class QualityFingerprintCipher(Protocol):
     def canonicalize(self, plaintext: str) -> str: ...
 
     def reflection_fingerprint(
-        self, value: str, *, user_id: UUID, purpose: str
+        self,
+        value: str,
+        *,
+        user_id: UUID,
+        purpose: Literal["entry_duplicate", "token_trigram"],
     ) -> tuple[str, str]: ...
 
 
@@ -197,7 +201,7 @@ def compute_quality_features(
             matching_history += 1
         elif sketch and item.ngram_sketch and sketch_jaccard(sketch, item.ngram_sketch) >= 0.90:
             matching_history += 1
-    duplicate_cluster_key = exact_fingerprint
+    duplicate_cluster_key: str | None = exact_fingerprint
     if exact_match is not None and exact_match.duplicate_cluster_key is not None:
         duplicate_cluster_key = exact_match.duplicate_cluster_key
     elif is_near_duplicate and near_match is not None:
