@@ -618,6 +618,80 @@ def test_synthesis_uses_minimum_context_and_discards_invalid_output(
     assert "chose focused work" not in caplog.text
 
 
+def test_second_synthesis_materializes_persisted_candidates_and_advances_snapshot() -> None:
+    repository = Repository(synthesis_basis())
+    provider = SynthesisProvider()
+    service = ReflectionEngineService(
+        repository=repository,
+        provider=provider,
+        cipher=cipher(),
+    )
+    first_claim = JobClaim(
+        job_id=uuid4(),
+        user_id=USER_ID,
+        entry_id=None,
+        job_type="reflection_synthesis",
+        execution_mode="publish",
+        source_version="10",
+        claim_token=uuid4(),
+        attempts=1,
+    )
+    service.run_synthesis_job(
+        claim=first_claim,
+        worker_id="reflection-worker",
+        uow=UnitOfWork(),
+    )
+    assert repository.applied is not None
+    persisted_fields = (
+        "id",
+        "pattern_type",
+        "canonical_key",
+        "status",
+        "score",
+        "version",
+        "first_seen_at",
+        "last_seen_at",
+        "rejected_at",
+        "rejected_source_version",
+        "payload_envelope",
+    )
+    persisted_candidates = [
+        {
+            **{key: candidate[key] for key in persisted_fields},
+            "last_source_version": 10,
+        }
+        for candidate in repository.applied["candidates"]
+    ]
+    refresh = synthesis_basis(contradictory=True)
+    refresh.update(
+        {
+            "source_version": 20,
+            "next_snapshot_version": 2,
+            "candidates": persisted_candidates,
+        }
+    )
+    repository.raw = refresh
+
+    service.run_synthesis_job(
+        claim=JobClaim(
+            job_id=uuid4(),
+            user_id=USER_ID,
+            entry_id=None,
+            job_type="reflection_synthesis",
+            execution_mode="publish",
+            source_version="20",
+            claim_token=uuid4(),
+            attempts=1,
+        ),
+        worker_id="reflection-worker",
+        uow=UnitOfWork(),
+    )
+
+    assert repository.applied is not None
+    assert repository.applied["snapshot"]["version"] == 2
+    assert len(provider.synthesis_payloads) == 2
+
+
 def test_shadow_synthesis_runs_full_validation_without_applying_a_snapshot() -> None:
     repository = Repository(synthesis_basis())
     provider = SynthesisProvider()

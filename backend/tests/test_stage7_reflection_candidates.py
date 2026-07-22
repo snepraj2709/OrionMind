@@ -852,3 +852,92 @@ def test_rejected_candidate_needs_three_new_entries_on_two_dates_and_full_gate()
     assert result.publication_gate_passed is True
     assert result.status == "candidate"
     assert result.confidence_label == "preliminary"
+
+
+def test_materialize_basis_maps_persisted_candidate_without_leaking_storage_fields() -> None:
+    engine = service()
+    signals = [
+        signal(index, signal_type=signal_type)
+        for index, signal_type in enumerate(
+            ("belief", "emotion", "action", "desire", "self_statement"), 1
+        )
+    ]
+    built = engine.construct_candidates(
+        user_id=USER,
+        basis=basis(source_version=10),
+        signals=signals,
+    ).candidates[0]
+    stored = engine._candidate_row(  # noqa: SLF001 - persisted basis regression
+        built,
+        user_id=USER,
+        source_version=10,
+    )
+    previous_row = {
+        key: stored[key]
+        for key in (
+            "id",
+            "pattern_type",
+            "canonical_key",
+            "status",
+            "score",
+            "version",
+            "first_seen_at",
+            "last_seen_at",
+            "rejected_at",
+            "rejected_source_version",
+            "payload_envelope",
+        )
+    }
+    previous_row["last_source_version"] = 10
+    raw = {
+        **basis(source_version=20).model_dump(mode="json"),
+        "signals": [],
+        "candidates": [previous_row],
+    }
+
+    _, _, previous = engine._materialize_basis(raw, user_id=USER)  # noqa: SLF001
+
+    assert len(previous) == 1
+    assert previous[0].id == built.id
+    assert previous[0].payload["support_clusters"] == built.support_clusters
+
+
+def test_materialize_basis_rejects_undeclared_candidate_storage_fields() -> None:
+    engine = service()
+    signals = [signal(index) for index in range(1, 4)]
+    built = engine.construct_candidates(
+        user_id=USER,
+        basis=basis(source_version=10),
+        signals=signals,
+    ).candidates[0]
+    stored = engine._candidate_row(  # noqa: SLF001 - persisted basis regression
+        built,
+        user_id=USER,
+        source_version=10,
+    )
+    previous_row = {
+        key: stored[key]
+        for key in (
+            "id",
+            "pattern_type",
+            "canonical_key",
+            "status",
+            "score",
+            "version",
+            "first_seen_at",
+            "last_seen_at",
+            "rejected_at",
+            "rejected_source_version",
+            "payload_envelope",
+        )
+    }
+    previous_row["last_source_version"] = 10
+    previous_row["unexpected_storage_field"] = True
+    raw = {
+        **basis(source_version=20).model_dump(mode="json"),
+        "signals": [],
+        "candidates": [previous_row],
+    }
+
+    with pytest.raises(ValidationError, match="unexpected_storage_field"):
+        engine._materialize_basis(raw, user_id=USER)  # noqa: SLF001

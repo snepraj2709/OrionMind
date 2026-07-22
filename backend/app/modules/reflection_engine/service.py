@@ -26,7 +26,11 @@ from app.modules.reflection_engine.prompts import (
     build_reflection_synthesis_input,
 )
 from app.modules.reflection_engine.provider import UnavailableReflectionProvider
-from app.modules.reflection_engine.repository import ReflectionEngineRepository
+from app.modules.reflection_engine.repository import (
+    PersistedCandidateSignal,
+    PersistedPreviousCandidate,
+    ReflectionEngineRepository,
+)
 from app.modules.reflection_engine.schemas import (
     AnalysisBasis,
     CandidateBatch,
@@ -837,34 +841,24 @@ class ReflectionEngineService:
         for item in raw_signals:
             if not isinstance(item, dict):
                 raise ValueError("candidate basis signal is invalid")
-            signal_id = UUID(str(item["id"]))
-            entry_id = UUID(str(item["entry_id"]))
-            entry_envelope = item.get("entry_content_envelope")
-            signal_envelope = item.get("payload_envelope")
-            if not isinstance(entry_envelope, dict) or not isinstance(signal_envelope, dict):
-                raise ValueError("candidate evidence envelope is invalid")
+            stored = PersistedCandidateSignal.model_validate(item)
             entry_text = self._cipher.decrypt(
-                entry_envelope,
+                stored.entry_content_envelope,
                 user_id=user_id,
-                record_id=entry_id,
+                record_id=stored.entry_id,
             )
             payload = self._cipher.decrypt_json(
-                signal_envelope,
+                stored.payload_envelope,
                 user_id=user_id,
-                record_id=signal_id,
+                record_id=stored.id,
                 purpose="entry_signal_payload",
             )
             if not isinstance(payload, dict):
                 raise ValueError("candidate signal payload is invalid")
-            materialized = {
-                key: value
-                for key, value in item.items()
-                if key not in {"payload_envelope", "entry_content_envelope"}
-            }
             signals.append(
                 CandidateSignal.model_validate(
                     {
-                        **materialized,
+                        **stored.domain_values(),
                         "normalized_label": payload.get("normalized_label"),
                         "interpretation": payload.get("interpretation"),
                         "source_quote": payload.get("source_quote"),
@@ -876,19 +870,20 @@ class ReflectionEngineService:
         for item in raw_candidates:
             if not isinstance(item, dict):
                 raise ValueError("previous candidate is invalid")
-            candidate_id = UUID(str(item["id"]))
-            envelope = item.get("payload_envelope")
-            if not isinstance(envelope, dict):
-                raise ValueError("candidate payload envelope is invalid")
+            stored = PersistedPreviousCandidate.model_validate(item)
             payload = self._cipher.decrypt_json(
-                envelope,
+                stored.payload_envelope,
                 user_id=user_id,
-                record_id=candidate_id,
+                record_id=stored.id,
                 purpose="reflection_candidate_payload",
             )
             if not isinstance(payload, dict):
                 raise ValueError("candidate payload is invalid")
-            previous.append(PreviousCandidate.model_validate({**item, "payload": payload}))
+            previous.append(
+                PreviousCandidate.model_validate(
+                    {**stored.domain_values(), "payload": payload}
+                )
+            )
         return basis, tuple(signals), tuple(previous)
 
     def _hidden_driver_drafts(

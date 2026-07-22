@@ -1,13 +1,72 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from uuid import UUID
 
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.modules.jobs.types import JobClaim
+from app.modules.processing.schemas import Eligibility, LoopRole, NeedTag, SignalType, ThemeKey
+from app.modules.reflection_engine.schemas import CandidateStatus, PatternType, UnitFloat
+
+
+class _StrictStoredModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class PersistedCandidateSignal(_StrictStoredModel):
+    id: UUID
+    user_id: UUID
+    entry_id: UUID
+    entry_user_id: UUID
+    analysis_id: UUID
+    analysis_user_id: UUID
+    analysis_entry_id: UUID
+    analysis_source_version: int = Field(gt=0)
+    analysis_eligibility: Eligibility
+    entry_date: date
+    signal_type: SignalType
+    normalized_label_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    payload_envelope: dict[str, object]
+    entry_content_envelope: dict[str, object]
+    themes: list[ThemeKey] = Field(max_length=3)
+    need_tags: list[NeedTag] = Field(max_length=4)
+    loop_role: LoopRole | None
+    confidence: UnitFloat
+    source_start: int = Field(ge=0)
+    source_end: int = Field(gt=0)
+    occurred_on: date
+    duplicate_cluster_key: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+
+    def domain_values(self) -> dict[str, object]:
+        return self.model_dump(
+            mode="python",
+            exclude={"payload_envelope", "entry_content_envelope"},
+        )
+
+
+class PersistedPreviousCandidate(_StrictStoredModel):
+    id: UUID
+    pattern_type: PatternType
+    canonical_key: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: CandidateStatus
+    score: UnitFloat
+    version: int = Field(ge=1)
+    first_seen_at: datetime
+    last_seen_at: datetime
+    last_source_version: int = Field(ge=0)
+    rejected_at: datetime | None
+    rejected_source_version: int | None = Field(default=None, ge=0)
+    payload_envelope: dict[str, object]
+
+    def domain_values(self) -> dict[str, object]:
+        return self.model_dump(mode="python", exclude={"payload_envelope"})
 
 
 class StaleCandidateBasisError(RuntimeError):
