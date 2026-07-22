@@ -19,6 +19,23 @@ class ReflectionResourceNotFoundError(LookupError):
 class ReflectionsRepository:
     EVIDENCE_LIMIT = 12
 
+    def request_synthesis(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        source_version: int,
+    ) -> UUID:
+        job_id = session.scalar(
+            text(
+                "SELECT public.enqueue_processing_job("
+                ":user_id, NULL, 'reflection_synthesis', "
+                ":source_version, pg_catalog.now())"
+            ),
+            {"user_id": user_id, "source_version": str(source_version)},
+        )
+        return UUID(str(job_id))
+
     def load_aggregate(self, session: Session, *, user_id: UUID) -> dict[str, object]:
         payload = session.scalar(
             text(

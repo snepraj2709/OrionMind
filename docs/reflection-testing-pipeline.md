@@ -9,7 +9,8 @@ boundary. It is based on the current code, `docs/Reflection-Algorithm.md`, and
 
 The longitudinal Reflection Engine is separate from the entry-level
 `public.reflections` extraction rows used by Review. The aggregate endpoint
-reads immutable reflection snapshots; it does not call an LLM.
+reads immutable reflection snapshots and may idempotently request asynchronous
+synthesis; it does not call an LLM inside the HTTP request.
 
 ## Current implementation map
 
@@ -45,8 +46,10 @@ flowchart TD
     MockStore -. "does not affect longitudinal signals" .-> Signals
 
     Counters --> Scheduler{"Worker scheduler after 18:00<br/>in profile timezone"}:::implemented
+    Counters --> APIRequest{"Authenticated Reflection GET<br/>eligible newer basis?"}:::implemented
     Scheduler -->|"disabled, outside cohort, already checked,<br/>or insufficient counters"| Wait["No synthesis job"]:::implemented
     Scheduler -->|"eligible"| SynthesisJob["Enqueue reflection_synthesis<br/>in processing_jobs"]:::implemented
+    APIRequest -->|"eligible"| SynthesisJob
 
     SynthesisJob --> SameWorker["Same shared worker"]:::substitute
     SameWorker --> Basis["Load fixed 90-day accepted-signal basis"]:::implemented
@@ -59,7 +62,7 @@ flowchart TD
     Validation -->|"valid"| Snapshot["Versioned snapshot, insights and evidence"]:::implemented
     Validation -->|"unsupported"| Discard["Discard proposal and record safe reason code"]:::implemented
 
-    Snapshot --> API["Authenticated GET /api/v1/reflections?range=7d|30d|all<br/>private, no-store; no LLM call"]:::implemented
+    Snapshot --> API["Authenticated GET /api/v1/reflections?range=7d|30d|all<br/>private, no-store; async request only"]:::implemented
     API --> Screen["Reflection screen"]:::implemented
 
     classDef implemented fill:#dcfce7,stroke:#15803d,color:#14532d
@@ -84,12 +87,13 @@ GitHub-compatible Markdown viewers, and requires no account or credentials.
 | 8. Bind and validate       | `ProcessingService.analyze`                     | Quotes are rebound to exact redacted spans, final eligibility is recalculated, and offsets map back to exact original slices | Prepared analysis, signals and legacy extraction                                    | None  |
 | 9. Apply atomically        | `apply_combined_entry_analysis`                 | Claim is current and all rows commit together                                                                                | Completed entry, analysis, accepted signals, legacy rows, counters, completed job   | None  |
 | 10. Schedule               | `JobService.schedule_reflections`               | At or after local 18:00, one daily check enqueues at most one synthesis job for the latest accepted source version           | `last_schedule_local_date` and possibly `reflection_synthesis` job                  | None  |
+| 10a. Request on read       | `ReflectionsService.read`                       | An eligible newer basis creates or expedites one idempotent synthesis job with `run_after=now()`                             | At most one `reflection_synthesis` job per owner and source version                 | None  |
 | 11. Build candidates       | `ReflectionEngineService.construct_candidates`  | Hidden-driver, loop and tension candidates receive deterministic scores, gates and evidence links                            | Applied with the snapshot, or counted only in shadow mode                           | None  |
 | 12. Synthesize             | `OpenAIReflectionProvider.synthesize`           | Strict proposals may use only supplied candidate/signal IDs and must cite every supplied reference                           | No write until validation                                                           | Terra |
 | 13. Critique conditionally | `critic_required`                               | Borderline or contradictory candidates receive publish/discard only                                                          | No direct write                                                                     | Sol   |
 | 14. Validate               | `EvidenceValidator`                             | Ownership, dates, offsets, exact quotes, roles, counterevidence, dominance and safe language pass                            | Unsupported proposals are discarded, never repaired                                 | None  |
 | 15. Snapshot               | `apply_reflection_snapshot`                     | A versioned immutable snapshot contains available or explicit insufficient sections                                          | Candidate lifecycle, insights, evidence, state counters and completed synthesis job | None  |
-| 16. Read                   | `ReflectionsService.read`                       | Strict aggregate response for `7d`, `30d` or `all`; latest successful snapshot may be stale while refresh is pending/failed  | Read-only                                                                           | None  |
+| 16. Read                   | `ReflectionsService.read`                       | Strict aggregate response for `7d`, `30d` or `all`; latest successful snapshot may be stale while refresh is pending/failed  | Idempotent queue request plus persisted aggregate read                              | None  |
 
 ## Scheduler rules currently implemented
 
@@ -111,7 +115,9 @@ weekly rebuild, pgvector, or a separate synthesis service.
 ## Aggregate GET states
 
 `GET /api/v1/reflections?range=<7d|30d|all>` is authenticated, owner-derived,
-and LLM-free. It returns `Cache-Control: private, no-store`.
+and performs no inline model call. It may idempotently request asynchronous
+synthesis through the shared worker and returns `Cache-Control: private,
+no-store`.
 
 | Condition                                  | HTTP | Reflection state                  | Processing state |
 | ------------------------------------------ | ---: | --------------------------------- | ---------------- |
@@ -137,8 +143,8 @@ The committed harness is
 6. submit entries one by one through `POST /api/v1/past-entries`;
 7. run the production worker until all entry jobs are terminal;
 8. run the production scheduler once at a controlled post-18:00 timestamp;
-9. drain the synthesis job through the same worker;
-10. call and schema-validate the aggregate GET;
+9. call the aggregate GET to expedite the scheduled job to `run_after=now()`;
+10. drain the synthesis job through the same worker and schema-validate the final aggregate GET;
 11. capture safe per-entry stage results, model usage, candidate outcomes,
     validator discard reasons and database effects; and
 12. write the result atomically without secrets or raw journal content.
@@ -205,6 +211,9 @@ the critic rule. Model access preflight itself retrieves metadata only.
 | RF-TEST-007 | A short, temporally concentrated loop fixture does not satisfy the production publication threshold.          | The first offline repro produced a valid loop candidate scoring `0.619`, below the `0.72` gate; a six-transition loop distributed across the month scored `0.734`.                                                     | Expected | Strengthen the fixture rather than weakening production scoring. The unchanged production path now publishes all three pattern types offline.                                      |
 | RF-TEST-008 | A missing application database URL surfaced as an unexpected 500 during the empty-account check.              | The fresh account authenticated and the worker-role preflight passed, but `GET /api/v1/entries` failed because `APP_DATABASE_URL` was empty and no application session factory existed.                                | Critical | Require `APP_DATABASE_URL` during runner configuration and preflight an owner-scoped read before worker/model execution.                                                           |
 | RF-TEST-009 | The harness used the restricted application connection for internal queue and Reflection-table diagnostics.   | `GET /api/v1/entries` returned 200 for the fresh user, then the first direct `processing_jobs` query failed with PostgreSQL `42501`; the worker role was correctly denied too.                                         | Critical | Use the admin observer only in forced read-only transactions; retain `orion_app_login` for API/RLS and `orion_worker_login` for worker RPC execution.                              |
+| RF-TEST-010 | The harness scheduled synthesis at a future `run_after` and waited until timeout.                             | The live job remained pending with `attempts=0`; `run_after` was 18:05 UTC while the four-hour runner deadline was earlier.                                                                                            | Critical | Aggregate GET now expedites an existing pending job to `now()` through an idempotent worker RPC; the harness calls GET before draining synthesis.                                  |
+| RF-TEST-011 | Recurring-loop construction could create a step with no support IDs and fail before Terra.                    | A no-spend replay of 394 live signals raised `LoopStepStructure.support_signal_ids` `too_short`; Terra and Sol call counts remained zero.                                                                              | Critical | Build loop support from every proven cycle edge while retaining multi-edge chains for recurrence scoring; regression and the live deterministic replay now pass.                   |
+| RF-TEST-012 | The Reflection screen defaulted to the hardcoded fixture repository.                                          | The refresh icon refetched in-memory fixture data, so it could never reach authenticated `GET /api/v1/reflections`.                                                                                                    | Critical | Default `ReflectionsScreen` to `HttpReflectionsRepository`; keep the fixture repository explicit and test-only.                                                                    |
 
 ## Scoring rubric
 
@@ -218,7 +227,7 @@ The final implementation score uses 100 points:
 | Candidate algorithms and thresholds   |     15 | Formula boundary tests plus dataset candidate metrics                   |
 | Synthesis, critic and evidence safety |     15 | Real routing, discard reasons, evidence links and safe wording          |
 | Scheduler and snapshot integrity      |     10 | Local-time eligibility, one synthesis job and immutable snapshot proof  |
-| Aggregate API contract                |      5 | Authenticated, strict, no-store, LLM-free state matrix                  |
+| Aggregate API contract                |      5 | Authenticated, strict, no-store, idempotent async-request state matrix  |
 | Observability and reproducibility     |      5 | Secret-safe per-entry trace, usage/cost and reproducible commands       |
 
 No final production-readiness score is valid until the canonical live run and

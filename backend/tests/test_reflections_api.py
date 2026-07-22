@@ -78,6 +78,7 @@ class Repository:
         self.raw = raw
         self.read_users: list[UUID] = []
         self.feedback_calls: list[dict[str, object]] = []
+        self.synthesis_requests: list[dict[str, object]] = []
         self.not_found = False
 
     def load_aggregate(self, _session, *, user_id: UUID) -> dict[str, object]:
@@ -105,6 +106,14 @@ class Repository:
             {"insight_id": str(kwargs["insight_id"]), "response": kwargs["response"]}
         )
         return result
+
+    def request_synthesis(self, _session, **kwargs) -> UUID:
+        self.synthesis_requests.append(kwargs)
+        self.raw["job"] = {
+            "status": "pending",
+            "source_version": str(kwargs["source_version"]),
+        }
+        return UUID("85555555-5555-4555-8555-555555555555")
 
 
 def cipher() -> AesGcmContentCipher:
@@ -357,7 +366,12 @@ def build_app(
     content_cipher = cipher()
     repository = Repository(raw)
     provider = Provider()
-    sessions = DatabaseSessions(None, None, lambda: Session(), None)  # type: ignore[arg-type]
+    sessions = DatabaseSessions(
+        None,
+        None,
+        lambda: Session(),
+        lambda: Session(),
+    )  # type: ignore[arg-type]
     app = create_app(
         settings=settings(reflections_enabled=reflections_enabled),
         database_sessions=sessions,
@@ -480,6 +494,40 @@ def test_aggregate_read_is_authenticated_owner_scoped_bounded_and_llm_free(
     assert provider.calls == []
     assert "felt capable" not in caplog.text
     assert "Completing something may reinforce" not in caplog.text
+
+
+def test_aggregate_read_requests_one_immediate_synthesis_job_without_inline_llm() -> None:
+    raw = raw_without_snapshot(valid=3)
+    app, repository, provider, _content_cipher = build_app(raw)
+
+    with TestClient(app) as client:
+        first = client.get("/api/v1/reflections?range=all", headers=HEADERS)
+        second = client.get("/api/v1/reflections?range=all", headers=HEADERS)
+
+    assert first.status_code == 200
+    assert first.json()["reflectionState"] == "first_reflection_pending"
+    assert second.status_code == 200
+    assert repository.synthesis_requests == [
+        {"user_id": USER_ID, "source_version": 3},
+        {"user_id": USER_ID, "source_version": 3},
+    ]
+    assert provider.calls == []
+
+
+@pytest.mark.parametrize("status", ["running", "completed", "failed"])
+def test_aggregate_read_does_not_repeat_current_synthesis_job(status: str) -> None:
+    raw = raw_without_snapshot(valid=3)
+    raw["job"] = {"status": status, "source_version": "3"}
+    if status == "failed":
+        raw["state"]["last_processing_error_code"] = "INVALID_SYNTHESIS"  # type: ignore[index]
+    app, repository, provider, _content_cipher = build_app(raw)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/reflections?range=all", headers=HEADERS)
+
+    assert response.status_code == (503 if status == "failed" else 200)
+    assert repository.synthesis_requests == []
+    assert provider.calls == []
 
 
 @pytest.mark.parametrize(

@@ -8,7 +8,8 @@ Reflections are fail-closed. The backend settings
 defaults to `off`, with an empty `REFLECTION_ROLLOUT_USER_IDS` cohort. Enabling
 the scheduler requires the engine, `shadow` or `publish` mode, and an explicit
 UUID cohort. The public API requires the engine and `publish`; it does not
-require the scheduler because it may expose an already-created snapshot.
+require the scheduler because an eligible aggregate GET can request an
+immediately claimable synthesis job through the same worker queue.
 
 When `REFLECTION_API_ENABLED=false`, both operations below return the same
 opaque `503 SERVICE_UNAVAILABLE` envelope with `Cache-Control: private,
@@ -61,6 +62,16 @@ The screen requests the aggregate once per range. Switching Reflection tabs is
 local UI state and makes no request. `all` means all eligible evidence within
 the bounded 90-day basis, not lifetime history.
 
+Before reading the aggregate, the service checks the latest accepted source
+version and the deterministic minimum basis: three accepted entries, two
+distinct dates, and 200 reflective words. When eligible work is newer than the
+latest snapshot, GET idempotently inserts one publish-mode synthesis job with
+`run_after=now()`. If the scheduler already created the same pending job for a
+future time, GET moves only that pending job forward to `now()`. Running,
+completed, and terminal failed jobs are never reset by repeated reads. The
+unique `(user_id, job_type, source_version)` constraint prevents duplicate
+model calls for the same source version.
+
 ## Feedback write
 
 `PUT /api/v1/reflections/{snapshotId}/insights/{insightId}/feedback`
@@ -101,8 +112,9 @@ unknown fields, and unknown enum values are contract violations. Strict client
 validation routes them to the same technical error and retry state rather than
 interpreting them as empty reflection data.
 
-Both operations are authenticated, return `Cache-Control: private, no-store`,
-and perform no synchronous model or provider call. The removed singular
+Both operations are authenticated and return `Cache-Control: private,
+no-store`. Aggregate GET may request asynchronous synthesis, but performs no
+model or provider call inside the HTTP request. The removed singular
 `/api/v1/reflection` Next.js fixture route is not a fallback. Static reflection
 copy, builders, adapters, and mock repositories remain test-only infrastructure
 and are not exported through the production feature entrypoint.

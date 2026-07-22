@@ -1102,6 +1102,13 @@ Authorization: Bearer <supabase-access-token>
 `range` is required and is `7d | 30d | all`. There is no `userId` or `reflectionTab` query parameter. `all` uses the capped 90-day basis.
 The canonical surface is `GET /api/v1/reflections?range=7d|30d|all`; the pipe-separated values denote the closed enum, not a literal multi-value query.
 
+Before reading persisted state, GET idempotently requests one immediately
+claimable publish-mode synthesis job when the latest accepted source version
+is newer than the latest snapshot and the deterministic minimum basis passes.
+An existing pending job for that source version is expedited to `run_after =
+now()`; running, completed, and failed jobs are not reset. OpenAI work remains
+asynchronous in the shared worker and never runs inside the HTTP request.
+
 Response envelope:
 
 ```json
@@ -1653,7 +1660,7 @@ Text and voice endpoints currently complete extraction inside the request, while
 - Signals use the closed enums, unknown values fail, and persistence/counters are atomic.
 - The scheduler implements exactly the selected local-6-PM rule and is idempotent.
 - All published insights meet the formula thresholds and deterministic evidence/language rules.
-- GET is aggregate, authenticated, range-bounded, LLM-free, and supports every required state.
+- GET is aggregate, authenticated, range-bounded, idempotently requests asynchronous synthesis, and supports every required state without an inline model call.
 - Feedback is persisted, owner-isolated, idempotent, restored on read, and never inflates evidence.
 - The frontend uses the real repository, handles all required states, reuses the design system, remains keyboard accessible, and has no overflow at 320px.
 - Logs/traces contain no journal text, evidence, prompts, or PII mappings.

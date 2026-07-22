@@ -318,7 +318,7 @@ paths:
       tags: [Reflections]
       operationId: getReflections
       summary: Read the authenticated user's aggregate persisted Reflection
-      description: Reads only persisted state and never invokes a model. The all range is capped at 90 days.
+      description: Idempotently requests an immediately claimable synthesis job when the latest accepted basis is eligible, then reads persisted state. Model work remains asynchronous in the shared worker. The all range is capped at 90 days.
       parameters:
         - name: range
           in: query

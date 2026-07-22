@@ -1152,6 +1152,34 @@ def run(
             )
 
             stage_started = time.monotonic()
+            requested_reflection = request_json(
+                client,
+                "GET",
+                "/api/v1/reflections?range=all",
+                token=token,
+                expected_status=200,
+            )
+            stage_seconds["reflectionRequest"] = time.monotonic() - stage_started
+            if (
+                requested_reflection.get("reflectionState")
+                != "first_reflection_pending"
+                or requested_reflection.get("processingState") != "pending"
+            ):
+                raise LiveRunError(
+                    "SYNTHESIS_NOT_REQUESTED",
+                    "The Reflection API did not request the pending synthesis job.",
+                )
+            checks.append(
+                {
+                    "name": "reflection_api_requested_synthesis",
+                    "status": "passed",
+                    "httpStatus": 200,
+                    "reflectionState": requested_reflection["reflectionState"],
+                    "processingState": requested_reflection["processingState"],
+                }
+            )
+
+            stage_started = time.monotonic()
             synthesis_jobs = drain_jobs(
                 application,
                 observer,

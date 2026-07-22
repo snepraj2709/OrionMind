@@ -6,8 +6,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { routes } from '@/config/routes';
 
-import demoReflection from '../../../data/orion_30_day_reflection_analysis.json';
-
 import type {
   InsufficientInsight,
   ReflectionApiResponse,
@@ -131,33 +129,33 @@ function deferred<T>() {
 }
 
 describe('ReflectionsScreen', () => {
-  it('renders the hardcoded fixture through the default repository', async () => {
-    const get = vi.spyOn(reflectionsRepository, 'getReflection');
-    const fetchSpy = vi
-      .spyOn(globalThis, 'fetch')
-      .mockRejectedValue(new Error('The reflections API must not be called'));
+  it('renders data returned by the default HTTP repository', async () => {
+    const get = vi
+      .spyOn(reflectionsRepository, 'getReflection')
+      .mockResolvedValue(fixture());
 
     renderReflections();
 
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: demoReflection.data.hiddenDriver.statement,
+        name: 'You appear most energised when curiosity becomes something tangible.',
       }),
     ).toBeVisible();
-    expect(screen.getByText('Supported by 7 entries')).toBeVisible();
+    expect(screen.getByText('Supported by 2 entries')).toBeVisible();
     expect(get).toHaveBeenCalledWith({ range: 'all' });
-    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('serves the same hardcoded fixture when the authenticated user changes', async () => {
-    const get = vi.spyOn(reflectionsRepository, 'getReflection');
+  it('reloads the default HTTP repository when the authenticated user changes', async () => {
+    const get = vi
+      .spyOn(reflectionsRepository, 'getReflection')
+      .mockResolvedValue(fixture());
     const { rerender } = renderReflections();
 
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: demoReflection.data.hiddenDriver.statement,
+        name: 'You appear most energised when curiosity becomes something tangible.',
       }),
     ).toBeVisible();
 
@@ -167,7 +165,7 @@ describe('ReflectionsScreen', () => {
     expect(
       await screen.findByRole('heading', {
         level: 2,
-        name: demoReflection.data.hiddenDriver.statement,
+        name: 'You appear most energised when curiosity becomes something tangible.',
       }),
     ).toBeVisible();
     expect(get).toHaveBeenCalledTimes(2);

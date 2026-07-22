@@ -3,9 +3,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import demoReflection from '../../../data/orion_30_day_reflection_analysis.json';
 
 import { reflectionApiFixture, reflectionFixtureIds } from './fixtures';
+import { fixtureReflectionsRepository } from './fixture-repository';
 import { HttpReflectionsRepository, reflectionsRepository } from './repository';
 
 describe('reflectionsRepository', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('uses the authenticated HTTP implementation by default', () => {
+    expect(reflectionsRepository).toBeInstanceOf(HttpReflectionsRepository);
+  });
+});
+
+describe('fixtureReflectionsRepository', () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -15,10 +26,10 @@ describe('reflectionsRepository', () => {
       .spyOn(globalThis, 'fetch')
       .mockRejectedValue(new Error('The reflections API must not be called'));
 
-    const allResult = await reflectionsRepository.getReflection({
+    const allResult = await fixtureReflectionsRepository.getReflection({
       range: 'all',
     });
-    const sevenDayResult = await reflectionsRepository.getReflection({
+    const sevenDayResult = await fixtureReflectionsRepository.getReflection({
       range: '7d',
     });
 
@@ -50,19 +61,21 @@ describe('reflectionsRepository', () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockRejectedValue(new Error('The reflections API must not be called'));
-    const initial = await reflectionsRepository.getReflection({ range: '30d' });
+    const initial = await fixtureReflectionsRepository.getReflection({
+      range: '30d',
+    });
     const insight = initial.data.hiddenDriver;
 
     expect(initial.snapshot).not.toBeNull();
     expect(insight.status).toBe('available');
     if (!initial.snapshot || insight.status !== 'available') return;
 
-    await reflectionsRepository.putFeedback({
+    await fixtureReflectionsRepository.putFeedback({
       snapshotId: initial.snapshot.id,
       insightId: insight.id,
       response: 'resonates',
     });
-    const refreshed = await reflectionsRepository.getReflection({
+    const refreshed = await fixtureReflectionsRepository.getReflection({
       range: '30d',
     });
 

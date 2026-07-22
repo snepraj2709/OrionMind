@@ -38,6 +38,7 @@ _EVENTS = frozenset(
         "reflection_proposal_discarded",
         "reflection_scheduler_complete",
         "reflection_scheduler_failed",
+        "reflection_synthesis_requested",
         "request_complete",
         "unhandled_request_error",
     }
@@ -127,6 +128,7 @@ _INTEGER_FIELDS = frozenset(
         "recovered",
         "reasoning_output_tokens",
         "signal_count",
+        "source_version",
         "stale_recoveries",
         "status_code",
         "terminal_failures",

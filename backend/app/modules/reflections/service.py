@@ -12,6 +12,7 @@ from app.modules.reflection_engine.schemas import (
     InnerTensionStructure,
     RecurringLoopStructure,
 )
+from app.modules.reflection_engine.scoring import overall_basis_eligible
 from app.modules.reflections.repository import (
     ReflectionResourceNotFoundError,
     ReflectionsRepository,
@@ -85,6 +86,24 @@ class ReflectionsService:
                 raw = self._repository.load_aggregate(
                     work.session, user_id=query.user_id
                 )
+            requested_source = self._requested_source_version(raw)
+            if requested_source is not None:
+                with uow.for_worker() as work:
+                    job_id = self._repository.request_synthesis(
+                        work.session,
+                        user_id=query.user_id,
+                        source_version=requested_source,
+                    )
+                safe_log(
+                    logger,
+                    "reflection_synthesis_requested",
+                    job_id=job_id,
+                    source_version=requested_source,
+                )
+                with uow.for_user(query.user_id) as work:
+                    raw = self._repository.load_aggregate(
+                        work.session, user_id=query.user_id
+                    )
             result = self._build_response(query=query, raw=raw)
         except DomainError as exc:
             reflection_state = str(
@@ -112,6 +131,56 @@ class ReflectionsService:
             status_code=200,
         )
         return result
+
+    @staticmethod
+    def _requested_source_version(raw: Mapping[str, object]) -> int | None:
+        state = _optional_mapping(raw.get("state"), "state") or {}
+        latest_accepted = _nonnegative_int(
+            state.get("latest_accepted_source_version", 0),
+            "latest accepted source version",
+        )
+        if latest_accepted == 0:
+            return None
+
+        current_basis = _required_mapping(raw.get("current_basis"), "current basis")
+        if not overall_basis_eligible(
+            valid_entry_count=_nonnegative_int(
+                current_basis.get("valid_entry_count", 0), "valid entry count"
+            ),
+            distinct_entry_dates=_nonnegative_int(
+                current_basis.get("distinct_entry_dates", 0), "distinct entry dates"
+            ),
+            reflective_word_count=_nonnegative_int(
+                current_basis.get("reflective_word_count", 0), "reflective word count"
+            ),
+        ):
+            return None
+
+        snapshot = _optional_mapping(raw.get("snapshot"), "snapshot")
+        if snapshot is not None:
+            snapshot_source = _positive_int(
+                snapshot.get("source_version"), "snapshot source version"
+            )
+            if snapshot_source >= latest_accepted:
+                return None
+
+        job = _optional_mapping(raw.get("job"), "job")
+        if job is None:
+            return latest_accepted
+        job_status = job.get("status")
+        if job_status not in {"pending", "running", "completed", "failed"}:
+            raise ValueError("reflection job status is invalid")
+        raw_job_source = job.get("source_version")
+        job_source = (
+            _source_version(raw_job_source, "reflection job source version")
+            if raw_job_source is not None
+            else latest_accepted
+        )
+        if job_status == "pending":
+            return job_source
+        if job_status == "running":
+            return None
+        return latest_accepted if job_source < latest_accepted else None
 
     def save_feedback(
         self,
@@ -640,6 +709,12 @@ def _positive_int(value: object, name: str) -> int:
     if result < 1:
         raise ValueError(f"{name} is invalid")
     return result
+
+
+def _source_version(value: object, name: str) -> int:
+    if isinstance(value, str) and value.isdigit():
+        value = int(value)
+    return _positive_int(value, name)
 
 
 def _date(value: object, name: str) -> date:
