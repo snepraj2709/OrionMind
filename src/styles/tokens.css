@@ -60,7 +60,7 @@
   --space-20: 80px;
 
   --content-max: 1440px;
-  --sidebar-width: clamp(264px, 18vw, 296px);
+  --sidebar-width: 260px;
   --sidebar-collapse-breakpoint: 64rem;
   --text-measure-default: 68ch;
   --text-measure-wide: 80ch;

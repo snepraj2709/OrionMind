@@ -436,7 +436,7 @@ Each feature slice is complete only when its populated state, required non-happy
 ## Decisions needed before implementation
 
 1. Lora or Crimson Pro for editorial text.
-2. Sidebar width: current design-system token (264–296px) or another approved value.
+2. Sidebar width: current fixed 260px design-system token or another approved value.
 3. Whether New Entry remains in global navigation.
 4. Whether Insights is a primary navigation item.
 5. Whether Profile, Privacy, and Themes are separate settings routes as proposed.

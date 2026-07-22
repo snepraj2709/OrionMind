@@ -134,7 +134,7 @@ Do not constrain an entire page with `max-w-xl`, `max-w-3xl`, or a similar readi
 - `text-measure`: 68ch for default readable copy.
 - `text-measure-wide`: 80ch for journal entries and other long personal writing.
 
-The desktop sidebar uses `clamp(264px, 18vw, 296px)` and collapses below 1024px. Use the typed `responsiveLayoutVariants.desktopSidebar` and `responsiveLayoutVariants.collapsedNavigation` classes to keep both presentations on opposite sides of the same `sidebar` breakpoint. Desktop and collapsed navigation must share one future navigation manifest; a page never owns sidebar state or navigation data.
+The desktop sidebar and mobile navigation drawer use the shared fixed `260px` width and the desktop sidebar collapses below 1024px. Use the typed `responsiveLayoutVariants.desktopSidebar` and `responsiveLayoutVariants.collapsedNavigation` classes to keep both presentations on opposite sides of the same `sidebar` breakpoint. Desktop and collapsed navigation must share one future navigation manifest; a page never owns sidebar state or navigation data.
 
 Reflection compositions may use the shared `ContentGrid` variants:
 

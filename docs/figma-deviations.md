@@ -5,7 +5,7 @@ This file records known differences between the Figma Make reference and the pro
 ## Application shell
 
 - **Protected screenshots unavailable:** The Make integration exposes the application-shell source, but the protected screen component bodies and screenshots are absent from the exported bundle. The bundled PNG assets contain repeated authentication captures and blank frames. The in-app browser connection is also unavailable in this session. Shell comparison is therefore source-based until a protected Make preview can be captured.
-- **Sidebar width:** The Make prototype hardcodes a 224px desktop sidebar. Production uses the approved `clamp(264px, 18vw, 296px)` design-system token.
+- **Sidebar width:** The Make prototype hardcodes a 224px desktop sidebar. Production uses the approved fixed `260px` design-system token.
 - **Brand asset:** The supplied transparent `light-mode-transparent.svg` replaces the prototype's generated dots while retaining the shared Lora wordmark. One shared `BrandMark` is used across public, authentication, desktop-sidebar, and mobile-navigation surfaces.
 - **Mobile navigation:** The prototype uses a hand-built overlay. Production uses the shared accessible sheet with focus management, escape-key dismissal, and the same navigation manifest as desktop.
 
@@ -52,7 +52,7 @@ This file records known differences between the Figma Make reference and the pro
 - **Responsive adaptation:** The screenshot-specific 5:4 and 9:11:10 structures collapse below 1024px. Inner Tensions changes from a horizontal comparison to a vertical comparison at the same breakpoint so the route remains usable without horizontal overflow at 320px.
 
 - **Written specification only:** The Make export includes two identical Reflections redesign briefs but no rendered protected-screen component or screenshot. Production follows that written hierarchy and copy, and its desktop/mobile captures are therefore validated against the brief rather than a pixel reference.
-- **Approved shell width:** The brief asks to preserve a 380–400px sidebar. Production retains the approved Orion shell token, `clamp(264px, 18vw, 296px)`, so Reflections does not introduce a route-specific layout exception.
+- **Approved shell width:** The brief asks to preserve a 380–400px sidebar. Production retains the approved fixed `260px` Orion shell token, so Reflections does not introduce a route-specific layout exception.
 - **Semantic color limits:** The brief mentions restrained lavender and terracotta accents. Those colors do not have approved semantic roles in the Orion design system, so the implementation uses the existing `accent`, `primary`, `muted`, and border tokens and never treats color as the only status cue.
 - **Refresh and filtered-empty states:** A compact refresh control, preserved-data refresh failure, offline notice, and distinct no-results state are included to satisfy the application data-state contract. They extend the brief without changing its Hidden Drivers, Recurring Loops, and Inner Tensions hierarchy.
 - **API boundary:** Production Reflections requests one strict, Zod-validated aggregate from authenticated `GET /api/v1/reflections?range=7d|30d|all`. Ownership comes from the bearer token, tabs remain local UI state, and backend snapshot storage supplies the three reflection sections.

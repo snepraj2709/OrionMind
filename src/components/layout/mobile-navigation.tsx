@@ -56,7 +56,7 @@ export function MobileNavigation({
           </AppButton>
         </SheetTrigger>
         <SheetContent
-          className="bg-sidebar w-full sm:max-w-md"
+          className="bg-sidebar w-(--sidebar-width) max-w-full sm:max-w-(--sidebar-width)"
           showCloseButton={false}
           side="left"
         >

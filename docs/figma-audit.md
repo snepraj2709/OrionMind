@@ -81,7 +81,7 @@ The prototype-only `Design Review`/handoff gallery requested by the original Mak
 
 - Persistent desktop sidebar from 1024px upward.
 - Collapsed navigation below 1024px with a top bar and modal navigation sheet.
-- Sidebar width token: `clamp(264px, 18vw, 296px)` in the design system. The prototype still hardcodes `w-56`/`w-64`; production should use the token.
+- Sidebar width token: fixed `260px` in the design system. The prototype still hardcodes `w-56`/`w-64`; production should use the token.
 - Main content must use `min-width: 0` and `width: 100%` to prevent chart/table overflow.
 - One navigation manifest must supply label, route, icon, visibility, active matching, and optional badge data.
 
@@ -284,7 +284,7 @@ Page files should compose feature components and own route metadata, params, and
 1. **Incomplete Make source:** `App.tsx` contains a literal truncation marker and references undefined screen/Journey components. Exact visual details for several screens cannot be verified from the export.
 2. **No rendered preview verification:** no browser session was available, so source-derived behavior could not be compared with the live Make preview.
 3. **Typography conflict:** older brief says Crimson Pro; current design system and theme say Lora. Font assets are not included.
-4. **Sidebar conflict:** current design system specifies 264–296px; prototype uses 224px desktop/256px mobile; Reflections spec mentions 380–400px, which conflicts with both. Recommend the current design-system token.
+4. **Sidebar conflict:** current design system specifies a fixed 260px; prototype uses 224px desktop/256px mobile; Reflections spec mentions 380–400px, which conflicts with both. Recommend the current design-system token.
 5. **Missing required surfaces:** the Make brief calls for Insights and theme config/backfill, but the exported screen union/navigation does not contain them.
 6. **Settings information architecture:** Profile exists, but it is unclear whether privacy/deletion and theme configuration are sections, tabs, or separate routes.
 7. **New Entry navigation:** prototype makes New Entry a primary sidebar item; it may be better as the primary Entries action while retaining `/entries/new`. Confirm whether it remains in global navigation.
