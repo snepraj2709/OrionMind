@@ -1,8 +1,4 @@
-import {
-  createClient,
-  type SupabaseClient,
-  type SupportedStorage,
-} from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import {
   getSupabasePublicConfig,
@@ -10,20 +6,6 @@ import {
 } from '@/config/supabase';
 
 let browserClient: SupabaseClient | undefined;
-
-function createAuthStorage(
-  tabStorage: Storage,
-  crossTabStorage: Storage,
-): SupportedStorage {
-  const storageFor = (key: string) =>
-    key.endsWith('-code-verifier') ? crossTabStorage : tabStorage;
-
-  return {
-    getItem: (key) => storageFor(key).getItem(key),
-    removeItem: (key) => storageFor(key).removeItem(key),
-    setItem: (key, value) => storageFor(key).setItem(key, value),
-  };
-}
 
 function shouldDetectSessionInUrl(
   url: URL,
@@ -47,9 +29,9 @@ export function createSupabaseBrowserClient(storage: Storage) {
     auth: {
       autoRefreshToken: true,
       detectSessionInUrl: shouldDetectSessionInUrl,
-      flowType: 'pkce',
+      flowType: 'implicit',
       persistSession: true,
-      storage: createAuthStorage(storage, window.localStorage),
+      storage,
     },
   });
 }
