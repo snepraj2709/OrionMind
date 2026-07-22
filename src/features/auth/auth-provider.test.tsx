@@ -280,6 +280,40 @@ describe('AuthProvider session ownership', () => {
     expect(window.location.hash).toBe('');
   });
 
+  it('keeps the signed-in session after a confirmation callback is finalized', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/signup?token_hash=secret-hash&type=signup',
+    );
+    const fake = createFakeSupabase(makeSession());
+    fake.signOut.mockImplementationOnce(async () => {
+      fake.emit('SIGNED_OUT', null);
+      return { error: null };
+    });
+
+    renderProvider(fake.client);
+
+    expect(await screen.findByTestId('flow')).toHaveTextContent(
+      'email_confirmed',
+    );
+    expect(screen.getByTestId('status')).toHaveTextContent('anonymous');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in test' }));
+
+    expect(await screen.findByTestId('result')).toHaveTextContent(
+      'user-a@example.test',
+    );
+    expect(screen.getByTestId('flow')).toHaveTextContent('default');
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated');
+
+    act(() => fake.emit('TOKEN_REFRESHED', makeSession()));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('authenticated'),
+    );
+  });
+
   it('initializes and scrubs an automatic PKCE confirmation once', async () => {
     window.history.replaceState({}, '', '/signup?code=one-time-code');
     const fake = createFakeSupabase(makeSession());

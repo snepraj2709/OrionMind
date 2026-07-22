@@ -299,6 +299,8 @@ export function AuthProvider({
               await client.auth.signOut({ scope: 'local' });
             } catch {
               // Email confirmation already succeeded; local state is cleared below.
+            } finally {
+              confirmationFinalized = false;
             }
             await applyResolvedSession(null, { forceClear: true });
             if (!active) return;
