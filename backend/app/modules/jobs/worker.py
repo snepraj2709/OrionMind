@@ -16,6 +16,16 @@ from app.shared.observability.logging import safe_log
 logger = logging.getLogger("orion.processing.worker")
 
 
+def _exception_diagnostics(exc: Exception) -> dict[str, str]:
+    original = getattr(exc, "orig", None)
+    source = original if isinstance(original, BaseException) else exc
+    sqlstate = getattr(source, "sqlstate", None)
+    return {
+        "validation_code": str(sqlstate) if sqlstate else type(source).__name__,
+        "validation_path": type(exc).__name__,
+    }
+
+
 class ProcessingWorker:
     def __init__(
         self,
@@ -91,30 +101,33 @@ class ProcessingWorker:
                             recovered=recovered,
                             stale_recoveries=recovered,
                         )
-                    except Exception:
+                    except Exception as exc:
                         safe_log(
                             logger,
                             "processing_recovery_failed",
                             level=logging.ERROR,
+                            **_exception_diagnostics(exc),
                         )
                     last_recovery = now
                 if now - last_scheduler >= self._scheduler_interval:
                     try:
                         self.schedule_reflections(uow=uow)
-                    except Exception:
+                    except Exception as exc:
                         safe_log(
                             logger,
                             "reflection_scheduler_failed",
                             level=logging.ERROR,
+                            **_exception_diagnostics(exc),
                         )
                     last_scheduler = now
                 try:
                     processed = self.run_one(worker_id=worker_id, uow=uow)
-                except Exception:
+                except Exception as exc:
                     safe_log(
                         logger,
                         "processing_attempt_failed",
                         level=logging.ERROR,
+                        **_exception_diagnostics(exc),
                     )
                     processed = False
                 if not processed:
