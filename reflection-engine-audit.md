@@ -25,7 +25,7 @@ Baseline verification:
 | Hidden driver, loop and tension construction                             | Deterministic candidates, scoring, Terra renderer and conditional Sol critic        | Implemented; local regressions and retained live sample pass |
 | Versioned snapshot and strict aggregate API                              | snapshot RPCs, plural authenticated API, feedback endpoint                          | Implemented; local regression coverage passes                |
 | Frontend loading/error/empty/stale/success and partial insight states    | typed HTTP repository and existing Reflection screen components                     | Implemented; frontend regressions pass                       |
-| Required adversarial live dataset and before/after vector diff           | Existing live runner accepts only the fixed 30-entry genuine dataset                | Missing verification; P1 finding RF-AUDIT-003                |
+| Required adversarial live dataset and before/after vector diff           | Separate bounded runner uses a temporary Auth identity and content-free report      | Implemented; authenticated 14-case live E2E passed           |
 
 ## Findings
 
@@ -63,11 +63,21 @@ Baseline verification:
 
 - Severity: `P1`
 - Expected behaviour: a small authenticated test run adds prefixed valid, garbage, contradictory and injection entries through the real API; polls the real worker; records before/after snapshots and vector observations; verifies excluded entries do not affect counters; and cleans up only generated rows.
-- Actual behaviour: `run_sample_reflection_e2e.py` is intentionally bound to exactly 30 genuine June 2026 entries and fails closed when the test user is non-empty. It records a strong genuine-flow report but cannot run the new deterministic adversarial dataset or embedding measurements.
-- Relevant files: `backend/scripts/run_sample_reflection_e2e.py`, `backend/tests/test_sample_reflection_e2e.py`, `data/sample-reflection-result.json`, `docs/reflection-testing-pipeline.md`.
+- Actual behaviour before the staged fix: `run_sample_reflection_e2e.py` is intentionally bound to exactly 30 genuine June 2026 entries and fails closed when the test user is non-empty. It records a strong genuine-flow report but cannot run the new deterministic adversarial dataset or embedding measurements.
+- Relevant files: `backend/scripts/run_sample_reflection_e2e.py`, `backend/scripts/run_reflection_hardening_e2e.py`, `backend/tests/test_reflection_hardening_e2e.py`, `backend/tests/test_sample_reflection_e2e.py`, `data/sample-reflection-result.json`, `docs/reflection-testing-pipeline.md`.
 - Reproducible test: attempt to supply fewer/mixed prefixed entries or run against the retained designated test account; the canonical dataset and empty-account guards stop the run before the requested cases.
 - Proposed smallest fix: add a separate bounded hardening runner rather than weakening the canonical 30-entry proof. Reuse authentication, API, worker polling and read-only observer helpers; require a prefix; track exact created IDs; clean up only those IDs; write content-free local metrics and cosine observations.
-- Status: blocked on RF-AUDIT-001 and RF-AUDIT-002.
+- Status: fixed and authenticated live-verified. The isolated 14-case run used a temporary Auth identity and the real API, worker, strict schemas, encryption, database roles and model providers. Five baseline entries produced 43 accepted signals and matching embeddings, then snapshot version 1 at source version 110. Blank input returned 422; mic/noise, exact duplicate, near duplicate, copied informational text and task/note content were excluded with zero signals and zero embeddings, and the snapshot/counters did not advance. Three contradictory/adversarial updates produced 18 accepted signals and matching embeddings; candidate contradiction was observed and snapshot version 2 advanced to source version 118. The bounded vector observation measured 1,480 related and 119 unrelated cross-entry pairs with no missing embedding. One Luna attempt timed out with zero returned tokens and completed through the normal single retry; both Terra synthesis calls and all three conditional Sol calls succeeded. The content-free report passed its safety guard, deletion of the temporary identity cascaded only its generated data, and the observer confirmed zero residual rows.
+
+### RF-AUDIT-003A — Every post-snapshot candidate refresh fails strict materialization
+
+- Severity: `P1`
+- Expected behaviour: a later eligible synthesis decrypts the previously persisted candidate payload, recalculates deterministic scores with new evidence and counterevidence, and advances the snapshot.
+- Actual behaviour before the fix: `get_reflection_candidate_basis` correctly returned each candidate's encrypted `payload_envelope`, but `_materialize_basis` also passed that storage-only field into the extra-forbid `PreviousCandidate` model. The first synthesis succeeded because no prior candidate existed; the first eligible refresh failed before any synthesis-model call with `INVALID_SYNTHESIS`, and the API retained the prior snapshot as `stale/failed`.
+- Relevant files: `backend/app/modules/reflection_engine/service.py`, `backend/tests/test_stage7_reflection_candidates.py`, `backend/scripts/run_reflection_hardening_e2e.py`.
+- Reproducible test: materialize an exact persisted candidate-basis row containing `payload_envelope`; prior code raises a Pydantic extra-field validation error. The authenticated hardening run reproduced the same boundary after five accepted baseline entries, one available snapshot, six correctly excluded entries and three accepted counterevidence/injection entries.
+- Proposed root fix: define strict persisted-row models for candidate signals and previous candidates at the repository boundary. Validate the complete database JSON shape, decrypt envelopes explicitly, and pass only declared domain fields into `CandidateSignal` and `PreviousCandidate`; never spread arbitrary persistence dictionaries into strict domain models. Make the hardening runner fail immediately when either synthesis drain reports a terminal job.
+- Status: fixed in commit `64e9e4b` and authenticated live-verified. The regression runs a first synthesis and a second contradictory refresh using the exact persisted candidate row shape, proves snapshot version advancement, verifies storage-only envelopes never cross the domain boundary, and rejects undeclared persistence fields. The complete candidate/synthesis modules pass (`48` tests). In the isolated live run, the second synthesis loaded the encrypted version-1 candidates, reconstructed the strict domain basis, completed Terra and Sol on its first job attempt, and persisted snapshot version 2 instead of failing with `INVALID_SYNTHESIS`.
 
 ## P2 and deferred observations
 
@@ -89,7 +99,7 @@ Baseline verification:
 - Relevant files: `backend/app/modules/processing/prompts.py`, `backend/app/modules/processing/schemas.py`, `backend/app/modules/processing/service.py`, `backend/tests/test_stage7_reflection_privacy.py`.
 - Reproducible test: existing prompt-injection tests validate empty/closed output and local catalogs.
 - Proposed smallest fix: no architecture change unless the adversarial live run demonstrates a bypass.
-- Status: deferred.
+- Status: deferred. The authenticated prompt-injection fixture was treated as journal evidence under the existing untrusted-content boundary; it did not escape the strict schema or prevent safe snapshot publication.
 
 ### RF-AUDIT-006 — Upgrade rows remain nullable until a bounded backfill is justified
 
@@ -99,13 +109,14 @@ Baseline verification:
 - Relevant files: `backend/migrations/0016_signal_embeddings.sql`, `backend/app/modules/processing/service.py`, `backend/app/modules/processing/repository.py`.
 - Reproducible test: upgrade a database containing `entry_signals`; existing rows remain valid with null embedding metadata, while newly processed accepted signals store 1,536-dimension vectors.
 - Proposed smallest fix: defer a bounded, null-only backfill until a product query requires historical vectors. It must reuse encrypted signal payloads without rerunning Luna, obey queue budgets, and never overwrite an existing vector.
-- Status: deferred for the current MVP; the required hardening dataset will create its matching historical and new signals after migration.
+- Status: deferred for upgrade backfill only. The authenticated hardening dataset created 61 new accepted signals across baseline and update phases, all with matching embeddings; all excluded inputs created zero vectors.
 
 ## Fix order
 
 1. RF-AUDIT-000 — synthesis enqueue runtime repair.
 2. RF-AUDIT-001 — pgvector signal embeddings.
 3. RF-AUDIT-002 — exact recalculation eligibility.
-4. RF-AUDIT-003 — bounded authenticated hardening runner and final diff evidence.
+4. RF-AUDIT-003A — strict persisted-candidate refresh boundary.
+5. RF-AUDIT-003 — bounded authenticated hardening runner and final diff evidence.
 
-No P0 defect is currently reproduced by the local test suite. Live/database isolation claims will remain provisional until the authenticated hardening run and configured integration boundaries complete.
+No P0 defect is currently reproduced. All four P1 defects found in this audit are fixed with targeted regressions and authenticated/database-backed proof; P2 scheduling and upgrade-backfill items remain explicitly deferred.

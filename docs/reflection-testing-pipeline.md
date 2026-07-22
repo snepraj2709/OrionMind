@@ -158,6 +158,42 @@ The per-entry human-readable findings belong in
 `docs/reflection-indepth-breakdown.md`. The machine result belongs in
 `data/sample-reflection-result.json` only after a canonical live run succeeds.
 
+### Bounded adversarial hardening runner
+
+`backend/scripts/run_reflection_hardening_e2e.py` complements the canonical
+30-entry runner; it does not weaken or replace it. The input is a disposable,
+untracked JSON dataset with baseline, exclusion and update phases. Required
+cases cover blank input, mic/noise text, exact and near duplicates, copied
+informational text, task/note text, contradiction and prompt injection.
+
+The runner creates and authenticates a temporary Supabase identity, verifies
+the application, worker and read-only observer roles, refuses to run beside an
+active queue owner, and uses the production API and worker in process. It
+requires both the first synthesis and a persisted-candidate refresh to finish,
+checks exclusion invariance, observes candidate contradiction and pgvector
+cosine distances, writes a content-free report, and deletes the temporary
+identity plus all owner-cascaded rows in `finally`.
+
+When the direct Supabase database endpoint is not reachable over IPv4, the
+optional session-pooler argument rewrites only the in-memory test URLs. It
+preserves the existing role names, passwords, database and query settings; it
+does not modify `.env`.
+
+```bash
+cd backend
+.venv/bin/python scripts/run_reflection_hardening_e2e.py \
+  --input /path/to/untracked-hardening-dataset.json \
+  --output ../test-results/reflection-hardening-e2e.json \
+  --backend-env .env \
+  --database-session-pooler-host aws-0-REGION.pooler.supabase.com \
+  --timeout-seconds 1800
+```
+
+Stop the deployed worker before this command so the local production worker
+is the only claimant, and restore it immediately afterward. The generated
+report path is ignored by Git and must never contain raw journal content,
+prompts, quotes, credentials, email addresses or tokens.
+
 ## Offline fixture runner
 
 `backend/scripts/run_sample_reflection_offline.py` is the safe, non-networked
@@ -239,6 +275,29 @@ mode restricted to this user's UUID, and automatic scheduling disabled. This
 allows authenticated GET behavior and the approved test while preventing
 unintended cohort-wide synthesis spend.
 
+## Completed adversarial refresh run — 22 July 2026
+
+The separate bounded hardening run passed all 14 cases against the current
+Supabase project. Five baseline entries produced 43 accepted signals and 43
+embeddings, followed by snapshot version 1 at source version 110. Blank input
+was rejected at the API; the remaining five garbage/duplicate/informational
+cases were excluded with zero signals and embeddings, and the snapshot and
+accepted counters remained unchanged.
+
+Three contradictory/adversarial updates then produced 18 accepted signals and
+18 embeddings. The engine loaded the encrypted persisted candidate basis,
+observed contradiction in the candidate diff, and advanced to snapshot version
+2 at source version 118. The run measured 1,480 related and 119 unrelated
+cross-entry vector pairs with no missing embedding. Both Terra synthesis calls
+and all three conditionally routed Sol calls succeeded. One of eleven Luna
+attempts timed out before returning tokens and completed through the normal
+single job retry. The content-free report guard passed and cleanup left zero
+rows for the temporary owner.
+
+This run is the regression proof for the persisted-candidate boundary: storage
+envelopes are validated and decrypted as persistence fields, but only declared
+domain values enter `PreviousCandidate` and `CandidateSignal`.
+
 ## Findings and fix ledger
 
 | ID          | Finding                                                                                                       | Evidence                                                                                                                                                                                                               | Severity | Fix/status                                                                                                                                                                                            |
@@ -283,22 +342,23 @@ boundaries.
 
 ### Post-live implementation score
 
-The combined automated suite, deployed continuation, model telemetry,
-database state, and authenticated GET proof score the current MVP **95/100**.
-This is an implementation-quality score, not a claim that skipped architecture
-items such as standalone safety screening, embeddings, or a connected Review
-workflow are complete.
+The combined automated suite, deployed continuation, adversarial refresh run,
+model telemetry, database state, and authenticated GET proof score the current
+MVP **98/100**. This is an implementation-quality score, not a claim that
+deferred architecture items such as standalone safety screening, weekly rebuild
+scheduling, historical embedding backfill, or a connected Review workflow are
+complete.
 
-| Area                                  | Earned | Weight | Live evidence and remaining deduction                                                                                            |
-| ------------------------------------- | -----: | -----: | -------------------------------------------------------------------------------------------------------------------------------- |
-| Ingestion, encryption and ownership   |     15 |     15 | 30 authenticated encrypted entries completed for one owner                                                                       |
-| Queue, retries and worker lifecycle   |     14 |     15 | Live claim/heartbeat/completion passed; failed-job retry still required a guarded admin reset                                    |
-| Quality, PII and exact offsets        |     18 |     20 | 30 accepted live analyses and source-backed signals; standalone safety service remains skipped                                   |
-| Candidate algorithms and thresholds   |     15 |     15 | 169 live candidates, regression for cycle-edge support, 80 publishable                                                           |
-| Synthesis, critic and evidence safety |     15 |     15 | Real Terra and Sol success; six insights and 684 validated evidence links                                                        |
-| Scheduler and snapshot integrity      |      8 |     10 | Snapshot/state integrity passed; scheduler remains disabled in the narrow live rollout                                           |
-| Aggregate API contract                |      5 |      5 | Deployed authenticated GET returned current strict snapshot and did not enqueue duplicate work                                   |
-| Observability and reproducibility     |      5 |      5 | Final artifact includes safe per-call telemetry, database effects, 30-entry breakdown, and the authenticated source-76 aggregate |
+| Area                                  | Earned | Weight | Live evidence and remaining deduction                                                                                     |
+| ------------------------------------- | -----: | -----: | ------------------------------------------------------------------------------------------------------------------------- |
+| Ingestion, encryption and ownership   |     15 |     15 | 30 authenticated encrypted entries completed for one owner                                                                |
+| Queue, retries and worker lifecycle   |     15 |     15 | Live claim/heartbeat/completion passed; the hardening run also completed one normal bounded provider retry                |
+| Quality, PII and exact offsets        |     19 |     20 | Genuine and adversarial live analyses passed; standalone safety service remains skipped                                   |
+| Candidate algorithms and thresholds   |     15 |     15 | 169 live candidates, regression for cycle-edge support, 80 publishable                                                    |
+| Synthesis, critic and evidence safety |     15 |     15 | Real Terra and Sol success; six insights and 684 validated evidence links                                                 |
+| Scheduler and snapshot integrity      |      9 |     10 | Two immutable live snapshot versions and refresh integrity passed; independent weekly rebuild remains deferred            |
+| Aggregate API contract                |      5 |      5 | Deployed authenticated GET returned current strict snapshot and did not enqueue duplicate work                            |
+| Observability and reproducibility     |      5 |      5 | Canonical and adversarial artifacts include safe call telemetry, database effects, vector observations, and cleanup proof |
 
 ## Verification commands
 
