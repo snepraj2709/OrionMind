@@ -9,7 +9,7 @@ interface BrowserClientOptions {
     ) => boolean;
     flowType: 'pkce';
     persistSession: boolean;
-    storage: Storage;
+    storage: Pick<Storage, 'getItem' | 'removeItem' | 'setItem'>;
   };
 }
 
@@ -34,8 +34,10 @@ import {
 } from './browser-client';
 
 afterEach(() => {
-  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  window.localStorage.clear();
+  window.sessionStorage.clear();
+  vi.unstubAllEnvs();
   supabaseMocks.createClient.mockClear();
 });
 
@@ -57,7 +59,11 @@ describe('createSupabaseBrowserClient', () => {
           detectSessionInUrl: expect.any(Function),
           flowType: 'pkce',
           persistSession: true,
-          storage,
+          storage: {
+            getItem: expect.any(Function),
+            removeItem: expect.any(Function),
+            setItem: expect.any(Function),
+          },
         },
       },
     );
@@ -88,6 +94,36 @@ describe('createSupabaseBrowserClient', () => {
         type: 'recovery',
       }),
     ).toBe(false);
+  });
+
+  it('shares only the PKCE verifier across tabs', () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://project.supabase.co');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'publishable-key');
+
+    createSupabaseBrowserClient(window.sessionStorage);
+
+    const options = supabaseMocks.createClient.mock.calls[0]?.[2];
+    const authStorage = options?.auth.storage;
+    expect(authStorage).toBeDefined();
+    if (!authStorage) return;
+
+    const sessionKey = 'sb-project-auth-token';
+    const verifierKey = `${sessionKey}-code-verifier`;
+
+    authStorage.setItem(sessionKey, 'private-session');
+    authStorage.setItem(verifierKey, 'one-time-verifier/PASSWORD_RECOVERY');
+
+    expect(window.sessionStorage.getItem(sessionKey)).toBe('private-session');
+    expect(window.localStorage.getItem(sessionKey)).toBeNull();
+    expect(window.sessionStorage.getItem(verifierKey)).toBeNull();
+    expect(window.localStorage.getItem(verifierKey)).toBe(
+      'one-time-verifier/PASSWORD_RECOVERY',
+    );
+
+    window.sessionStorage.clear();
+    expect(authStorage.getItem(verifierKey)).toBe(
+      'one-time-verifier/PASSWORD_RECOVERY',
+    );
   });
 
   it('does not construct a browser client during server rendering', () => {
