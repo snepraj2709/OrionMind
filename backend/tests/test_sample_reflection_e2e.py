@@ -91,6 +91,20 @@ def test_application_database_is_required_for_live_runner(tmp_path: Path) -> Non
     assert exc_info.value.code == "APP_DATABASE_CONFIG_MISSING"
 
 
+def test_application_database_must_use_psycopg_driver(tmp_path: Path) -> None:
+    environment = tmp_path / ".env"
+    environment.write_text(
+        "APP_DATABASE_URL=postgresql://app:secret@db.example.test:5432/postgres\n"
+        "WORKER_DATABASE_URL=postgresql+psycopg://worker:secret@db.example.test:5432/postgres\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LiveRunError) as exc_info:
+        build_settings(environment, uuid4())
+
+    assert exc_info.value.code == "APP_DATABASE_CONFIG_INVALID"
+
+
 def test_worker_database_must_use_a_distinct_login(tmp_path: Path) -> None:
     environment = tmp_path / ".env"
     database_url = (
@@ -142,11 +156,10 @@ def test_worker_database_preflight_controls_invalid_url(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    settings = build_settings(environment, uuid4())
     with pytest.raises(LiveRunError) as exc_info:
-        verify_worker_database(settings)
+        build_settings(environment, uuid4())
 
-    assert exc_info.value.code == "WORKER_DATABASE_ROLE_UNAVAILABLE"
+    assert exc_info.value.code == "WORKER_DATABASE_CONFIG_INVALID"
 
 
 def test_worker_database_preflight_accepts_worker_role(monkeypatch) -> None:

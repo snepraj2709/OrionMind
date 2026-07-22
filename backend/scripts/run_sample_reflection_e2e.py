@@ -21,6 +21,8 @@ from zoneinfo import ZoneInfo
 from dotenv import dotenv_values
 from fastapi.testclient import TestClient
 from sqlalchemy import text
+from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import ArgumentError
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -212,6 +214,35 @@ def _string_env(path: Path) -> dict[str, str]:
     }
 
 
+def _validated_database_url(
+    value: str,
+    *,
+    missing_code: str,
+    invalid_code: str,
+    label: str,
+) -> URL:
+    if not value.strip():
+        raise LiveRunError(missing_code, f"The dedicated {label} database URL is unavailable.")
+    try:
+        parsed = make_url(value)
+    except ArgumentError as exc:
+        raise LiveRunError(
+            invalid_code,
+            f"The {label} database URL is invalid.",
+        ) from exc
+    if (
+        parsed.drivername != "postgresql+psycopg"
+        or not parsed.username
+        or not parsed.host
+        or not parsed.database
+    ):
+        raise LiveRunError(
+            invalid_code,
+            f"The {label} database URL must use PostgreSQL with the Psycopg 3 driver.",
+        )
+    return parsed
+
+
 def build_settings(backend_env: Path, user_id: UUID) -> Settings:
     overrides: dict[str, Any] = {
         "REFLECTION_ENGINE_ENABLED": True,
@@ -227,19 +258,23 @@ def build_settings(backend_env: Path, user_id: UUID) -> Settings:
         _env_file=backend_env,
         **overrides,
     )
-    if not settings.APP_DATABASE_URL.get_secret_value().strip():
-        raise LiveRunError(
-            "APP_DATABASE_CONFIG_MISSING",
-            "The dedicated application database URL is unavailable.",
-        )
-    if not settings.WORKER_DATABASE_URL.get_secret_value().strip():
-        raise LiveRunError(
-            "WORKER_DATABASE_CONFIG_MISSING",
-            "The dedicated worker database URL is unavailable.",
-        )
+    app_database_url = settings.APP_DATABASE_URL.get_secret_value()
+    worker_database_url = settings.WORKER_DATABASE_URL.get_secret_value()
+    app_parsed = _validated_database_url(
+        app_database_url,
+        missing_code="APP_DATABASE_CONFIG_MISSING",
+        invalid_code="APP_DATABASE_CONFIG_INVALID",
+        label="application",
+    )
+    worker_parsed = _validated_database_url(
+        worker_database_url,
+        missing_code="WORKER_DATABASE_CONFIG_MISSING",
+        invalid_code="WORKER_DATABASE_CONFIG_INVALID",
+        label="worker",
+    )
     if (
-        settings.WORKER_DATABASE_URL.get_secret_value()
-        == settings.APP_DATABASE_URL.get_secret_value()
+        worker_database_url == app_database_url
+        or worker_parsed.username == app_parsed.username
     ):
         raise LiveRunError(
             "WORKER_DATABASE_NOT_DISTINCT",
