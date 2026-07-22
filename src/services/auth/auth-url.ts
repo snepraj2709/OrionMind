@@ -21,6 +21,32 @@ const sensitiveKeys = new Set([
 
 const safeAuthKeys = new Set(['returnTo', 'state', 'mode']);
 
+function normalizeSiteUrl(value: string) {
+  const withProtocol = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  const url = new URL(withProtocol);
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('The authentication site URL must use HTTP or HTTPS.');
+  }
+
+  return `${url.origin}/`;
+}
+
+export function createAuthRedirectUrl(
+  path: string,
+  browserOrigin: string = window.location.origin,
+) {
+  const configuredSiteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_VERCEL_URL?.trim() ||
+    browserOrigin;
+
+  return new URL(
+    path.replace(/^\//, ''),
+    normalizeSiteUrl(configuredSiteUrl),
+  ).toString();
+}
+
 export type SupabaseAuthCallback =
   | { method: 'automatic' }
   | { method: 'verify_otp'; tokenHash: string; type: EmailOtpType };

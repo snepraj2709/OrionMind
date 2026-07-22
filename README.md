@@ -146,6 +146,22 @@ cp backend/.env.example backend/.env
 
 Fill in only the values required for the services you intend to run. Do not put a Supabase secret key in the root frontend `.env`.
 
+For production email confirmation and password recovery, set
+`NEXT_PUBLIC_SITE_URL=https://www.orionmind.in` in Vercel. In Supabase,
+open **Authentication → URL Configuration**, set **Site URL** to
+`https://www.orionmind.in`, and add these exact redirect URLs:
+
+```text
+https://www.orionmind.in/signup
+https://www.orionmind.in/login
+```
+
+Keep `http://localhost:3000/signup` and `http://localhost:3000/login` as
+additional redirect URLs only when local email-flow testing is required. The
+confirmation and recovery email templates must keep their action links pointed
+at `{{ .ConfirmationURL }}` so Supabase can validate the one-time token before
+returning to the requested allowlisted URL.
+
 ### Run migrations
 
 Migrations are explicit and never run during API or worker startup. Use an authorized migration-owner connection only:

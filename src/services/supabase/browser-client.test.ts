@@ -7,6 +7,7 @@ interface BrowserClientOptions {
       url: URL,
       parameters: Record<string, string>,
     ) => boolean;
+    flowType: 'pkce';
     persistSession: boolean;
     storage: Storage;
   };
@@ -54,6 +55,7 @@ describe('createSupabaseBrowserClient', () => {
         auth: {
           autoRefreshToken: true,
           detectSessionInUrl: expect.any(Function),
+          flowType: 'pkce',
           persistSession: true,
           storage,
         },

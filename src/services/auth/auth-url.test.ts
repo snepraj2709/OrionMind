@@ -1,15 +1,40 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createAuthRedirectUrl,
   hasSensitiveAuthMaterial,
   readInitialAuthFlow,
   readSupabaseAuthCallback,
   scrubSensitiveAuthMaterial,
 } from './auth-url';
 
-afterEach(() => window.history.replaceState({}, '', '/'));
+afterEach(() => {
+  window.history.replaceState({}, '', '/');
+  vi.unstubAllEnvs();
+});
 
 describe('Supabase auth URL handling', () => {
+  it('uses the canonical production site URL for email callbacks', () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://www.orionmind.in');
+    vi.stubEnv('NEXT_PUBLIC_VERCEL_URL', 'preview.vercel.app');
+
+    expect(createAuthRedirectUrl('/signup', 'http://localhost:3000')).toBe(
+      'https://www.orionmind.in/signup',
+    );
+  });
+
+  it('supports Vercel deployment URLs and local browser fallback', () => {
+    vi.stubEnv('NEXT_PUBLIC_VERCEL_URL', 'preview.vercel.app');
+    expect(createAuthRedirectUrl('/login', 'http://localhost:3000')).toBe(
+      'https://preview.vercel.app/login',
+    );
+
+    vi.stubEnv('NEXT_PUBLIC_VERCEL_URL', '');
+    expect(createAuthRedirectUrl('/signup', 'http://localhost:3000')).toBe(
+      'http://localhost:3000/signup',
+    );
+  });
+
   it('detects and removes callback credentials while retaining safe auth state', () => {
     window.history.replaceState(
       {},

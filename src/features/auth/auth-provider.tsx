@@ -16,6 +16,7 @@ import {
 
 import { createLoginRedirect, routes } from '@/config/routes';
 import {
+  createAuthRedirectUrl,
   hasSensitiveAuthMaterial,
   readInitialAuthFlow,
   readSupabaseAuthCallback,
@@ -379,7 +380,7 @@ export function AuthProvider({
           email: input.email,
           password: input.password,
           options: {
-            emailRedirectTo: `${window.location.origin}${routes.signup.path}`,
+            emailRedirectTo: createAuthRedirectUrl(routes.signup.path),
           },
         });
         if (error)
@@ -402,7 +403,7 @@ export function AuthProvider({
       setIsPending(true);
       try {
         const { error } = await client.auth.resetPasswordForEmail(input.email, {
-          redirectTo: `${window.location.origin}${routes.login.path}`,
+          redirectTo: createAuthRedirectUrl(routes.login.path),
         });
         if (error) {
           return { ok: false, error: safeAuthActionError(error, 'recovery') };

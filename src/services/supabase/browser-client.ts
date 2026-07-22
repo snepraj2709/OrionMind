@@ -29,6 +29,7 @@ export function createSupabaseBrowserClient(storage: Storage) {
     auth: {
       autoRefreshToken: true,
       detectSessionInUrl: shouldDetectSessionInUrl,
+      flowType: 'pkce',
       persistSession: true,
       storage,
     },
