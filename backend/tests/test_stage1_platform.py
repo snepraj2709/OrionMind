@@ -259,7 +259,9 @@ def test_retry_after_header_is_preserved() -> None:
 
 
 def test_cors_allows_delete_preflight_and_rejects_unknown_origins_safely() -> None:
-    app = app_with_test_routes()
+    app = app_with_test_routes(
+        app_settings=settings(CORS_ALLOW_ORIGINS="https://app.example.test/")
+    )
     with TestClient(app) as client:
         allowed = client.options(
             "/api/v1/probe",

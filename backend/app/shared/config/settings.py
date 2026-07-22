@@ -129,8 +129,12 @@ class Settings(BaseSettings):
         return ",".join(str(item) for item in identifiers)
 
     def cors_origins(self) -> tuple[str, ...]:
-        values = tuple(dict.fromkeys(v.strip() for v in self.CORS_ALLOW_ORIGINS.split(",") if v.strip()))
-        return values
+        values = (
+            value.strip().removesuffix("/")
+            for value in self.CORS_ALLOW_ORIGINS.split(",")
+            if value.strip()
+        )
+        return tuple(dict.fromkeys(values))
 
     def reflection_rollout_user_ids(self) -> frozenset[UUID]:
         return frozenset(
