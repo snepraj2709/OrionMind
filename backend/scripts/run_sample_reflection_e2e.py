@@ -227,6 +227,11 @@ def build_settings(backend_env: Path, user_id: UUID) -> Settings:
         _env_file=backend_env,
         **overrides,
     )
+    if not settings.APP_DATABASE_URL.get_secret_value().strip():
+        raise LiveRunError(
+            "APP_DATABASE_CONFIG_MISSING",
+            "The dedicated application database URL is unavailable.",
+        )
     if not settings.WORKER_DATABASE_URL.get_secret_value().strip():
         raise LiveRunError(
             "WORKER_DATABASE_CONFIG_MISSING",
@@ -297,6 +302,30 @@ def verify_worker_database(settings: Settings) -> None:
         raise LiveRunError(
             "WORKER_DATABASE_ROLE_UNAVAILABLE",
             "The worker database login cannot assume the orion_worker role.",
+        ) from exc
+    finally:
+        if sessions is not None:
+            sessions.dispose()
+
+
+def verify_application_database(settings: Settings, user_id: UUID) -> None:
+    sessions = None
+    try:
+        sessions = build_database_sessions(settings)
+        with sessions.unit_of_work_factory.for_user(user_id) as work:
+            count = work.session.execute(
+                text(
+                    "SELECT count(*) FROM public.entries "
+                    "WHERE user_id = :user_id"
+                ),
+                {"user_id": user_id},
+            ).scalar_one()
+            if not isinstance(count, int) or count < 0:
+                raise RuntimeError("application database count is invalid")
+    except Exception as exc:
+        raise LiveRunError(
+            "APP_DATABASE_ROLE_UNAVAILABLE",
+            "The application database login cannot assume the authenticated role.",
         ) from exc
     finally:
         if sessions is not None:
@@ -916,6 +945,13 @@ def run(
     stage_seconds["supabaseAuthentication"] = time.monotonic() - stage_started
     checks.append({"name": "supabase_authentication", "status": "passed"})
     settings = build_settings(args.backend_env, user_id)
+
+    stage_started = time.monotonic()
+    verify_application_database(settings, user_id)
+    stage_seconds["applicationDatabasePreflight"] = (
+        time.monotonic() - stage_started
+    )
+    checks.append({"name": "application_database_role", "status": "passed"})
 
     stage_started = time.monotonic()
     verify_worker_database(settings)

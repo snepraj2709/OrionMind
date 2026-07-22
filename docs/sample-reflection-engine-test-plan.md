@@ -86,6 +86,11 @@ The production model IDs remain explicit in the run metadata. Before journal
 content is submitted, run the existing Models API preflight for all three IDs.
 That check retrieves model metadata only and does not create Responses.
 
+The backend environment must also provide distinct `APP_DATABASE_URL` and
+`WORKER_DATABASE_URL` values. Before model execution, the runner proves that
+the application login can perform an owner-scoped read under the
+`authenticated` role and that the worker login can assume `orion_worker`.
+
 ## Isolation rule
 
 The run fails closed unless every Reflection-owned data table is empty for the
@@ -115,8 +120,8 @@ deterministic and one-shot:
 
 1. Validate the input and compute its SHA-256 digest.
 2. Validate credential parity without logging secret values.
-3. Sign in, require a distinct worker database URL, and prove its login can
-   assume only the `orion_worker` capability role.
+3. Sign in, require distinct application and worker database URLs, and prove
+   their logins can assume `authenticated` and `orion_worker`, respectively.
 4. Run the three-model access preflight.
 5. Build the FastAPI application with the test user as a one-user `publish`
    cohort.

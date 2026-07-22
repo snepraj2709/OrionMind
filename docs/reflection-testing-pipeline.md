@@ -176,6 +176,8 @@ The live test requires:
   `backend/.env` for a dedicated empty user;
 - matching Supabase public URL/key pairs in the two environment files;
 - `OPENAI_API_KEY` in `backend/.env`;
+- a non-empty `APP_DATABASE_URL` whose restricted login can assume the
+  `authenticated` role;
 - a distinct `WORKER_DATABASE_URL` whose login can assume only
   `orion_worker`; and
 - the existing application, encryption and fingerprint settings.
@@ -199,6 +201,7 @@ the critic rule. Model access preflight itself retrieves metadata only.
 | RF-TEST-005 | The harness summary is not yet sufficient for the requested 30-entry stepwise analysis.                       | It reports aggregate counts but not per-entry submission, job, quality, analysis and signal outcomes.                                                                                                                  | High     | Add privacy-safe `entryBreakdown` capture and generate the separate breakdown document from a canonical result.                                                                    |
 | RF-TEST-006 | A completed synthesis job can still produce an all-insufficient snapshot without surfacing why in the result. | Validator discard reasons are safe-logged but absent from the result contract.                                                                                                                                         | High     | Aggregate candidate lifecycle and `reflection_proposal_discarded` reason codes into the canonical report and fail the reflective dataset when all publishable proposals disappear. |
 | RF-TEST-007 | A short, temporally concentrated loop fixture does not satisfy the production publication threshold.          | The first offline repro produced a valid loop candidate scoring `0.619`, below the `0.72` gate; a six-transition loop distributed across the month scored `0.734`.                                                     | Expected | Strengthen the fixture rather than weakening production scoring. The unchanged production path now publishes all three pattern types offline.                                      |
+| RF-TEST-008 | A missing application database URL surfaced as an unexpected 500 during the empty-account check.              | The fresh account authenticated and the worker-role preflight passed, but `GET /api/v1/entries` failed because `APP_DATABASE_URL` was empty and no application session factory existed.                                | Critical | Require `APP_DATABASE_URL` during runner configuration and preflight an owner-scoped read before worker/model execution.                                                           |
 
 ## Scoring rubric
 

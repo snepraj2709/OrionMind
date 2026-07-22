@@ -22,6 +22,7 @@ from scripts.run_sample_reflection_e2e import (
     parse_args,
     pipeline_event_report,
     schedule_synthesis,
+    verify_application_database,
     verify_worker_database,
 )
 
@@ -75,6 +76,19 @@ def test_worker_database_is_required_for_live_runner(
         build_settings(environment, uuid4())
 
     assert exc_info.value.code == "WORKER_DATABASE_CONFIG_MISSING"
+
+
+def test_application_database_is_required_for_live_runner(tmp_path: Path) -> None:
+    environment = tmp_path / ".env"
+    environment.write_text(
+        "WORKER_DATABASE_URL=postgresql+psycopg://worker:secret@db.example.test:5432/postgres\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LiveRunError) as exc_info:
+        build_settings(environment, uuid4())
+
+    assert exc_info.value.code == "APP_DATABASE_CONFIG_MISSING"
 
 
 def test_worker_database_must_use_a_distinct_login(tmp_path: Path) -> None:
@@ -163,6 +177,60 @@ def test_worker_database_preflight_accepts_worker_role(monkeypatch) -> None:
     )
 
     verify_worker_database(SimpleNamespace())
+
+    assert disposed == [True]
+
+
+def test_application_database_preflight_requires_authenticated_role(monkeypatch) -> None:
+    class UnitOfWorkFactory:
+        def for_user(self, _user_id):
+            raise RuntimeError("role denied")
+
+    sessions = SimpleNamespace(
+        unit_of_work_factory=UnitOfWorkFactory(), dispose=lambda: None
+    )
+    monkeypatch.setattr(
+        "scripts.run_sample_reflection_e2e.build_database_sessions",
+        lambda _settings: sessions,
+    )
+
+    with pytest.raises(LiveRunError) as exc_info:
+        verify_application_database(SimpleNamespace(), uuid4())
+
+    assert exc_info.value.code == "APP_DATABASE_ROLE_UNAVAILABLE"
+
+
+def test_application_database_preflight_accepts_authenticated_role(monkeypatch) -> None:
+    class Result:
+        def scalar_one(self):
+            return 0
+
+    class Session:
+        def execute(self, _statement, _values):
+            return Result()
+
+    class UnitOfWork:
+        def __enter__(self):
+            return SimpleNamespace(session=Session())
+
+        def __exit__(self, *_args):
+            return None
+
+    class UnitOfWorkFactory:
+        def for_user(self, _user_id):
+            return UnitOfWork()
+
+    disposed = []
+    sessions = SimpleNamespace(
+        unit_of_work_factory=UnitOfWorkFactory(),
+        dispose=lambda: disposed.append(True),
+    )
+    monkeypatch.setattr(
+        "scripts.run_sample_reflection_e2e.build_database_sessions",
+        lambda _settings: sessions,
+    )
+
+    verify_application_database(SimpleNamespace(), uuid4())
 
     assert disposed == [True]
 
