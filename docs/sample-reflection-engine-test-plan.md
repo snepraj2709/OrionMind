@@ -10,6 +10,11 @@ The local runner and its non-billable tests are implemented. A result is valid
 only after the live command completes; `sample-reflection-result.json` must
 never be populated with invented or fixture-derived measurements.
 
+For environments that prohibit sending the sample text to an external model,
+use `backend/scripts/run_sample_reflection_offline.py`. Its separate output is
+`data/sample-reflection-offline-result.json`, is labeled `offline_fixture`, and
+must never be presented as live provider or database proof.
+
 ## Dataset findings
 
 - The input is an array of 30 journal entries dated 1–30 June 2026.

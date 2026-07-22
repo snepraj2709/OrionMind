@@ -147,6 +147,27 @@ The per-entry human-readable findings belong in
 `docs/reflection-indepth-breakdown.md`. The machine result belongs in
 `data/sample-reflection-result.json` only after a canonical live run succeeds.
 
+## Offline fixture runner
+
+`backend/scripts/run_sample_reflection_offline.py` is the safe, non-networked
+feedback loop for the same 30-entry dataset. It uses the production
+deterministic quality, candidate scoring, proposal materialization, evidence
+validation, critic routing, and snapshot code with deterministic local signals
+and proposal fixtures.
+
+```bash
+cd backend
+.venv/bin/python scripts/run_sample_reflection_offline.py \
+  --input ../data/sample-entries.json \
+  --output ../data/sample-reflection-offline-result.json
+```
+
+The output must identify itself as `offline_fixture`, report zero external
+model calls and zero external database writes, and must not be copied into the
+canonical live result. It proves deterministic pipeline behavior only; it does
+not prove semantic model quality, OpenAI routing, Supabase writes, RLS, queue
+claims, deployed scheduling, latency, or cost.
+
 ## Required live-run credentials and isolation
 
 The live test requires:
@@ -177,6 +198,7 @@ the critic rule. Model access preflight itself retrieves metadata only.
 | RF-TEST-004 | The current test account is not isolated.                                                                     | It already owns the 30 retained entries and Reflection Engine rows.                                                                                                                                                    | High     | Use a dedicated empty account or separately authorize exact cleanup. The harness must continue to fail closed.                                                                     |
 | RF-TEST-005 | The harness summary is not yet sufficient for the requested 30-entry stepwise analysis.                       | It reports aggregate counts but not per-entry submission, job, quality, analysis and signal outcomes.                                                                                                                  | High     | Add privacy-safe `entryBreakdown` capture and generate the separate breakdown document from a canonical result.                                                                    |
 | RF-TEST-006 | A completed synthesis job can still produce an all-insufficient snapshot without surfacing why in the result. | Validator discard reasons are safe-logged but absent from the result contract.                                                                                                                                         | High     | Aggregate candidate lifecycle and `reflection_proposal_discarded` reason codes into the canonical report and fail the reflective dataset when all publishable proposals disappear. |
+| RF-TEST-007 | A short, temporally concentrated loop fixture does not satisfy the production publication threshold.          | The first offline repro produced a valid loop candidate scoring `0.619`, below the `0.72` gate; a six-transition loop distributed across the month scored `0.734`.                                                     | Expected | Strengthen the fixture rather than weakening production scoring. The unchanged production path now publishes all three pattern types offline.                                      |
 
 ## Scoring rubric
 
@@ -193,8 +215,10 @@ The final implementation score uses 100 points:
 | Aggregate API contract                |      5 | Authenticated, strict, no-store, LLM-free state matrix                  |
 | Observability and reproducibility     |      5 | Secret-safe per-entry trace, usage/cost and reproducible commands       |
 
-No final numeric score is valid until the canonical live run and final required
-validation commands complete.
+No final production-readiness score is valid until the canonical live run and
+final required validation commands complete. The offline breakdown records a
+provisional confidence score with explicit deductions for untested external
+boundaries.
 
 ## Verification commands
 
