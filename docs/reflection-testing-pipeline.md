@@ -198,6 +198,40 @@ Expected paid usage is approximately 30 Luna responses, one Terra response
 when candidates pass deterministic gates, and zero or more Sol responses under
 the critic rule. Model access preflight itself retrieves metadata only.
 
+## Completed live run — 22 July 2026
+
+The fresh test user completed a live, deployed end-to-end run. The initial
+entry phase persisted 30 accepted Luna analyses and 394 signals. A synthesis
+defect then failed source version `76` before Terra was called. The fixed worker
+was deployed and the exact failed job was made claimable once with its attempt
+counter set to `2`; the claim became attempt `3`, preventing any further
+automatic paid retry.
+
+The retry did not resubmit entries. Database history still contains exactly 30
+completed `entry_processing` jobs and one `reflection_synthesis` job. Worker
+telemetry from the retry contains one Terra call and one Sol call, with no Luna
+event.
+
+| Boundary                      | Live evidence                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------------- |
+| Database migration            | `0014_reflection_on_demand.sql` applied                                                       |
+| Worker deployment             | Railway deployment `8dee59d3-5f61-4ac9-8455-c81c21bacaab`, successful                         |
+| Backend deployment            | Railway deployment `7e0bf5a8-1690-46e1-a6e7-788c57e6cc1a`, successful; `/health` returned 200 |
+| Reused basis                  | 30 accepted analyses, 394 signals, source version 76                                          |
+| Deterministic synthesis input | 169 candidates; 80 passed publication gates                                                   |
+| Terra                         | 1 successful call; 50,204 input, 50,201 cache-write input, 4,892 output tokens                |
+| Sol                           | 1 successful call; 3,510 input, 3,507 cache-write input, 304 output tokens                    |
+| Luna during retry             | 0 calls                                                                                       |
+| Persisted snapshot            | version 1; source 76; 30 valid entries; 30 dates; 4,685 words; available                      |
+| Published result              | 1 hidden driver, 1 recurring loop, 4 inner tensions, 684 evidence links                       |
+| Aggregate endpoint            | Authenticated GET returned 200, `available`, `idle`, current snapshot                         |
+| Additional retry estimate     | `$0.261319375`; combined measured run estimate `$1.007730625`                                 |
+
+The deployed rollout is deliberately narrow: API and engine enabled, publish
+mode restricted to this user's UUID, and automatic scheduling disabled. This
+allows authenticated GET behavior and the approved test while preventing
+unintended cohort-wide synthesis spend.
+
 ## Findings and fix ledger
 
 | ID          | Finding                                                                                                       | Evidence                                                                                                                                                                                                               | Severity | Fix/status                                                                                                                                                                         |
@@ -214,6 +248,9 @@ the critic rule. Model access preflight itself retrieves metadata only.
 | RF-TEST-010 | The harness scheduled synthesis at a future `run_after` and waited until timeout.                             | The live job remained pending with `attempts=0`; `run_after` was 18:05 UTC while the four-hour runner deadline was earlier.                                                                                            | Critical | Aggregate GET now expedites an existing pending job to `now()` through an idempotent worker RPC; the harness calls GET before draining synthesis.                                  |
 | RF-TEST-011 | Recurring-loop construction could create a step with no support IDs and fail before Terra.                    | A no-spend replay of 394 live signals raised `LoopStepStructure.support_signal_ids` `too_short`; Terra and Sol call counts remained zero.                                                                              | Critical | Build loop support from every proven cycle edge while retaining multi-edge chains for recurrence scoring; regression and the live deterministic replay now pass.                   |
 | RF-TEST-012 | The Reflection screen defaulted to the hardcoded fixture repository.                                          | The refresh icon refetched in-memory fixture data, so it could never reach authenticated `GET /api/v1/reflections`.                                                                                                    | Critical | Default `ReflectionsScreen` to `HttpReflectionsRepository`; keep the fixture repository explicit and test-only.                                                                    |
+| RF-TEST-013 | Railway retained stale Supabase pooler passwords after database-role credentials changed.                     | Both deployed APP and WORKER URLs failed authentication while the new local role URLs succeeded; the backend's prior deploy hit Supabase `ECIRCUITBREAKER`.                                                            | Critical | Replace only the pooler URL passwords from the verified fresh role credentials, redeploy, and preflight both role assumptions before retry.                                        |
+| RF-TEST-014 | Railway had the Reflection API and engine disabled with rollout mode `off`.                                   | A synthesis claim would have terminated as `REFLECTION_DISABLED`, consuming the controlled retry without Terra.                                                                                                        | Critical | Enable API/engine and `publish` only for the approved test-user cohort; keep the scheduler disabled to prevent unrelated spend.                                                    |
+| RF-TEST-015 | Worker polling logs hid the exception class and SQLSTATE.                                                     | Repeated `processing_attempt_failed` events could not distinguish authentication, permission, or transport failures.                                                                                                   | High     | Emit allowlisted exception class/SQLSTATE diagnostic tokens only; no message, URL, credential, entry content, or stack data is logged.                                             |
 
 ## Scoring rubric
 
@@ -230,10 +267,29 @@ The final implementation score uses 100 points:
 | Aggregate API contract                |      5 | Authenticated, strict, no-store, idempotent async-request state matrix  |
 | Observability and reproducibility     |      5 | Secret-safe per-entry trace, usage/cost and reproducible commands       |
 
-No final production-readiness score is valid until the canonical live run and
-final required validation commands complete. The offline breakdown records a
-provisional confidence score with explicit deductions for untested external
+Before the live continuation, only the offline provisional score was valid.
+The score below incorporates the completed deployed run and final validation,
+while retaining explicit deductions for untested or deliberately disabled
 boundaries.
+
+### Post-live implementation score
+
+The combined automated suite, deployed continuation, model telemetry,
+database state, and authenticated GET proof score the current MVP **94/100**.
+This is an implementation-quality score, not a claim that skipped architecture
+items such as standalone safety screening, embeddings, or a connected Review
+workflow are complete.
+
+| Area                                  | Earned | Weight | Live evidence and remaining deduction                                                                                                    |
+| ------------------------------------- | -----: | -----: | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Ingestion, encryption and ownership   |     15 |     15 | 30 authenticated encrypted entries completed for one owner                                                                               |
+| Queue, retries and worker lifecycle   |     14 |     15 | Live claim/heartbeat/completion passed; failed-job retry still required a guarded admin reset                                            |
+| Quality, PII and exact offsets        |     18 |     20 | 30 accepted live analyses and source-backed signals; standalone safety service remains skipped                                           |
+| Candidate algorithms and thresholds   |     15 |     15 | 169 live candidates, regression for cycle-edge support, 80 publishable                                                                   |
+| Synthesis, critic and evidence safety |     15 |     15 | Real Terra and Sol success; six insights and 684 validated evidence links                                                                |
+| Scheduler and snapshot integrity      |      8 |     10 | Snapshot/state integrity passed; scheduler remains disabled in the narrow live rollout                                                   |
+| Aggregate API contract                |      5 |      5 | Deployed authenticated GET returned current strict snapshot and did not enqueue duplicate work                                           |
+| Observability and reproducibility     |      4 |      5 | Safe token/job telemetry exists; the original machine artifact still records the pre-fix failure rather than the controlled continuation |
 
 ## Verification commands
 

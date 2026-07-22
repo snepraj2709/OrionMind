@@ -1,6 +1,101 @@
-# Reflection Engine 30-entry offline breakdown
+# Reflection Engine 30-entry breakdown
 
-## Result and proof boundary
+## Live end-to-end result — 22 July 2026
+
+The 30 June 2026 sample entries completed the production path against the live
+Supabase database and deployed Railway worker. All 30 entry jobs had already
+completed with Luna before the synthesis defect was fixed. The controlled
+source-version `76` retry reused those persisted analyses and signals; it did
+not resubmit entries or call Luna again.
+
+| Measurement                           |                                         Live result |
+| ------------------------------------- | --------------------------------------------------: |
+| Entry jobs                            |                                        30 completed |
+| Accepted analyses                     |                                                  30 |
+| Persisted signals reused by synthesis |                                                 394 |
+| Deterministic candidates              |                                                 169 |
+| Publication-gate candidates           |                                                  80 |
+| Terra calls during retry              |                                        1 successful |
+| Sol calls during retry                |                                        1 successful |
+| Luna calls during retry               |                                                   0 |
+| Snapshot                              |             version 1, source version 76, available |
+| Available snapshot insights           | 1 hidden driver, 1 recurring loop, 4 inner tensions |
+| Snapshot evidence links               |                                                 684 |
+| Authenticated aggregate read          |                HTTP 200, available, idle, not stale |
+
+### Live per-entry processing
+
+This table is derived from persisted live rows. It intentionally excludes raw
+journal content, quotes, PII, prompts, credentials, and model output text.
+
+|   # | Entry date | Luna classification | Words | Final eligibility | Signals |
+| --: | ---------- | ------------------- | ----: | ----------------- | ------: |
+|   1 | 2026-06-01 | personal_reflection |   159 | accepted          |      11 |
+|   2 | 2026-06-02 | personal_reflection |   157 | accepted          |      13 |
+|   3 | 2026-06-03 | personal_reflection |   161 | accepted          |      14 |
+|   4 | 2026-06-04 | personal_reflection |   156 | accepted          |      15 |
+|   5 | 2026-06-05 | personal_reflection |    93 | accepted          |      10 |
+|   6 | 2026-06-06 | personal_reflection |   159 | accepted          |      14 |
+|   7 | 2026-06-07 | personal_reflection |   200 | accepted          |      11 |
+|   8 | 2026-06-08 | personal_reflection |   160 | accepted          |       7 |
+|   9 | 2026-06-09 | personal_reflection |   156 | accepted          |      14 |
+|  10 | 2026-06-10 | personal_reflection |   171 | accepted          |      13 |
+|  11 | 2026-06-11 | personal_reflection |   160 | accepted          |      14 |
+|  12 | 2026-06-12 | personal_reflection |    85 | accepted          |      10 |
+|  13 | 2026-06-13 | personal_reflection |   158 | accepted          |      14 |
+|  14 | 2026-06-14 | personal_reflection |   160 | accepted          |      14 |
+|  15 | 2026-06-15 | personal_reflection |   148 | accepted          |      13 |
+|  16 | 2026-06-16 | personal_reflection |   167 | accepted          |      12 |
+|  17 | 2026-06-17 | personal_reflection |   222 | accepted          |      16 |
+|  18 | 2026-06-18 | personal_reflection |    89 | accepted          |      12 |
+|  19 | 2026-06-19 | personal_reflection |   162 | accepted          |      15 |
+|  20 | 2026-06-20 | personal_reflection |   233 | accepted          |      16 |
+|  21 | 2026-06-21 | personal_reflection |   156 | accepted          |      15 |
+|  22 | 2026-06-22 | personal_reflection |   157 | accepted          |      11 |
+|  23 | 2026-06-23 | personal_reflection |   102 | accepted          |      11 |
+|  24 | 2026-06-24 | personal_reflection |   160 | accepted          |      15 |
+|  25 | 2026-06-25 | personal_reflection |   154 | accepted          |      14 |
+|  26 | 2026-06-26 | personal_reflection |   162 | accepted          |      11 |
+|  27 | 2026-06-27 | personal_reflection |   193 | accepted          |      15 |
+|  28 | 2026-06-28 | personal_reflection |   212 | accepted          |      20 |
+|  29 | 2026-06-29 | personal_reflection |    68 | accepted          |       9 |
+|  30 | 2026-06-30 | personal_reflection |   165 | accepted          |      15 |
+
+Every entry was processed exactly once by Luna and ended accepted. The signal
+counts total 394, matching the basis loaded by the successful synthesis.
+
+### Live synthesis and aggregate response
+
+The first synthesis attempt failed before any provider call because a
+recurring-loop step had an empty support-ID list. After the cycle-edge evidence
+fix was deployed, the one approved retry completed in 43.124 seconds:
+
+| Role      | Model           | Calls | Input tokens | Cache-write input tokens | Output tokens | Result  |
+| --------- | --------------- | ----: | -----------: | -----------------------: | ------------: | ------- |
+| Synthesis | `gpt-5.6-terra` |     1 |       50,204 |                   50,201 |         4,892 | success |
+| Critic    | `gpt-5.6-sol`   |     1 |        3,510 |                    3,507 |           304 | success |
+
+The additional synthesis/critic usage estimate is `$0.261319375`; together
+with the earlier 30 Luna calls, the measured run estimate is `$1.007730625`.
+These are response-usage estimates using the harness pricing table; the OpenAI
+billing dashboard remains authoritative.
+
+The deployed authenticated `GET /api/v1/reflections?range=all` returned:
+
+- hidden driver: “A possible pattern across your entries may involve
+  contribution through helping, taking responsibility, and repairing
+  connection, while the value you place on the work may not depend only on
+  praise.”
+- recurring loop: “Managing pressure through more activity”
+- inner tensions: control/rest, clarity/control, belonging/stability, and
+  recognition/security.
+
+The GET returned the already-current snapshot and created no new job or model
+call.
+
+## Offline fixture reference
+
+### Offline proof boundary
 
 The offline fixture run passed for all 30 entries in
 `data/sample-entries.json`. It exercised the real deterministic quality,
@@ -16,7 +111,7 @@ networking.
 Machine-readable evidence is in
 `data/sample-reflection-offline-result.json`.
 
-## Aggregate outcome
+### Offline aggregate outcome
 
 | Measurement                   | Result            |
 | ----------------------------- | ----------------- |
@@ -40,7 +135,7 @@ loop, and one available inner tension. A second publishable hidden-driver
 candidate was correctly retained but not selected because a snapshot publishes
 at most one hidden driver.
 
-## Per-entry breakdown
+### Offline per-entry breakdown
 
 The table intentionally excludes journal content, quotes, PII, credentials,
 and model prompts. `Signals` are deterministic fixture records and must not be
@@ -85,7 +180,7 @@ signal across the month, and bilateral autonomy/belonging evidence across ten
 dates. This makes each pattern gate testable without pretending a local ruleset
 understands the journal's meaning.
 
-## Candidate and snapshot outcome
+### Offline candidate and snapshot outcome
 
 | Pattern type   | Candidate status | Score | Gate | Snapshot result |
 | -------------- | ---------------- | ----: | ---- | --------------- |
@@ -100,7 +195,7 @@ The critic was invoked once because at least one selected score was within the
 production borderline-routing band. The fixture critic returned a strict
 publish decision and did not rewrite evidence or scores.
 
-## Diagnosis outcome
+### Offline diagnosis outcome
 
 The offline feedback loop initially produced only two available sections. The
 recurring-loop fixture scored `0.619`, below the documented `0.72` publication
@@ -120,7 +215,7 @@ fixtures cannot prove whether Terra omitted references, changed a controlled
 field, used rejected phrasing, or abstained. No production synthesis fix is
 justified without that missing trace.
 
-## Provisional implementation score
+### Offline provisional implementation score
 
 The current implementation receives a provisional **80/100 offline-confidence
 score**. This is not a production-readiness score.
@@ -136,7 +231,7 @@ score**. This is not a production-readiness score.
 | Aggregate API contract                |      5 |      5 | Strict API state matrix covered by backend tests                       |
 | Observability and reproducibility     |      5 |      5 | Deterministic artifact, per-entry breakdown, explicit limitations      |
 
-## Recommended next steps
+### Recommended next steps
 
 1. Keep `data/sample-reflection-result.json` labeled as historical and
    non-canonical; do not replace it with this fixture artifact.
