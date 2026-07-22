@@ -9,7 +9,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.modules.reflections.schemas import FeedbackResponse
-from app.modules.reflections.types import SavedFeedback
+from app.modules.reflections.types import SavedFeedback, SynthesisRequest
 
 
 class ReflectionResourceNotFoundError(LookupError):
@@ -19,22 +19,29 @@ class ReflectionResourceNotFoundError(LookupError):
 class ReflectionsRepository:
     EVIDENCE_LIMIT = 12
 
-    def request_synthesis(
+    def request_synthesis_if_eligible(
         self,
         session: Session,
         *,
         user_id: UUID,
-        source_version: int,
-    ) -> UUID:
-        job_id = session.scalar(
+    ) -> SynthesisRequest | None:
+        row = session.execute(
             text(
-                "SELECT public.enqueue_processing_job("
-                ":user_id, NULL, 'reflection_synthesis', "
-                ":source_version, pg_catalog.now())"
+                "SELECT requested_job_id, requested_source_version "
+                "FROM public.request_reflection_synthesis_if_eligible("
+                ":user_id, pg_catalog.now())"
             ),
-            {"user_id": user_id, "source_version": str(source_version)},
+            {"user_id": user_id},
+        ).mappings().one_or_none()
+        if row is None:
+            return None
+        source_version = int(row["requested_source_version"])
+        if source_version <= 0:
+            raise RuntimeError("reflection synthesis source version is invalid")
+        return SynthesisRequest(
+            job_id=UUID(str(row["requested_job_id"])),
+            source_version=source_version,
         )
-        return UUID(str(job_id))
 
     def load_aggregate(self, session: Session, *, user_id: UUID) -> dict[str, object]:
         payload = session.scalar(

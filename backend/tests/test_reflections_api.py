@@ -17,7 +17,7 @@ from app.modules.reflections.schemas import (
     InsufficientInsight,
 )
 from app.modules.reflections.service import ReflectionsService
-from app.modules.reflections.types import SavedFeedback
+from app.modules.reflections.types import SavedFeedback, SynthesisRequest
 from app.shared.config import Settings
 from app.shared.database.session import DatabaseSessions
 from app.shared.security.encryption import AesGcmContentCipher
@@ -79,6 +79,7 @@ class Repository:
         self.read_users: list[UUID] = []
         self.feedback_calls: list[dict[str, object]] = []
         self.synthesis_requests: list[dict[str, object]] = []
+        self.synthesis_eligible = False
         self.not_found = False
 
     def load_aggregate(self, _session, *, user_id: UUID) -> dict[str, object]:
@@ -107,13 +108,23 @@ class Repository:
         )
         return result
 
-    def request_synthesis(self, _session, **kwargs) -> UUID:
+    def request_synthesis_if_eligible(
+        self, _session, **kwargs
+    ) -> SynthesisRequest | None:
+        if not self.synthesis_eligible:
+            return None
+        source_version = int(
+            self.raw.get("state", {}).get("latest_accepted_source_version", 0)  # type: ignore[union-attr]
+        )
         self.synthesis_requests.append(kwargs)
         self.raw["job"] = {
             "status": "pending",
-            "source_version": str(kwargs["source_version"]),
+            "source_version": str(source_version),
         }
-        return UUID("85555555-5555-4555-8555-555555555555")
+        return SynthesisRequest(
+            job_id=UUID("85555555-5555-4555-8555-555555555555"),
+            source_version=source_version,
+        )
 
 
 def cipher() -> AesGcmContentCipher:
@@ -499,6 +510,7 @@ def test_aggregate_read_is_authenticated_owner_scoped_bounded_and_llm_free(
 def test_aggregate_read_requests_one_immediate_synthesis_job_without_inline_llm() -> None:
     raw = raw_without_snapshot(valid=3)
     app, repository, provider, _content_cipher = build_app(raw)
+    repository.synthesis_eligible = True
 
     with TestClient(app) as client:
         first = client.get("/api/v1/reflections?range=all", headers=HEADERS)
@@ -508,9 +520,24 @@ def test_aggregate_read_requests_one_immediate_synthesis_job_without_inline_llm(
     assert first.json()["reflectionState"] == "first_reflection_pending"
     assert second.status_code == 200
     assert repository.synthesis_requests == [
-        {"user_id": USER_ID, "source_version": 3},
-        {"user_id": USER_ID, "source_version": 3},
+        {"user_id": USER_ID},
+        {"user_id": USER_ID},
     ]
+    assert provider.calls == []
+
+
+def test_stale_snapshot_with_one_recent_entry_does_not_request_synthesis() -> None:
+    raw = raw_with_snapshot()
+    raw["state"]["latest_accepted_source_version"] = 11  # type: ignore[index]
+    raw["job"] = {"status": "completed", "source_version": "10"}
+    app, repository, provider, _content_cipher = build_app(raw)
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/reflections?range=all", headers=HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["reflectionState"] == "stale"
+    assert repository.synthesis_requests == []
     assert provider.calls == []
 
 

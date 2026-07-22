@@ -27,3 +27,9 @@ class SavedFeedback:
     insight_id: UUID
     response: FeedbackResponse
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class SynthesisRequest:
+    job_id: UUID
+    source_version: int

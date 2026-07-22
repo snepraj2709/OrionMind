@@ -80,6 +80,7 @@ NEW_FUNCTIONS = (
     "get_reflection_candidate_basis",
     "get_reflection_synthesis_basis",
     "get_reflections_for_owner",
+    "is_reflection_recalculation_eligible",
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
     "put_reflection_feedback_for_owner",
@@ -87,6 +88,7 @@ NEW_FUNCTIONS = (
     "recover_stale_processing_jobs",
     "retry_entry_processing_for_owner",
     "renew_processing_job",
+    "request_reflection_synthesis_if_eligible",
     "run_entry_processing_backfill_batch",
     "save_user_pii_vault",
     "schedule_reflection_jobs",
@@ -234,6 +236,25 @@ def insert_analysis_signal(
     return analysis_id, signal_id, source_version
 
 
+def insert_accepted_basis(
+    connection: psycopg.Connection,
+    user_id: UUID,
+    entry_dates: tuple[str, ...],
+) -> int:
+    latest_source = 0
+    for entry_date in entry_dates:
+        entry_id = insert_entry(connection, user_id, entry_date=entry_date)
+        analysis_id, _, latest_source = insert_analysis_signal(
+            connection, user_id, entry_id
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 100 "
+            "WHERE id = %s",
+            (analysis_id,),
+        )
+    return latest_source
+
+
 def candidate_payload(
     candidate_id: UUID,
     *,
@@ -342,6 +363,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0014_reflection_on_demand.sql",
         "0015_fix_reflection_job_expedite.sql",
         "0016_signal_embeddings.sql",
+        "0017_reflection_recalculation_eligibility.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -760,14 +782,26 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
             "WHERE user_id IN (%s, %s, %s)",
             (USER_ONE, USER_TWO, USER_THREE),
         )
+        source_one = insert_accepted_basis(
+            connection, USER_ONE, ("2026-07-20", "2026-07-21", "2026-07-21")
+        )
+        source_two = insert_accepted_basis(
+            connection, USER_TWO, ("2026-07-20", "2026-07-21")
+        )
+        source_three = insert_accepted_basis(
+            connection, USER_THREE, ("2026-07-20", "2026-07-21", "2026-07-21")
+        )
+        connection.execute(
+            "DELETE FROM public.entry_signals WHERE user_id = %s", (USER_THREE,)
+        )
         connection.execute(
             "INSERT INTO public.reflection_user_state "
             "(user_id, latest_accepted_source_version, new_valid_entries, "
             "new_accepted_signals, pending_local_dates) VALUES "
-            "(%s, 11, 2, 2, ARRAY['2026-07-20'::date, '2026-07-21'::date]), "
-            "(%s, 12, 2, 2, ARRAY['2026-07-21'::date]), "
-            "(%s, 13, 3, 0, ARRAY['2026-07-21'::date])",
-            (USER_ONE, USER_TWO, USER_THREE),
+            "(%s, %s, 3, 3, ARRAY['2026-07-20'::date, '2026-07-21'::date]), "
+            "(%s, %s, 2, 2, ARRAY['2026-07-20'::date, '2026-07-21'::date]), "
+            "(%s, %s, 3, 0, ARRAY['2026-07-20'::date, '2026-07-21'::date])",
+            (USER_ONE, source_one, USER_TWO, source_two, USER_THREE, source_three),
         )
         connection.commit()
         with connection.transaction():
@@ -807,7 +841,7 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
         connection.commit()
         assert connection.execute(
             "SELECT user_id, source_version FROM public.processing_jobs"
-        ).fetchall() == [(USER_ONE, "11")]
+        ).fetchall() == [(USER_ONE, str(source_one))]
         assert connection.execute(
             "SELECT user_id, last_schedule_local_date FROM public.reflection_user_state "
             "ORDER BY user_id"
@@ -817,12 +851,20 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
             (USER_THREE, datetime(2026, 7, 21).date()),
         ]
         admin(connection)
+        entry_two_refresh = insert_entry(connection, USER_TWO, entry_date="2026-07-21")
+        analysis_two_refresh, _, source_two_refresh = insert_analysis_signal(
+            connection, USER_TWO, entry_two_refresh
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 100 WHERE id = %s",
+            (analysis_two_refresh,),
+        )
         connection.execute(
             "UPDATE public.reflection_user_state "
-            "SET latest_accepted_source_version = 15, new_valid_entries = 3, "
+            "SET latest_accepted_source_version = %s, new_valid_entries = 3, "
             "new_accepted_signals = 1, pending_local_dates = ARRAY['2026-07-21'::date] "
             "WHERE user_id = %s",
-            (USER_TWO,),
+            (source_two_refresh, USER_TWO),
         )
         connection.commit()
         with connection.transaction():
@@ -839,20 +881,30 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
             ) == 1
         assert connection.execute(
             "SELECT count(*) FROM public.processing_jobs WHERE user_id = %s "
-            "AND job_type = 'reflection_synthesis' AND source_version = '15'",
-            (USER_TWO,),
+            "AND job_type = 'reflection_synthesis' AND source_version = %s",
+            (USER_TWO, str(source_two_refresh)),
         ).fetchone() == (1,)
         admin(connection)
         connection.execute(
             "UPDATE public.user_profiles SET timezone = 'America/New_York' WHERE user_id = %s",
             (USER_THREE,),
         )
+        entry_three_refresh = insert_entry(
+            connection, USER_THREE, entry_date="2026-07-22"
+        )
+        analysis_three_refresh, _, source_three_refresh = insert_analysis_signal(
+            connection, USER_THREE, entry_three_refresh
+        )
         connection.execute(
-            "UPDATE public.reflection_user_state SET latest_accepted_source_version = 14, "
+            "UPDATE public.entry_analyses SET reflective_word_count = 100 WHERE id = %s",
+            (analysis_three_refresh,),
+        )
+        connection.execute(
+            "UPDATE public.reflection_user_state SET latest_accepted_source_version = %s, "
             "new_valid_entries = 3, new_accepted_signals = 1, "
             "pending_local_dates = ARRAY['2026-07-22'::date], "
             "last_schedule_local_date = '2026-07-21' WHERE user_id = %s",
-            (USER_THREE,),
+            (source_three_refresh, USER_THREE),
         )
         connection.commit()
         with connection.transaction():
@@ -870,8 +922,8 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
         admin(connection)
         assert connection.execute(
             "SELECT count(*) FROM public.processing_jobs WHERE user_id = %s "
-            "AND job_type = 'reflection_synthesis' AND source_version = '14'",
-            (USER_THREE,),
+            "AND job_type = 'reflection_synthesis' AND source_version = %s",
+            (USER_THREE, str(source_three_refresh)),
         ).fetchone() == (1,)
 
 
@@ -885,13 +937,19 @@ def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps()
             "WHERE user_id IN (%s, %s)",
             (USER_ONE, USER_ONE, USER_TWO),
         )
+        source_one = insert_accepted_basis(
+            connection, USER_ONE, ("2026-03-07", "2026-03-08", "2026-03-08")
+        )
+        source_two = insert_accepted_basis(
+            connection, USER_TWO, ("2026-03-28", "2026-03-29", "2026-03-29")
+        )
         connection.execute(
             "INSERT INTO public.reflection_user_state "
             "(user_id, latest_accepted_source_version, new_valid_entries, "
             "new_accepted_signals, pending_local_dates, last_schedule_local_date) VALUES "
-            "(%s, 21, 3, 1, ARRAY['2026-03-08'::date], NULL), "
-            "(%s, 22, 3, 1, ARRAY['2026-03-08'::date], '2026-03-08')",
-            (USER_ONE, USER_TWO),
+            "(%s, %s, 3, 1, ARRAY['2026-03-07'::date, '2026-03-08'::date], NULL), "
+            "(%s, %s, 3, 1, ARRAY['2026-03-28'::date, '2026-03-29'::date], '2026-03-08')",
+            (USER_ONE, source_one, USER_TWO, source_two),
         )
         connection.commit()
         with connection.transaction():
@@ -907,9 +965,9 @@ def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps()
         connection.execute(
             "UPDATE public.reflection_user_state SET last_schedule_local_date = CASE "
             "WHEN user_id = %s THEN '2026-03-29'::date ELSE NULL END, "
-            "latest_accepted_source_version = CASE WHEN user_id = %s THEN 21 ELSE 23 END "
+            "latest_accepted_source_version = CASE WHEN user_id = %s THEN %s ELSE %s END "
             "WHERE user_id IN (%s, %s)",
-            (USER_ONE, USER_ONE, USER_ONE, USER_TWO),
+            (USER_ONE, USER_ONE, source_one, source_two, USER_ONE, USER_TWO),
         )
         connection.commit()
         with connection.transaction():
@@ -922,10 +980,11 @@ def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps()
             ) == 1
 
         admin(connection)
+        concurrent_source = source_two + 1
         connection.execute(
             "UPDATE public.reflection_user_state SET last_schedule_local_date = NULL, "
-            "latest_accepted_source_version = 24 WHERE user_id = %s",
-            (USER_TWO,),
+            "latest_accepted_source_version = %s WHERE user_id = %s",
+            (concurrent_source, USER_TWO),
         )
         connection.commit()
 
@@ -942,8 +1001,8 @@ def test_scheduler_uses_profile_iana_timezone_across_dst_and_serializes_sweeps()
     with psycopg.connect(value) as connection:
         assert connection.execute(
             "SELECT count(*) FROM public.processing_jobs WHERE user_id = %s "
-            "AND job_type = 'reflection_synthesis' AND source_version = '24'",
-            (USER_TWO,),
+            "AND job_type = 'reflection_synthesis' AND source_version = %s",
+            (USER_TWO, str(concurrent_source)),
         ).fetchone() == (1,)
 
 
@@ -956,12 +1015,15 @@ def test_shadow_completion_is_atomic_idempotent_and_snapshot_free() -> None:
             "WHERE user_id = %s",
             (USER_ONE,),
         )
+        source_version = insert_accepted_basis(
+            connection, USER_ONE, ("2026-07-19", "2026-07-20", "2026-07-20")
+        )
         connection.execute(
             "INSERT INTO public.reflection_user_state "
             "(user_id, latest_accepted_source_version, new_valid_entries, "
             "new_accepted_signals, pending_local_dates) VALUES "
-            "(%s, 7, 3, 2, ARRAY['2026-07-19'::date, '2026-07-20'::date])",
-            (USER_ONE,),
+            "(%s, %s, 3, 3, ARRAY['2026-07-19'::date, '2026-07-20'::date])",
+            (USER_ONE, source_version),
         )
         connection.commit()
         with connection.transaction():
@@ -1803,6 +1865,8 @@ def test_reflection_api_read_rpc_is_authenticated_owner_checked_and_bounded() ->
             connection.execute(
                 "SELECT public.get_reflections_for_owner(%s, 13)", (USER_ONE,)
             )
+
+
 def test_observability_rpcs_are_worker_only_and_report_scheduler_and_queue_counts() -> None:
     value = database_url()
     bootstrap(value, USER_ONE)
@@ -1812,12 +1876,24 @@ def test_observability_rpcs_are_worker_only_and_report_scheduler_and_queue_count
             "WHERE user_id = %s",
             (USER_ONE,),
         )
+        latest_source = 0
+        for entry_date in ("2026-07-20", "2026-07-21", "2026-07-21"):
+            entry_id = insert_entry(connection, USER_ONE, entry_date=entry_date)
+            analysis_id, _, latest_source = insert_analysis_signal(
+                connection, USER_ONE, entry_id
+            )
+            connection.execute(
+                "UPDATE public.entry_analyses SET reflective_word_count = 100 "
+                "WHERE id = %s",
+                (analysis_id,),
+            )
         connection.execute(
             "INSERT INTO public.reflection_user_state "
             "(user_id, latest_accepted_source_version, new_valid_entries, "
             "new_accepted_signals, pending_local_dates) "
-            "VALUES (%s, 21, 3, 1, ARRAY['2026-07-21'::date])",
-            (USER_ONE,),
+            "VALUES (%s, %s, 3, 3, "
+            "ARRAY['2026-07-20'::date, '2026-07-21'::date])",
+            (USER_ONE, latest_source),
         )
         connection.commit()
 
@@ -1849,3 +1925,257 @@ def test_observability_rpcs_are_worker_only_and_report_scheduler_and_queue_count
             assert queue[0][1:] == (0, 0)
             assert queue[1][1] == 1
             assert queue[1][2] >= 0
+
+
+def test_recalculation_eligibility_boundaries_and_atomic_request() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    check_at = "2026-07-22 12:00:00+00"
+    with psycopg.connect(value) as connection:
+        baseline_entry = insert_entry(connection, USER_ONE, entry_date="2026-07-01")
+        baseline_analysis, _, baseline_source = insert_analysis_signal(
+            connection, USER_ONE, baseline_entry
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 200 "
+            "WHERE id = %s",
+            (baseline_analysis,),
+        )
+        snapshot_id = uuid4()
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count) "
+            "VALUES (%s, %s, 1, %s, '2026-04-03', '2026-07-01', 3, 0, 2, 200)",
+            (snapshot_id, USER_ONE, baseline_source),
+        )
+        pending_entry = insert_entry(connection, USER_ONE, entry_date="2026-07-20")
+        pending_analysis, _, pending_source = insert_analysis_signal(
+            connection, USER_ONE, pending_entry
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 499 "
+            "WHERE id = %s",
+            (pending_analysis,),
+        )
+        connection.execute(
+            "UPDATE public.entries SET created_at = '2026-07-20 12:00:00+00' "
+            "WHERE id = %s",
+            (pending_entry,),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, last_snapshot_source_version, "
+            "new_valid_entries, new_accepted_signals, pending_local_dates, "
+            "last_successful_snapshot_id) "
+            "VALUES (%s, %s, %s, 1, 1, ARRAY['2026-07-20'::date], %s)",
+            (USER_ONE, pending_source, baseline_source, snapshot_id),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                    (USER_ONE, check_at),
+                )
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    "SELECT * FROM public.request_reflection_synthesis_if_eligible("
+                    "%s, %s)",
+                    (USER_ONE, check_at),
+                )
+
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone() == (False,)
+            assert connection.execute(
+                "SELECT * FROM public.request_reflection_synthesis_if_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone() is None
+
+        admin(connection)
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 500 "
+            "WHERE id = %s",
+            (pending_analysis,),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone() == (True,)
+            request = connection.execute(
+                "SELECT * FROM public.request_reflection_synthesis_if_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone()
+            assert request is not None and request[1] == pending_source
+            replay = connection.execute(
+                "SELECT * FROM public.request_reflection_synthesis_if_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone()
+            assert replay == request
+
+        admin(connection)
+        assert connection.execute(
+            "SELECT count(*) FROM public.processing_jobs "
+            "WHERE user_id = %s AND job_type = 'reflection_synthesis'",
+            (USER_ONE,),
+        ).fetchone() == (1,)
+
+        connection.execute(
+            "DELETE FROM public.processing_jobs "
+            "WHERE user_id = %s AND job_type = 'reflection_synthesis'",
+            (USER_ONE,),
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 499 "
+            "WHERE id = %s",
+            (pending_analysis,),
+        )
+        connection.execute(
+            "UPDATE public.entries SET created_at = '2026-07-19 12:00:00+00' "
+            "WHERE id = %s",
+            (pending_entry,),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone() == (True,)
+
+        admin(connection)
+        connection.execute(
+            "UPDATE public.entries "
+            "SET created_at = '2026-07-19 12:00:01+00' WHERE id = %s",
+            (pending_entry,),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone() == (False,)
+
+        admin(connection)
+        latest_source = pending_source
+        for entry_date in ("2026-07-21", "2026-07-22"):
+            entry_id = insert_entry(connection, USER_ONE, entry_date=entry_date)
+            analysis_id, _, latest_source = insert_analysis_signal(
+                connection, USER_ONE, entry_id
+            )
+            connection.execute(
+                "UPDATE public.entry_analyses "
+                "SET reflective_word_count = 1, created_at = '2026-07-22 11:00:00+00' "
+                "WHERE id = %s",
+                (analysis_id,),
+            )
+        connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET latest_accepted_source_version = %s, new_valid_entries = 3, "
+            "new_accepted_signals = 3, "
+            "pending_local_dates = ARRAY['2026-07-20'::date, "
+            "'2026-07-21'::date, '2026-07-22'::date] "
+            "WHERE user_id = %s",
+            (latest_source, USER_ONE),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone() == (True,)
+
+        admin(connection)
+        connection.execute(
+            "DELETE FROM public.entry_signals WHERE user_id = %s AND analysis_id IN ("
+            "SELECT id FROM public.entry_analyses WHERE user_id = %s "
+            "AND source_version > %s)",
+            (USER_ONE, USER_ONE, baseline_source),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_ONE, check_at),
+            ).fetchone() == (False,)
+
+        admin(connection)
+        initial_sources: list[int] = []
+        initial_analysis_ids: list[UUID] = []
+        initial_entry_ids: list[UUID] = []
+        for entry_date in ("2026-07-20", "2026-07-21", "2026-07-21"):
+            entry_id = insert_entry(connection, USER_TWO, entry_date=entry_date)
+            analysis_id, _, source_version = insert_analysis_signal(
+                connection, USER_TWO, entry_id
+            )
+            initial_entry_ids.append(entry_id)
+            initial_analysis_ids.append(analysis_id)
+            initial_sources.append(source_version)
+        connection.cursor().executemany(
+            "UPDATE public.entry_analyses SET reflective_word_count = %s WHERE id = %s",
+            [
+                (100, initial_analysis_ids[0]),
+                (50, initial_analysis_ids[1]),
+                (50, initial_analysis_ids[2]),
+            ],
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) "
+            "VALUES (%s, %s, 3, 3, "
+            "ARRAY['2026-07-20'::date, '2026-07-21'::date])",
+            (USER_TWO, max(initial_sources)),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_TWO, check_at),
+            ).fetchone() == (True,)
+
+        admin(connection)
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 49 WHERE id = %s",
+            (initial_analysis_ids[2],),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_TWO, check_at),
+            ).fetchone() == (False,)
+
+        admin(connection)
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 50 WHERE id = %s",
+            (initial_analysis_ids[2],),
+        )
+        connection.execute(
+            "UPDATE public.entries SET entry_date = '2026-07-21' WHERE id = %s",
+            (initial_entry_ids[0],),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_TWO, check_at),
+            ).fetchone() == (False,)

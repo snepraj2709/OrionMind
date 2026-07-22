@@ -97,22 +97,25 @@ GitHub-compatible Markdown viewers, and requires no account or credentials.
 
 ## Scheduler rules currently implemented
 
-The implementation follows the MVP decision in
-`docs/Reflection_Implementation.md`, not every trigger proposed in the broader
-algorithm document.
+The database derives recalculation eligibility from persisted accepted
+analyses and signals newer than the last successful snapshot. It does not trust
+the denormalized counters alone. A refresh is eligible when at least one new
+accepted signal exists and any one of these conditions is true:
 
-A daily job is eligible only when the engine and scheduler are enabled, the
-user is in the configured cohort, rollout mode is `shadow` or `publish`, the
-user's local time is at least 18:00, the date has not already been checked, at
-least one accepted signal is new, and either:
+- at least three valid entries are new;
+- at least 500 reflective words are new; or
+- at least one valid entry has been pending for three days.
 
-- at least three valid entries are new; or
-- at least two valid entries occur on at least two pending local dates.
+The first snapshot instead retains the global 90-day basis gate of at least
+three valid entries, two distinct entry dates, and 200 reflective words. Both
+the local-18:00 scheduler and authenticated aggregate-read request use this one
+database predicate. The read path calls a worker-only atomic request function,
+so it may expedite an eligible pending job but cannot bypass the thresholds or
+create duplicate jobs under replay.
 
-The current implementation does not yet use the 500-word trigger, aged-entry
-trigger, weekly rebuild, or a separate synthesis service. Newly processed
-accepted signals are stored as fixed 1,536-dimension pgvector embeddings;
-upgrade rows remain nullable and are not automatically re-embedded.
+The independent weekly trigger remains deferred. Newly processed accepted
+signals are stored as fixed 1,536-dimension pgvector embeddings; upgrade rows
+remain nullable and are not automatically re-embedded.
 
 ## Aggregate GET states
 

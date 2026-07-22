@@ -219,10 +219,17 @@ class _AggregateRepository:
             },
         }
 
+    def request_synthesis_if_eligible(self, _session, *, user_id):
+        return None
+
 
 class _UnitOfWork:
     @contextmanager
     def for_user(self, _user_id):
+        yield SimpleNamespace(session=object())
+
+    @contextmanager
+    def for_worker(self):
         yield SimpleNamespace(session=object())
 
 
