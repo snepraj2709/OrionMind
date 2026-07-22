@@ -6576,7 +6576,7 @@ BEGIN
         run_after = CASE
             WHEN public.processing_jobs.job_type = 'reflection_synthesis'
              AND public.processing_jobs.status = 'pending'
-            THEN pg_catalog.least(public.processing_jobs.run_after, EXCLUDED.run_after)
+            THEN LEAST(public.processing_jobs.run_after, EXCLUDED.run_after)
             ELSE public.processing_jobs.run_after
         END,
         updated_at = CASE

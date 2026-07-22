@@ -338,6 +338,8 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0011_reflection_rollout.sql",
         "0012_reflection_observability.sql",
         "0013_reflections_api_snapshot_id.sql",
+        "0014_reflection_on_demand.sql",
+        "0015_fix_reflection_job_expedite.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
