@@ -110,30 +110,38 @@ deterministic and one-shot:
 
 1. Validate the input and compute its SHA-256 digest.
 2. Validate credential parity without logging secret values.
-3. Sign in and run the three-model access preflight.
-4. Build the FastAPI application with the test user as a one-user `publish`
+3. Sign in, require a distinct worker database URL, and prove its login can
+   assume only the `orion_worker` capability role.
+4. Run the three-model access preflight.
+5. Build the FastAPI application with the test user as a one-user `publish`
    cohort.
-5. Use the authenticated protected route
+6. Use the authenticated protected route
    `POST /api/v1/past-entries` for all 30 entries. Keep rate limiting enabled
    and pace submissions to no more than two per second.
-6. Run the real `ProcessingWorker.run_one` loop until all 30
+7. Run the real `ProcessingWorker.run_one` loop until all 30
    `entry_processing` jobs reach a terminal state. This invokes Luna for every
    entry that passes deterministic exclusion.
-7. Assert the account now contains exactly the submitted dataset and that
+8. Assert the account now contains exactly the submitted dataset and that
    failed entry jobs are zero.
-8. Invoke the real scheduler once with a controlled timestamp after 18:00 in
+9. Invoke the real scheduler once with a controlled timestamp after 18:00 in
    the test user's stored timezone. Assert that exactly one
    `reflection_synthesis` job is enqueued for the latest accepted source
    version.
-9. Run the same worker loop until that synthesis job is terminal. This invokes
-   Terra once when publishable candidates exist and invokes Sol only for
-   candidates matching the production critic rule.
-10. Call `GET /api/v1/reflections?range=all` with the same bearer token and
+10. Run the same worker loop until that synthesis job is terminal. This invokes
+    Terra once when publishable candidates exist and invokes Sol only for
+    candidates matching the production critic rule.
+11. Call `GET /api/v1/reflections?range=all` with the same bearer token and
     validate the strict public response schema.
-11. Summarize the API response and safe model-attempt records, then write the
+12. Require at least one available insight section for this deliberately
+    reflective dataset, and surface safe proposal-discard reason codes when
+    synthesis produces none.
+13. Capture submission, storage, worker, deterministic quality, semantic
+    quality, model and signal outcomes for each entry without storing journal
+    content.
+14. Summarize the API response and safe model-attempt records, then write the
     result atomically through a temporary file followed by a same-directory
     rename.
-12. Remove the access token, credentials, raw user UUID, raw prompts, and raw
+15. Remove the access token, credentials, raw user UUID, raw prompts, and raw
     provider responses from all report and error paths.
 
 This in-process route/worker approach exercises authentication, protected API
@@ -157,6 +165,11 @@ canonical public API result:
 - `modelUsage.calls`: one safe measurement per provider attempt, including
   service tier, cached input, cache-write input, reasoning output, status, and
   retry class;
+- `pipelineEvents`: safe entry-analysis outcomes, candidate lifecycle counts,
+  and validator discard reason codes;
+- `entryBreakdown`: one privacy-safe stepwise record per submitted entry,
+  including API acceptance, worker attempts, deterministic and semantic
+  quality, model/prompt routing, and signal counts by controlled type;
 - `databaseEffects`: exact per-user row counts and grouped entry, analysis,
   signal, job, candidate, and insight states;
 - `reflectionGetResponse`: the schema-validated body returned by authenticated
@@ -192,6 +205,9 @@ raw user IDs, provider exception text, or full journal entries.
 - The final aggregate is `available` and `idle`, its evidence belongs only to
   the submitted June dates, and every quote is an exact span of its source
   entry.
+- At least one insight section is available for the deliberately repetitive,
+  reflective dataset; an all-insufficient snapshot is a failed test even when
+  the synthesis job completed.
 - The result passes its JSON schema, contains no secret material, and is written
   to `data/sample-reflection-result.json`.
 

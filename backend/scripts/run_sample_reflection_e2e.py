@@ -232,6 +232,14 @@ def build_settings(backend_env: Path, user_id: UUID) -> Settings:
             "WORKER_DATABASE_CONFIG_MISSING",
             "The dedicated worker database URL is unavailable.",
         )
+    if (
+        settings.WORKER_DATABASE_URL.get_secret_value()
+        == settings.APP_DATABASE_URL.get_secret_value()
+    ):
+        raise LiveRunError(
+            "WORKER_DATABASE_NOT_DISTINCT",
+            "The worker and application database URLs must use distinct logins.",
+        )
     configured = {
         "entry_analysis": settings.OPENAI_ENTRY_ANALYSIS_MODEL,
         "synthesis": settings.OPENAI_REFLECTION_SYNTHESIS_MODEL,
@@ -389,8 +397,8 @@ def submit_missing_entries(
     existing_dates: set[date],
     *,
     interval_seconds: float,
-) -> int:
-    submitted = 0
+) -> list[dict[str, Any]]:
+    submitted: list[dict[str, Any]] = []
     last_submission = 0.0
     for entry in entries:
         if entry.entry_date in existing_dates:
@@ -398,7 +406,7 @@ def submit_missing_entries(
         remaining = interval_seconds - (time.monotonic() - last_submission)
         if remaining > 0:
             time.sleep(remaining)
-        request_json(
+        accepted = request_json(
             client,
             "POST",
             "/api/v1/past-entries",
@@ -410,8 +418,17 @@ def submit_missing_entries(
             },
         )
         last_submission = time.monotonic()
-        submitted += 1
-        _progress("imports", submitted=submitted, total=len(entries))
+        submitted.append(
+            {
+                "entryDate": entry.entry_date.isoformat(),
+                "entryId": str(accepted["entry_id"]),
+                "endpoint": "POST /api/v1/past-entries",
+                "httpStatus": 202,
+                "processingStatus": accepted["processing_status"],
+                "statusUrl": accepted["status_url"],
+            }
+        )
+        _progress("imports", submitted=len(submitted), total=len(entries))
     return submitted
 
 
@@ -561,6 +578,139 @@ def database_snapshot(application: Any, user_id: UUID) -> dict[str, Any]:
         "candidateStatuses": candidates,
         "insightStatuses": insights,
     }
+
+
+def entry_breakdown(
+    application: Any,
+    user_id: UUID,
+    submissions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    engine = application.state.database_sessions.application_engine
+    if engine is None:
+        raise LiveRunError("DATABASE_CONFIG_MISSING", "Operator database is unavailable.")
+    submitted_by_id = {str(item["entryId"]): item for item in submissions}
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT e.id, e.entry_date, e.input_type, e.processing_status, "
+                "p.status AS import_status, j.status AS job_status, j.attempts, "
+                "j.last_error_code, a.entry_kind, a.model_eligibility, "
+                "a.eligibility, a.deterministic_features, a.semantic_scores, "
+                "a.exclusion_reason_codes, a.reflective_word_count, a.model_id, "
+                "a.prompt_version "
+                "FROM public.entries e "
+                "LEFT JOIN public.past_entry_imports p "
+                "ON p.entry_id = e.id AND p.user_id = e.user_id "
+                "LEFT JOIN public.processing_jobs j "
+                "ON j.entry_id = e.id AND j.user_id = e.user_id "
+                "AND j.job_type = 'entry_processing' "
+                "LEFT JOIN public.entry_analyses a "
+                "ON a.entry_id = e.id AND a.user_id = e.user_id "
+                "WHERE e.user_id = :user_id ORDER BY e.entry_date, e.id"
+            ),
+            {"user_id": user_id},
+        ).mappings().all()
+        signal_rows = connection.execute(
+            text(
+                "SELECT entry_id, signal_type, count(*) AS count "
+                "FROM public.entry_signals WHERE user_id = :user_id "
+                "GROUP BY entry_id, signal_type ORDER BY entry_id, signal_type"
+            ),
+            {"user_id": user_id},
+        ).mappings().all()
+    signal_counts: dict[str, dict[str, int]] = {}
+    for row in signal_rows:
+        signal_counts.setdefault(str(row["entry_id"]), {})[
+            str(row["signal_type"])
+        ] = int(row["count"])
+    result: list[dict[str, Any]] = []
+    for index, row in enumerate(rows, start=1):
+        entry_id = str(row["id"])
+        submission = submitted_by_id.get(entry_id)
+        if submission is None:
+            raise LiveRunError(
+                "ENTRY_BREAKDOWN_MISMATCH",
+                "A persisted entry does not match the submitted dataset.",
+            )
+        by_type = signal_counts.get(entry_id, {})
+        result.append(
+            {
+                "index": index,
+                "entryDate": row["entry_date"].isoformat(),
+                "entryId": entry_id,
+                "submission": submission,
+                "storage": {
+                    "inputType": row["input_type"],
+                    "entryStatus": row["processing_status"],
+                    "importStatus": row["import_status"],
+                },
+                "worker": {
+                    "jobStatus": row["job_status"],
+                    "attempts": int(row["attempts"] or 0),
+                    "errorCode": row["last_error_code"],
+                },
+                "quality": {
+                    "deterministicFeatures": row["deterministic_features"],
+                    "entryKind": row["entry_kind"],
+                    "modelEligibility": row["model_eligibility"],
+                    "finalEligibility": row["eligibility"],
+                    "semanticScores": row["semantic_scores"],
+                    "exclusionReasonCodes": list(
+                        row["exclusion_reason_codes"] or []
+                    ),
+                    "reflectiveWordCount": int(row["reflective_word_count"] or 0),
+                },
+                "analysis": {
+                    "model": row["model_id"],
+                    "promptVersion": row["prompt_version"],
+                },
+                "signals": {
+                    "count": sum(by_type.values()),
+                    "byType": by_type,
+                },
+            }
+        )
+    return result
+
+
+def pipeline_event_report(events: list[dict[str, Any]]) -> dict[str, Any]:
+    proposal_discards = Counter(
+        str(event.get("reason_code", "UNKNOWN"))
+        for event in events
+        if event.get("event") == "reflection_proposal_discarded"
+    )
+    candidate_outcomes = Counter(
+        (str(event.get("pattern_type", "unknown")), str(event.get("outcome", "unknown")))
+        for event in events
+        if event.get("event") == "reflection_candidate_observed"
+    )
+    entry_outcomes = Counter(
+        (str(event.get("status", "unknown")), str(event.get("entry_kind", "unknown")))
+        for event in events
+        if event.get("event") == "entry_analysis_materialized"
+    )
+    return {
+        "entryAnalysisOutcomes": {
+            f"{status}:{kind}": count
+            for (status, kind), count in sorted(entry_outcomes.items())
+        },
+        "candidateOutcomes": {
+            f"{pattern_type}:{outcome}": count
+            for (pattern_type, outcome), count in sorted(candidate_outcomes.items())
+        },
+        "proposalDiscardReasons": dict(sorted(proposal_discards.items())),
+    }
+
+
+def available_insight_count(response: dict[str, Any]) -> int:
+    data = response.get("data")
+    if not isinstance(data, dict):
+        return 0
+    return sum(
+        1
+        for key in ("hiddenDriver", "recurringLoop", "innerTensions")
+        if isinstance(data.get(key), dict) and data[key].get("status") == "available"
+    )
 
 
 def _grouped_counts(session: Any, sql: str, user_id: UUID) -> dict[str, int]:
@@ -817,7 +967,7 @@ def run(
             )
 
             stage_started = time.monotonic()
-            submitted = submit_missing_entries(
+            submissions = submit_missing_entries(
                 client,
                 token,
                 entries,
@@ -831,7 +981,7 @@ def run(
                 {
                     "name": "historical_entries_submitted",
                     "status": "passed",
-                    "new": submitted,
+                    "new": len(submissions),
                     "reused": len(existing_dates),
                     "total": len(entries),
                 }
@@ -923,11 +1073,15 @@ def run(
                 }
             )
             database = database_snapshot(application, user_id)
+            entries_report = entry_breakdown(
+                application, user_id, submissions
+            )
     finally:
         logging.getLogger().removeHandler(collector)
         token = ""
 
     usage = model_usage_report(collector.events)
+    pipeline_events = pipeline_event_report(collector.events)
     usage["diagnosticsBeforeCanonicalRun"] = {
         "attempts": args.prior_diagnostic_attempts,
         "unpricedAttempts": args.prior_diagnostic_unpriced_attempts,
@@ -956,6 +1110,12 @@ def run(
             "TERRA_CALL_COUNT_MISMATCH",
             "Terra did not produce exactly one successful synthesis.",
         )
+    available_insights = available_insight_count(raw_reflection)
+    if available_insights == 0:
+        raise LiveRunError(
+            "REFLECTION_OUTPUT_EMPTY",
+            "The reflective dataset produced no available insight sections.",
+        )
     checks.extend(
         (
             {
@@ -973,6 +1133,11 @@ def run(
                 "status": "passed",
                 "calls": sol["calls"],
                 "outcome": sol["outcome"],
+            },
+            {
+                "name": "reflection_has_available_insight",
+                "status": "passed",
+                "availableSections": available_insights,
             },
         )
     )
@@ -995,19 +1160,16 @@ def run(
             "transport": "FastAPI TestClient over the real ASGI application",
             "database": "real Supabase PostgreSQL",
             "providers": "real OpenAI Responses API",
-            "workerDatabaseConnection": (
-                "dedicated"
-                if settings.WORKER_DATABASE_URL.get_secret_value()
-                != settings.APP_DATABASE_URL.get_secret_value()
-                else "application_connection_with_orion_worker_role"
-            ),
+            "workerDatabaseConnection": "dedicated",
             "testUserHash": hashlib.sha256(str(user_id).encode()).hexdigest(),
         },
         "timingSeconds": {
             name: round(value, 3) for name, value in stage_seconds.items()
         },
         "modelUsage": usage,
+        "pipelineEvents": pipeline_events,
         "databaseEffects": database,
+        "entryBreakdown": entries_report,
         "reflectionGetResponse": raw_reflection,
         "checks": checks,
         "errors": [],
@@ -1026,7 +1188,6 @@ def run(
             "The model access preflight retrieves metadata and does not create billable Responses.",
             "Sol is intentionally absent when no synthesized candidate meets the deterministic critic-routing rule.",
             "The suite does not clean up its persisted database effects after completion.",
-            "Because WORKER_DATABASE_URL was empty, this run used the application Postgres connection and switched each worker transaction to the existing orion_worker database role.",
         ],
     }
 
@@ -1049,7 +1210,9 @@ def failure_report(
         },
         "timingSeconds": {"total": round(elapsed_seconds, 3)},
         "modelUsage": model_usage_report(events or []),
+        "pipelineEvents": pipeline_event_report(events or []),
         "databaseEffects": None,
+        "entryBreakdown": None,
         "reflectionGetResponse": None,
         "checks": [],
         "errors": [{"code": error.code, "message": error.safe_message}],

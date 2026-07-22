@@ -11,6 +11,7 @@ import pytest
 from app.shared.observability.reflection import token_usage
 from scripts.run_sample_reflection_e2e import (
     LiveRunError,
+    available_insight_count,
     atomic_write_json,
     build_settings,
     estimate_call_cost,
@@ -19,6 +20,7 @@ from scripts.run_sample_reflection_e2e import (
     load_sample_entries,
     model_usage_report,
     parse_args,
+    pipeline_event_report,
     schedule_synthesis,
     verify_worker_database,
 )
@@ -73,6 +75,22 @@ def test_worker_database_is_required_for_live_runner(
         build_settings(environment, uuid4())
 
     assert exc_info.value.code == "WORKER_DATABASE_CONFIG_MISSING"
+
+
+def test_worker_database_must_use_a_distinct_login(tmp_path: Path) -> None:
+    environment = tmp_path / ".env"
+    database_url = (
+        "postgresql+psycopg://postgres:secret@db.example.test:5432/postgres"
+    )
+    environment.write_text(
+        f"APP_DATABASE_URL={database_url}\nWORKER_DATABASE_URL={database_url}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LiveRunError) as exc_info:
+        build_settings(environment, uuid4())
+
+    assert exc_info.value.code == "WORKER_DATABASE_NOT_DISTINCT"
 
 
 def test_worker_database_preflight_requires_worker_role(monkeypatch) -> None:
@@ -209,6 +227,52 @@ def test_model_report_distinguishes_model_roles_and_conditional_sol() -> None:
     assert by_role["critic"]["outcome"] == "not_invoked"
     assert report["pricingComplete"] is True
     assert report["estimatedTotalCostUsd"] == pytest.approx(0.0056)
+
+
+def test_pipeline_event_report_surfaces_safe_discard_reasons() -> None:
+    report = pipeline_event_report(
+        [
+            {
+                "event": "entry_analysis_materialized",
+                "status": "accepted",
+                "entry_kind": "personal_reflection",
+            },
+            {
+                "event": "reflection_candidate_observed",
+                "pattern_type": "hidden_driver",
+                "outcome": "publishable",
+            },
+            {
+                "event": "reflection_proposal_discarded",
+                "reason_code": "EVIDENCE_ROLE_MISMATCH",
+            },
+        ]
+    )
+
+    assert report == {
+        "entryAnalysisOutcomes": {"accepted:personal_reflection": 1},
+        "candidateOutcomes": {"hidden_driver:publishable": 1},
+        "proposalDiscardReasons": {"EVIDENCE_ROLE_MISMATCH": 1},
+    }
+
+
+def test_reflective_dataset_requires_an_available_insight_section() -> None:
+    empty = {
+        "data": {
+            "hiddenDriver": {"status": "insufficient_evidence"},
+            "recurringLoop": {"status": "insufficient_evidence"},
+            "innerTensions": {"status": "insufficient_evidence"},
+        }
+    }
+    available = {
+        "data": {
+            **empty["data"],
+            "hiddenDriver": {"status": "available"},
+        }
+    }
+
+    assert available_insight_count(empty) == 0
+    assert available_insight_count(available) == 1
 
 
 def test_unknown_service_tier_never_silently_undercounts_cost() -> None:
