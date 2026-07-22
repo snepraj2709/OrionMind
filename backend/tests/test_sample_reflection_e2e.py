@@ -11,8 +11,10 @@ import pytest
 from app.shared.observability.reflection import token_usage
 from scripts.run_sample_reflection_e2e import (
     LiveRunError,
+    active_queue_owners,
     available_insight_count,
     atomic_write_json,
+    build_observer_engine,
     build_settings,
     estimate_call_cost,
     failure_report,
@@ -119,6 +121,33 @@ def test_worker_database_must_use_a_distinct_login(tmp_path: Path) -> None:
         build_settings(environment, uuid4())
 
     assert exc_info.value.code == "WORKER_DATABASE_NOT_DISTINCT"
+
+
+def test_live_observer_database_is_required() -> None:
+    with pytest.raises(LiveRunError) as exc_info:
+        build_observer_engine({})
+
+    assert exc_info.value.code == "OBSERVER_DATABASE_CONFIG_MISSING"
+
+
+def test_live_observer_normalizes_psycopg_driver(monkeypatch) -> None:
+    captured = []
+    engine = object()
+    monkeypatch.setattr(
+        "scripts.run_sample_reflection_e2e.create_engine",
+        lambda url, **_kwargs: captured.append(url) or engine,
+    )
+
+    result = build_observer_engine(
+        {
+            "ADMIN_APP_DATABASE_URL": (
+                "postgresql://observer:secret@db.example.test:5432/postgres"
+            )
+        }
+    )
+
+    assert result is engine
+    assert captured[0].drivername == "postgresql+psycopg"
 
 
 def test_worker_database_preflight_requires_worker_role(monkeypatch) -> None:
@@ -447,18 +476,30 @@ def test_schedule_synthesis_uses_timestamp_aware_job_service() -> None:
             return {"timezone": "UTC", "last_schedule_local_date": None}
 
     class Connection:
+        def __init__(self) -> None:
+            self.statements = []
+
         def __enter__(self):
             return self
 
         def __exit__(self, *_args):
             return None
 
-        def execute(self, *_args, **_kwargs):
+        def begin(self):
+            return self
+
+        def execute(self, statement, *_args, **_kwargs):
+            self.statements.append(str(statement))
+            if str(statement) == "SET TRANSACTION READ ONLY":
+                return None
             return Result()
 
     class Engine:
+        def __init__(self) -> None:
+            self.connection = Connection()
+
         def connect(self):
-            return Connection()
+            return self.connection
 
     class Scheduler:
         def __init__(self) -> None:
@@ -472,17 +513,53 @@ def test_schedule_synthesis_uses_timestamp_aware_job_service() -> None:
 
     scheduler = Scheduler()
     unit_of_work = object()
+    observer = Engine()
     application = SimpleNamespace(
         state=SimpleNamespace(
             database_sessions=SimpleNamespace(
-                application_engine=Engine(),
                 unit_of_work_factory=unit_of_work,
             ),
             job_service=scheduler,
         )
     )
 
-    assert schedule_synthesis(application, uuid4()) == 1
+    assert schedule_synthesis(application, observer, uuid4()) == 1
     assert scheduler.uow is unit_of_work
     assert scheduler.now.hour == 18
     assert scheduler.now.minute == 5
+    assert observer.connection.statements[0] == "SET TRANSACTION READ ONLY"
+
+
+def test_queue_inspection_uses_read_only_observer() -> None:
+    class Result:
+        def mappings(self):
+            return self
+
+        def one(self):
+            return {"owned": 0, "foreign": 0}
+
+    class Connection:
+        def __init__(self) -> None:
+            self.statements = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def begin(self):
+            return self
+
+        def execute(self, statement, *_args, **_kwargs):
+            self.statements.append(str(statement))
+            if str(statement) == "SET TRANSACTION READ ONLY":
+                return None
+            return Result()
+
+    connection = Connection()
+    observer = SimpleNamespace(connect=lambda: connection)
+
+    assert active_queue_owners(observer, uuid4()) == (0, 0)
+    assert connection.statements[0] == "SET TRANSACTION READ ONLY"
+    assert "public.processing_jobs" in connection.statements[1]

@@ -10,18 +10,20 @@ import socket
 import sys
 import time
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time as wall_time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from dotenv import dotenv_values
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
+from sqlalchemy.engine.base import Connection, Engine
 from sqlalchemy.exc import ArgumentError
 
 
@@ -293,6 +295,65 @@ def build_settings(backend_env: Path, user_id: UUID) -> Settings:
     return settings
 
 
+def build_observer_engine(backend: dict[str, str]) -> Engine:
+    value = backend.get("ADMIN_APP_DATABASE_URL", "").strip()
+    if not value:
+        raise LiveRunError(
+            "OBSERVER_DATABASE_CONFIG_MISSING",
+            "ADMIN_APP_DATABASE_URL is required for read-only live-test observations.",
+        )
+    try:
+        parsed = make_url(value)
+    except ArgumentError as exc:
+        raise LiveRunError(
+            "OBSERVER_DATABASE_CONFIG_INVALID",
+            "ADMIN_APP_DATABASE_URL is invalid.",
+        ) from exc
+    if parsed.drivername in {"postgres", "postgresql"}:
+        parsed = parsed.set(drivername="postgresql+psycopg")
+    if (
+        parsed.drivername != "postgresql+psycopg"
+        or not parsed.username
+        or not parsed.host
+        or not parsed.database
+    ):
+        raise LiveRunError(
+            "OBSERVER_DATABASE_CONFIG_INVALID",
+            "ADMIN_APP_DATABASE_URL must be a PostgreSQL URL usable by Psycopg 3.",
+        )
+    return create_engine(
+        parsed,
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 60},
+    )
+
+
+@contextmanager
+def read_only_connection(engine: Engine) -> Iterator[Connection]:
+    with engine.connect() as connection, connection.begin():
+        connection.execute(text("SET TRANSACTION READ ONLY"))
+        yield connection
+
+
+def verify_observer_database(engine: Engine, user_id: UUID) -> None:
+    try:
+        with read_only_connection(engine) as connection:
+            count = connection.scalar(
+                text(
+                    "SELECT count(*) FROM public.processing_jobs "
+                    "WHERE user_id = :user_id"
+                ),
+                {"user_id": user_id},
+            )
+            if not isinstance(count, int) or count < 0:
+                raise RuntimeError("observer database count is invalid")
+    except Exception as exc:
+        raise LiveRunError(
+            "OBSERVER_DATABASE_UNAVAILABLE",
+            "The read-only live-test observer cannot inspect Reflection metadata.",
+        ) from exc
+
+
 def sign_in(frontend: dict[str, str], backend: dict[str, str]) -> tuple[str, UUID]:
     from supabase import create_client
 
@@ -434,11 +495,8 @@ def inspect_existing_entries(
     return set()
 
 
-def active_queue_owners(application: Any, user_id: UUID) -> tuple[int, int]:
-    engine = application.state.database_sessions.application_engine
-    if engine is None:
-        raise LiveRunError("DATABASE_CONFIG_MISSING", "Operator database is unavailable.")
-    with engine.connect() as connection:
+def active_queue_owners(observer: Engine, user_id: UUID) -> tuple[int, int]:
+    with read_only_connection(observer) as connection:
         row = connection.execute(
             text(
                 "SELECT "
@@ -494,11 +552,8 @@ def submit_missing_entries(
     return submitted
 
 
-def job_status_counts(application: Any, user_id: UUID, job_type: str) -> Counter[str]:
-    engine = application.state.database_sessions.application_engine
-    if engine is None:
-        raise LiveRunError("DATABASE_CONFIG_MISSING", "Operator database is unavailable.")
-    with engine.connect() as connection:
+def job_status_counts(observer: Engine, user_id: UUID, job_type: str) -> Counter[str]:
+    with read_only_connection(observer) as connection:
         rows = connection.execute(
             text(
                 "SELECT status, count(*) AS count FROM public.processing_jobs "
@@ -511,6 +566,7 @@ def job_status_counts(application: Any, user_id: UUID, job_type: str) -> Counter
 
 def drain_jobs(
     application: Any,
+    observer: Engine,
     user_id: UUID,
     job_type: str,
     *,
@@ -521,13 +577,13 @@ def drain_jobs(
     worker_id = f"sample-e2e-{socket.gethostname()[:30]}-{os.getpid()}"
     last_reported: tuple[tuple[str, int], ...] | None = None
     while time.monotonic() < deadline:
-        _owned_active, foreign_active = active_queue_owners(application, user_id)
+        _owned_active, foreign_active = active_queue_owners(observer, user_id)
         if foreign_active:
             raise LiveRunError(
                 "SHARED_QUEUE_BUSY",
                 "Another user's processing job appeared; the test will not claim it.",
             )
-        statuses = job_status_counts(application, user_id, job_type)
+        statuses = job_status_counts(observer, user_id, job_type)
         state = tuple(sorted(statuses.items()))
         if state != last_reported:
             _progress(job_type, **dict(state))
@@ -540,12 +596,9 @@ def drain_jobs(
     raise LiveRunError("RUN_TIMEOUT", f"{job_type} did not finish before timeout.")
 
 
-def schedule_synthesis(application: Any, user_id: UUID) -> int:
+def schedule_synthesis(application: Any, observer: Engine, user_id: UUID) -> int:
     uow = application.state.database_sessions.unit_of_work_factory
-    engine = application.state.database_sessions.application_engine
-    if engine is None:
-        raise LiveRunError("DATABASE_CONFIG_MISSING", "Operator database is unavailable.")
-    with engine.connect() as connection:
+    with read_only_connection(observer) as connection:
         row = connection.execute(
             text(
                 "SELECT p.timezone, s.last_schedule_local_date "
@@ -570,11 +623,8 @@ def schedule_synthesis(application: Any, user_id: UUID) -> int:
     )
 
 
-def database_snapshot(application: Any, user_id: UUID) -> dict[str, Any]:
-    engine = application.state.database_sessions.application_engine
-    if engine is None:
-        raise LiveRunError("DATABASE_CONFIG_MISSING", "Operator database is unavailable.")
-    with engine.connect() as connection:
+def database_snapshot(observer: Engine, user_id: UUID) -> dict[str, Any]:
+    with read_only_connection(observer) as connection:
         tables = {
             table: int(
                 connection.scalar(
@@ -643,15 +693,12 @@ def database_snapshot(application: Any, user_id: UUID) -> dict[str, Any]:
 
 
 def entry_breakdown(
-    application: Any,
+    observer: Engine,
     user_id: UUID,
     submissions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    engine = application.state.database_sessions.application_engine
-    if engine is None:
-        raise LiveRunError("DATABASE_CONFIG_MISSING", "Operator database is unavailable.")
     submitted_by_id = {str(item["entryId"]): item for item in submissions}
-    with engine.connect() as connection:
+    with read_only_connection(observer) as connection:
         rows = connection.execute(
             text(
                 "SELECT e.id, e.entry_date, e.input_type, e.processing_status, "
@@ -999,6 +1046,15 @@ def run(
     checks.append({"name": "model_access_preflight", "status": "passed"})
 
     application = create_app(settings=settings)
+    observer = build_observer_engine(backend)
+    try:
+        stage_started = time.monotonic()
+        verify_observer_database(observer, user_id)
+    except BaseException:
+        observer.dispose()
+        raise
+    stage_seconds["observerDatabasePreflight"] = time.monotonic() - stage_started
+    checks.append({"name": "observer_database_read_only", "status": "passed"})
     collector = collector or SafeEventCollector()
     logging.getLogger().addHandler(collector)
     deadline = overall_started + args.timeout_seconds
@@ -1006,13 +1062,13 @@ def run(
         with TestClient(application, raise_server_exceptions=True) as client:
             stage_started = time.monotonic()
             existing_dates = inspect_existing_entries(client, token, entries)
-            owned_active, foreign_active = active_queue_owners(application, user_id)
+            owned_active, foreign_active = active_queue_owners(observer, user_id)
             if foreign_active:
                 raise LiveRunError(
                     "SHARED_QUEUE_BUSY",
                     "Another user's processing jobs are active; the test will not claim them.",
                 )
-            before_database = database_snapshot(application, user_id)
+            before_database = database_snapshot(observer, user_id)
             nonempty_tables = {
                 table: count
                 for table, count in before_database["tableRowCounts"].items()
@@ -1058,7 +1114,7 @@ def run(
 
             stage_started = time.monotonic()
             entry_jobs = drain_jobs(
-                application, user_id, "entry_processing", deadline=deadline
+                application, observer, user_id, "entry_processing", deadline=deadline
             )
             stage_seconds["entryProcessing"] = time.monotonic() - stage_started
             if entry_jobs["failed"] or entry_jobs["completed"] != len(entries):
@@ -1076,10 +1132,10 @@ def run(
             )
 
             stage_started = time.monotonic()
-            enqueued = schedule_synthesis(application, user_id)
+            enqueued = schedule_synthesis(application, observer, user_id)
             stage_seconds["reflectionScheduling"] = time.monotonic() - stage_started
             synthesis_before = job_status_counts(
-                application, user_id, "reflection_synthesis"
+                observer, user_id, "reflection_synthesis"
             )
             if enqueued not in {0, 1} or sum(synthesis_before.values()) != 1:
                 raise LiveRunError(
@@ -1097,7 +1153,11 @@ def run(
 
             stage_started = time.monotonic()
             synthesis_jobs = drain_jobs(
-                application, user_id, "reflection_synthesis", deadline=deadline
+                application,
+                observer,
+                user_id,
+                "reflection_synthesis",
+                deadline=deadline,
             )
             stage_seconds["reflectionSynthesis"] = time.monotonic() - stage_started
             if synthesis_jobs["failed"] or synthesis_jobs["completed"] != 1:
@@ -1141,12 +1201,13 @@ def run(
                     "processingState": raw_reflection["processingState"],
                 }
             )
-            database = database_snapshot(application, user_id)
+            database = database_snapshot(observer, user_id)
             entries_report = entry_breakdown(
-                application, user_id, submissions
+                observer, user_id, submissions
             )
     finally:
         logging.getLogger().removeHandler(collector)
+        observer.dispose()
         token = ""
 
     usage = model_usage_report(collector.events)
@@ -1230,6 +1291,7 @@ def run(
             "database": "real Supabase PostgreSQL",
             "providers": "real OpenAI Responses API",
             "workerDatabaseConnection": "dedicated",
+            "observerDatabaseAccess": "read-only test instrumentation",
             "testUserHash": hashlib.sha256(str(user_id).encode()).hexdigest(),
         },
         "timingSeconds": {
@@ -1255,6 +1317,7 @@ def run(
             "Estimated AI cost excludes Supabase, hosting, network, observability, and any regional OpenAI data-residency uplift.",
             "Reasoning tokens are reported as a subset of output tokens and are costed through the output-token total.",
             "The model access preflight retrieves metadata and does not create billable Responses.",
+            "Database diagnostics used ADMIN_APP_DATABASE_URL only inside read-only transactions; API and worker operations retained their restricted logins.",
             "Sol is intentionally absent when no synthesized candidate meets the deterministic critic-routing rule.",
             "The suite does not clean up its persisted database effects after completion.",
         ],

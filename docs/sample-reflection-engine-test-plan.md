@@ -91,6 +91,13 @@ The backend environment must also provide distinct `APP_DATABASE_URL` and
 the application login can perform an owner-scoped read under the
 `authenticated` role and that the worker login can assume `orion_worker`.
 
+Exact queue and per-user database measurements require the test-only
+`ADMIN_APP_DATABASE_URL`. The production roles intentionally cannot select
+internal Reflection tables directly: the application uses owner-scoped RLS and
+the worker uses security-definer RPCs. The runner confines this privileged
+observer connection to transactions forced read-only; it never uses that
+connection for API writes, queue claims, scheduling, or model work.
+
 ## Isolation rule
 
 The run fails closed unless every Reflection-owned data table is empty for the
@@ -120,8 +127,9 @@ deterministic and one-shot:
 
 1. Validate the input and compute its SHA-256 digest.
 2. Validate credential parity without logging secret values.
-3. Sign in, require distinct application and worker database URLs, and prove
-   their logins can assume `authenticated` and `orion_worker`, respectively.
+3. Sign in, require distinct application and worker database URLs, prove their
+   logins can assume `authenticated` and `orion_worker`, respectively, and
+   preflight the read-only test observer.
 4. Run the three-model access preflight.
 5. Build the FastAPI application with the test user as a one-user `publish`
    cohort.

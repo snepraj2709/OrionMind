@@ -180,6 +180,8 @@ The live test requires:
   `authenticated` role;
 - a distinct `WORKER_DATABASE_URL` whose login can assume only
   `orion_worker`; and
+- a test-only `ADMIN_APP_DATABASE_URL` used exclusively for privacy-safe
+  observations inside transactions forced read-only; and
 - the existing application, encryption and fingerprint settings.
 
 Do not delete or overwrite an existing user's entries to make the test pass.
@@ -202,6 +204,7 @@ the critic rule. Model access preflight itself retrieves metadata only.
 | RF-TEST-006 | A completed synthesis job can still produce an all-insufficient snapshot without surfacing why in the result. | Validator discard reasons are safe-logged but absent from the result contract.                                                                                                                                         | High     | Aggregate candidate lifecycle and `reflection_proposal_discarded` reason codes into the canonical report and fail the reflective dataset when all publishable proposals disappear. |
 | RF-TEST-007 | A short, temporally concentrated loop fixture does not satisfy the production publication threshold.          | The first offline repro produced a valid loop candidate scoring `0.619`, below the `0.72` gate; a six-transition loop distributed across the month scored `0.734`.                                                     | Expected | Strengthen the fixture rather than weakening production scoring. The unchanged production path now publishes all three pattern types offline.                                      |
 | RF-TEST-008 | A missing application database URL surfaced as an unexpected 500 during the empty-account check.              | The fresh account authenticated and the worker-role preflight passed, but `GET /api/v1/entries` failed because `APP_DATABASE_URL` was empty and no application session factory existed.                                | Critical | Require `APP_DATABASE_URL` during runner configuration and preflight an owner-scoped read before worker/model execution.                                                           |
+| RF-TEST-009 | The harness used the restricted application connection for internal queue and Reflection-table diagnostics.   | `GET /api/v1/entries` returned 200 for the fresh user, then the first direct `processing_jobs` query failed with PostgreSQL `42501`; the worker role was correctly denied too.                                         | Critical | Use the admin observer only in forced read-only transactions; retain `orion_app_login` for API/RLS and `orion_worker_login` for worker RPC execution.                              |
 
 ## Scoring rubric
 
