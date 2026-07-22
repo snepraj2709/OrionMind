@@ -9,7 +9,7 @@ from app.shared.observability.logging import safe_log
 
 
 logger = logging.getLogger("orion.reflection.preflight")
-MODEL_ROLES = frozenset({"entry_analysis", "synthesis", "critic"})
+MODEL_ROLES = frozenset({"entry_analysis", "embedding", "synthesis", "critic"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,7 +31,7 @@ def check_reflection_model_access(
     """Use only Models.retrieve; never submit content or create a response."""
 
     if (
-        len(targets) != 3
+        len(targets) != 4
         or {target.role for target in targets} != MODEL_ROLES
         or any(not target.model_id.strip() for target in targets)
     ):

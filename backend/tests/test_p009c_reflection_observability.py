@@ -303,6 +303,7 @@ class _ModelsOnlyClient:
 def _targets() -> tuple[ModelAccessTarget, ...]:
     return (
         ModelAccessTarget("entry_analysis", "gpt-5.6-luna"),
+        ModelAccessTarget("embedding", "text-embedding-3-small"),
         ModelAccessTarget("synthesis", "gpt-5.6-terra"),
         ModelAccessTarget("critic", "gpt-5.6-sol"),
     )

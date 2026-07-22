@@ -26,6 +26,7 @@ def main() -> None:
         raise SystemExit("OPENAI_API_KEY is required for the access preflight.")
     targets = (
         ModelAccessTarget("entry_analysis", settings.OPENAI_ENTRY_ANALYSIS_MODEL),
+        ModelAccessTarget("embedding", settings.OPENAI_SIGNAL_EMBEDDING_MODEL),
         ModelAccessTarget("synthesis", settings.OPENAI_REFLECTION_SYNTHESIS_MODEL),
         ModelAccessTarget("critic", settings.OPENAI_REFLECTION_CRITIC_MODEL),
     )

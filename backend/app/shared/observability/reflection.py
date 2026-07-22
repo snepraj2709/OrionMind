@@ -280,7 +280,7 @@ class ReflectionTelemetry:
     ) -> Iterator[Any]:
         _require(
             role,
-            frozenset({"entry_analysis", "synthesis", "critic"}),
+            frozenset({"entry_analysis", "embedding", "synthesis", "critic"}),
             "model role",
         )
         _require_token(model_id, "model ID")

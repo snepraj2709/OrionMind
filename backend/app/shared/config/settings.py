@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: SecretStr = SecretStr("")
     OPENAI_ENTRY_ANALYSIS_MODEL: str = "gpt-5.6-luna"
+    OPENAI_SIGNAL_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_REFLECTION_SYNTHESIS_MODEL: str = "gpt-5.6-terra"
     OPENAI_REFLECTION_CRITIC_MODEL: str = "gpt-5.6-sol"
     OPENAI_CONNECT_TIMEOUT_SECONDS: float = Field(default=10.0, gt=0, le=60)
@@ -104,6 +105,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "OPENAI_ENTRY_ANALYSIS_MODEL",
+        "OPENAI_SIGNAL_EMBEDDING_MODEL",
         "OPENAI_REFLECTION_SYNTHESIS_MODEL",
         "OPENAI_REFLECTION_CRITIC_MODEL",
     )

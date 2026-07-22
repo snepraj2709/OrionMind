@@ -29,6 +29,15 @@ class EntryAnalysisProvider(Protocol):
     ) -> ModelEntryAnalysis: ...
 
 
+class SignalEmbeddingProvider(Protocol):
+    def embed(
+        self,
+        *,
+        texts: tuple[str, ...],
+        safety_identifier: str,
+    ) -> tuple[tuple[float, ...], ...]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class PreparedEntryAnalysis:
     analysis: dict[str, object]

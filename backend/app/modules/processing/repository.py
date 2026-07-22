@@ -109,7 +109,7 @@ class ProcessingRepository:
         apply_legacy: bool,
     ) -> int:
         try:
-            return int(
+            source_version = int(
                 session.scalar(
                     text(
                         "SELECT public.apply_combined_entry_processing_job("
@@ -140,6 +140,35 @@ class ProcessingRepository:
                     },
                 )
             )
+            if signals:
+                models = {str(item["embedding_model"]) for item in signals}
+                if len(models) != 1:
+                    raise ValueError("signal embedding models are inconsistent")
+                stored = int(
+                    session.scalar(
+                        text(
+                            "SELECT public.store_entry_signal_embeddings("
+                            ":job_id, :claim_token, CAST(:embeddings AS jsonb), :model_id)"
+                        ),
+                        {
+                            "job_id": claim.job_id,
+                            "claim_token": claim.claim_token,
+                            "embeddings": json.dumps(
+                                [
+                                    {
+                                        "signal_id": item["id"],
+                                        "values": item["embedding"],
+                                    }
+                                    for item in signals
+                                ]
+                            ),
+                            "model_id": models.pop(),
+                        },
+                    )
+                )
+                if stored != len(signals):
+                    raise RuntimeError("signal embedding persistence is incomplete")
+            return source_version
         except DBAPIError as exc:
             if getattr(exc.orig, "sqlstate", None) == "P0001":
                 raise StaleAnalysisClaimError("processing claim is no longer current") from exc

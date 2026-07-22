@@ -46,6 +46,7 @@ PRICING_SOURCE = "https://developers.openai.com/api/docs/pricing"
 PRICE_PER_MILLION_USD: dict[str, dict[str, tuple[Decimal, ...]]] = {
     "default": {
         "gpt-5.6-luna": tuple(map(Decimal, ("1", "0.1", "1.25", "6"))),
+        "text-embedding-3-small": tuple(map(Decimal, ("0.02", "0", "0", "0"))),
         "gpt-5.6-terra": tuple(
             map(Decimal, ("2.5", "0.25", "3.125", "15"))
         ),
@@ -66,6 +67,7 @@ PRICE_PER_MILLION_USD: dict[str, dict[str, tuple[Decimal, ...]]] = {
 }
 MODEL_ROLES = {
     "entry_analysis": "gpt-5.6-luna",
+    "embedding": "text-embedding-3-small",
     "synthesis": "gpt-5.6-terra",
     "critic": "gpt-5.6-sol",
 }
@@ -297,6 +299,7 @@ def build_settings(backend_env: Path, user_id: UUID) -> Settings:
         )
     configured = {
         "entry_analysis": settings.OPENAI_ENTRY_ANALYSIS_MODEL,
+        "embedding": settings.OPENAI_SIGNAL_EMBEDDING_MODEL,
         "synthesis": settings.OPENAI_REFLECTION_SYNTHESIS_MODEL,
         "critic": settings.OPENAI_REFLECTION_CRITIC_MODEL,
     }
@@ -672,6 +675,33 @@ def database_snapshot(observer: Engine, user_id: UUID) -> dict[str, Any]:
             "WHERE user_id = :user_id GROUP BY signal_type",
             user_id,
         )
+        embedding_count = int(
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM public.entry_signals "
+                    "WHERE user_id = :user_id AND embedding IS NOT NULL"
+                ),
+                {"user_id": user_id},
+            )
+            or 0
+        )
+        missing_embedding_count = int(
+            connection.scalar(
+                text(
+                    "SELECT count(*) FROM public.entry_signals "
+                    "WHERE user_id = :user_id AND embedding IS NULL"
+                ),
+                {"user_id": user_id},
+            )
+            or 0
+        )
+        embedding_models = _grouped_counts(
+            connection,
+            "SELECT embedding_model AS key, count(*) AS count "
+            "FROM public.entry_signals WHERE user_id = :user_id "
+            "AND embedding IS NOT NULL GROUP BY embedding_model",
+            user_id,
+        )
         jobs = _two_key_counts(
             connection,
             "SELECT job_type AS first, status AS second, count(*) AS count "
@@ -699,6 +729,9 @@ def database_snapshot(observer: Engine, user_id: UUID) -> dict[str, Any]:
         "analysisEligibility": analyses,
         "analysisModels": analysis_models,
         "signalTypes": signals,
+        "embeddingCount": embedding_count,
+        "missingEmbeddingCount": missing_embedding_count,
+        "embeddingModels": embedding_models,
         "jobStatuses": jobs,
         "candidateStatuses": candidates,
         "insightStatuses": insights,
@@ -861,7 +894,12 @@ def model_usage_report(events: list[dict[str, Any]]) -> dict[str, Any]:
     attempts = [
         event
         for event in events
-        if event.get("event") in {"entry_analysis_attempt", "reflection_model_attempt"}
+        if event.get("event")
+        in {
+            "entry_analysis_attempt",
+            "signal_embedding_attempt",
+            "reflection_model_attempt",
+        }
     ]
     calls: list[dict[str, Any]] = []
     by_role: dict[str, list[dict[str, Any]]] = {
@@ -898,6 +936,7 @@ def model_usage_report(events: list[dict[str, Any]]) -> dict[str, Any]:
                 "model": model,
                 "usedAt": {
                     "entry_analysis": "entry_processing",
+                    "embedding": "accepted_signal_persistence",
                     "synthesis": "reflection_synthesis",
                     "critic": "conditional_candidate_review",
                 }[role],
@@ -998,7 +1037,12 @@ def _validated_model_attempt(
             "Continuation telemetry is missing a required field.",
         ) from exc
     if (
-        event not in {"entry_analysis_attempt", "reflection_model_attempt"}
+        event
+        not in {
+            "entry_analysis_attempt",
+            "signal_embedding_attempt",
+            "reflection_model_attempt",
+        }
         or role not in allowed_roles
         or model != MODEL_ROLES[role]
         or status != "success"
@@ -1407,6 +1451,7 @@ def run(
         ),
     }
     luna = next(item for item in usage["roles"] if item["role"] == "entry_analysis")
+    embedding = next(item for item in usage["roles"] if item["role"] == "embedding")
     terra = next(item for item in usage["roles"] if item["role"] == "synthesis")
     sol = next(item for item in usage["roles"] if item["role"] == "critic")
     if database["analysisModels"].get(MODEL_ROLES["entry_analysis"], 0) != 30:
@@ -1418,6 +1463,19 @@ def run(
         raise LiveRunError(
             "LUNA_CALL_COUNT_MISMATCH",
             "Luna did not produce exactly 30 successful entry analyses.",
+        )
+    signal_count = database["tableRowCounts"].get("entry_signals", 0)
+    if (
+        embedding["calls"] < 30
+        or embedding["successfulCalls"] != 30
+        or database["embeddingCount"] != signal_count
+        or database["missingEmbeddingCount"] != 0
+        or database["embeddingModels"].get(MODEL_ROLES["embedding"], 0)
+        != signal_count
+    ):
+        raise LiveRunError(
+            "EMBEDDING_COUNT_MISMATCH",
+            "Accepted canonical signals do not all have stored embeddings.",
         )
     if terra["calls"] < 1 or terra["successfulCalls"] != 1:
         raise LiveRunError(
@@ -1441,6 +1499,12 @@ def run(
                 "name": "terra_model_routing",
                 "status": "passed",
                 "calls": terra["calls"],
+            },
+            {
+                "name": "embedding_model_routing",
+                "status": "passed",
+                "calls": embedding["calls"],
+                "storedVectors": database["embeddingCount"],
             },
             {
                 "name": "sol_conditional_routing",
@@ -1473,7 +1537,7 @@ def run(
             "rolloutMode": "publish",
             "transport": "FastAPI TestClient over the real ASGI application",
             "database": "real Supabase PostgreSQL",
-            "providers": "real OpenAI Responses API",
+            "providers": "real OpenAI Responses and Embeddings APIs",
             "workerDatabaseConnection": "dedicated",
             "observerDatabaseAccess": "read-only test instrumentation",
             "testUserHash": hashlib.sha256(str(user_id).encode()).hexdigest(),
@@ -1492,6 +1556,7 @@ def run(
             "All entry writes used authenticated POST /api/v1/past-entries.",
             "The production rate limiter remained enabled and submissions were paced.",
             "Entry content was encrypted at rest and locally PII-redacted before model use.",
+            "Only accepted signal summaries derived from redacted analysis were embedded; excluded entries produced no vectors.",
             "OpenAI provider storage and SDK retries remained disabled.",
             "Application queue retries, heartbeats, ownership checks, scoring, and evidence validation remained active.",
             "Reflection synthesis was scheduled through the production scheduler with a controlled post-18:00 timestamp.",

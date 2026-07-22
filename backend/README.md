@@ -45,8 +45,10 @@ role. Text, voice, historical imports, retries, and operator backfill batches al
 
 Entry jobs decrypt and redact locally, then make one strict combined Responses API analysis call
 with provider storage disabled. Configure that call with `OPENAI_ENTRY_ANALYSIS_MODEL` (default
-`gpt-5.6-luna`). Deterministic exclusions make no provider call, while accepted analysis, legacy
-extraction, entry completion, signals, and reflection counters commit atomically.
+`gpt-5.6-luna`). Accepted signal summaries are batch-embedded with
+`OPENAI_SIGNAL_EMBEDDING_MODEL` (default `text-embedding-3-small`) and stored as 1,536-dimension
+pgvector values. Deterministic exclusions make no provider call, while accepted analysis, legacy
+extraction, entry completion, signals, embeddings, and reflection counters commit atomically.
 
 Reflection rollout is cohort-scoped and defaults off. Set `REFLECTION_ROLLOUT_MODE=shadow` with an
 explicit comma-separated `REFLECTION_ROLLOUT_USER_IDS` cohort to run full synthesis without creating
@@ -81,8 +83,8 @@ Presidio and `tldextract` initialize before the application is returned. The spa
 be installed; public-suffix parsing uses only `tldextract`'s packaged snapshot with no cache or network
 fallback. Missing local privacy dependencies fail startup.
 
-After external access is explicitly authorized, verify the configured Luna, Terra, and Sol IDs with
-the non-content Models API preflight. It never creates a Response:
+After external access is explicitly authorized, verify the configured Luna, embedding, Terra, and
+Sol IDs with the non-content Models API preflight. It never creates a Response or embedding:
 
 ```bash
 .venv/bin/python scripts/check_reflection_model_access.py

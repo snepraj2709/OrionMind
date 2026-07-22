@@ -316,6 +316,21 @@ def test_default_luna_price_uses_each_usage_bucket() -> None:
     assert cost == pytest.approx(0.001825)
 
 
+def test_default_embedding_price_uses_input_tokens_only() -> None:
+    cost = estimate_call_cost(
+        {
+            "serviceTier": "default",
+            "model": "text-embedding-3-small",
+            "inputTokens": 2_000,
+            "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": 0,
+        }
+    )
+
+    assert cost == pytest.approx(0.00004)
+
+
 def test_model_report_distinguishes_model_roles_and_conditional_sol() -> None:
     base = {
         "prompt_version": "v1",
@@ -342,18 +357,25 @@ def test_model_report_distinguishes_model_roles_and_conditional_sol() -> None:
             "model_id": "gpt-5.6-terra",
             **base,
         },
+        {
+            "event": "signal_embedding_attempt",
+            "model_role": "embedding",
+            "model_id": "text-embedding-3-small",
+            **base,
+        },
     ]
 
     report = model_usage_report(events)
     by_role = {item["role"]: item for item in report["roles"]}
 
     assert by_role["entry_analysis"]["calls"] == 1
+    assert by_role["embedding"]["calls"] == 1
     assert by_role["synthesis"]["calls"] == 1
     assert by_role["critic"]["calls"] == 0
     assert by_role["critic"]["eligibleCandidates"] == 0
     assert by_role["critic"]["outcome"] == "not_invoked"
     assert report["pricingComplete"] is True
-    assert report["estimatedTotalCostUsd"] == pytest.approx(0.0056)
+    assert report["estimatedTotalCostUsd"] == pytest.approx(0.00562)
 
 
 def test_pipeline_event_report_surfaces_safe_discard_reasons() -> None:

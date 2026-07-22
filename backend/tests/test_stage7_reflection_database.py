@@ -92,6 +92,7 @@ NEW_FUNCTIONS = (
     "schedule_reflection_jobs",
     "schedule_reflection_jobs_observed",
     "set_entry_processing_backfill_state",
+    "store_entry_signal_embeddings",
 )
 RETIRED_ENTRY_APPLY_SIGNATURE = (
     "public.apply_legacy_entry_processing_job("
@@ -340,6 +341,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0013_reflections_api_snapshot_id.sql",
         "0014_reflection_on_demand.sql",
         "0015_fix_reflection_job_expedite.sql",
+        "0016_signal_embeddings.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -368,6 +370,19 @@ def test_schema_constraints_owner_rls_and_account_cascades() -> None:
     value = database_url()
     bootstrap(value, USER_ONE, USER_TWO)
     with psycopg.connect(value) as connection:
+        embedding_rpc_privileges = connection.execute(
+            "SELECT role_name, pg_catalog.has_function_privilege("
+            "role_name, 'public.store_entry_signal_embeddings(uuid,uuid,jsonb,text)', "
+            "'EXECUTE') FROM pg_catalog.unnest("
+            "ARRAY['anon', 'authenticated', 'orion_app', 'orion_worker']) AS role_name "
+            "ORDER BY role_name"
+        ).fetchall()
+        assert embedding_rpc_privileges == [
+            ("anon", False),
+            ("authenticated", False),
+            ("orion_app", False),
+            ("orion_worker", True),
+        ]
         rls_count = connection.execute(
             "SELECT count(*) FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "

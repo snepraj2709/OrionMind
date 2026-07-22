@@ -39,6 +39,7 @@ _EVENTS = frozenset(
         "reflection_scheduler_complete",
         "reflection_scheduler_failed",
         "reflection_synthesis_requested",
+        "signal_embedding_attempt",
         "request_complete",
         "unhandled_request_error",
     }
@@ -62,7 +63,7 @@ _ENUM_FIELDS: dict[str, frozenset[str]] = {
         }
     ),
     "execution_mode": frozenset({"user", "shadow", "publish"}),
-    "model_role": frozenset({"entry_analysis", "synthesis", "critic"}),
+    "model_role": frozenset({"entry_analysis", "embedding", "synthesis", "critic"}),
     "retry_class": frozenset({"none", "retryable", "terminal"}),
     "reflection_state": frozenset(
         {
@@ -107,7 +108,7 @@ _ENUM_FIELDS: dict[str, frozenset[str]] = {
         {"NONE", "QUEUE_DEPTH", "OLDEST_PENDING_AGE"}
     ),
     "validation_stage": frozenset(
-        {"source_offsets", "quality", "legacy_extraction", "signals"}
+        {"source_offsets", "quality", "legacy_extraction", "signals", "embeddings"}
     ),
 }
 _INTEGER_FIELDS = frozenset(

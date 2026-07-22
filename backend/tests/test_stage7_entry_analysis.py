@@ -13,9 +13,11 @@ import psycopg
 import pytest
 from pydantic import SecretStr
 from psycopg import sql
+from sqlalchemy.exc import DBAPIError
 
 from app.main import create_app
 from app.modules.jobs.repository import JobRepository
+from app.modules.processing.embeddings import EMBEDDING_DIMENSIONS
 from app.modules.processing.redaction import DetectedEntity, PiiRedactor
 from app.modules.processing.repository import StaleAnalysisClaimError
 from app.modules.processing.schemas import ModelEntryAnalysis, ModelThemeClassification
@@ -173,6 +175,18 @@ class Provider:
         )
 
 
+class EmbeddingProvider:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def embed(self, *, texts, safety_identifier):
+        self.calls.append({"texts": texts, "safety_identifier": safety_identifier})
+        return tuple(
+            tuple(1.0 if index == 0 else 0.0 for index in range(EMBEDDING_DIMENSIONS))
+            for _ in texts
+        )
+
+
 def test_model_signal_offsets_are_bound_to_exact_verbatim_quote() -> None:
     content = "The exact quote belongs here."
     result = Provider().analyze(
@@ -282,7 +296,13 @@ def test_model_theme_shape_is_normalized_without_changing_semantic_choices() -> 
     ]
 
 
-def application(value: str, provider: Provider, *, person: str | None = None):
+def application(
+    value: str,
+    provider: Provider,
+    *,
+    person: str | None = None,
+    embeddings: EmbeddingProvider | None = None,
+):
     service = cipher()
     sqlalchemy_url = value.replace("postgresql://", "postgresql+psycopg://", 1)
     settings = Settings.model_validate(
@@ -300,6 +320,7 @@ def application(value: str, provider: Provider, *, person: str | None = None):
         settings=settings,
         database_sessions=build_database_sessions(settings),
         extraction_provider=provider,
+        embedding_provider=embeddings or EmbeddingProvider(),
         content_cipher=service,
         pii_redactor=PiiRedactor(analyzer=RuleAnalyzer(person), cipher=service),
     )
@@ -335,17 +356,21 @@ def test_redacted_provider_exact_offset_legacy_parity_and_atomic_counters(
     with psycopg.connect(value) as connection, connection.transaction():
         entry_id, job_id = insert_and_enqueue(connection, content)
     provider = Provider()
-    app = application(value, provider, person="Rahul")
+    embeddings = EmbeddingProvider()
+    app = application(value, provider, person="Rahul", embeddings=embeddings)
     caplog.set_level(logging.INFO)
     assert app.state.processing_worker.run_one(
         worker_id="analysis-worker", uow=app.state.database_sessions.unit_of_work_factory
     ) is True
 
     assert len(provider.calls) == 1
+    assert len(embeddings.calls) == 1
     request = provider.calls[0]
     redacted = str(request["redacted_text"])
     assert redacted == "<PERSON_1> helped me explain the plan, and I felt capable afterward."
     assert "Rahul" not in redacted
+    assert "Rahul" not in str(embeddings.calls[0]["texts"])
+    assert "<PERSON_1>" not in str(embeddings.calls[0]["texts"])
     assert request["safety_identifier"] != str(USER)
     assert request["theme_keys"] == (
         "career",
@@ -375,10 +400,21 @@ def test_redacted_provider_exact_offset_legacy_parity_and_atomic_counters(
             purpose="entry_redacted_text",
         ) == redacted
         signal = connection.execute(
-            "SELECT id, source_start, source_end, payload_envelope "
+            "SELECT id, source_start, source_end, payload_envelope, "
+            "extensions.vector_dims(embedding), embedding_model, embedded_at IS NOT NULL "
             "FROM public.entry_signals WHERE entry_id = %s",
             (entry_id,),
         ).fetchone()
+        assert signal[4:] == (
+            EMBEDDING_DIMENSIONS,
+            "text-embedding-3-small",
+            True,
+        )
+        assert connection.execute(
+            "SELECT embedding OPERATOR(extensions.<=>) embedding "
+            "FROM public.entry_signals WHERE id = %s",
+            (signal[0],),
+        ).fetchone()[0] == pytest.approx(0.0)
         payload = service.decrypt_json(
             signal[3],
             user_id=USER,
@@ -432,13 +468,15 @@ def test_garbage_exact_and_near_duplicates_write_audits_without_contamination() 
         with connection.transaction():
             insert_and_enqueue(connection, "hello testing mic")
     provider = Provider()
-    app = application(value, provider)
+    embeddings = EmbeddingProvider()
+    app = application(value, provider, embeddings=embeddings)
     for _ in range(12):
         assert app.state.processing_worker.run_one(
             worker_id="quality-worker",
             uow=app.state.database_sessions.unit_of_work_factory,
         ) is True
     assert len(provider.calls) == 1
+    assert len(embeddings.calls) == 1
     with psycopg.connect(value) as connection:
         assert connection.execute(
             "SELECT eligibility, count(*) FROM public.entry_analyses "
@@ -458,6 +496,67 @@ def test_garbage_exact_and_near_duplicates_write_audits_without_contamination() 
             (USER,),
         ).fetchone() == (1, 1)
         assert connection.execute("SELECT count(*) FROM public.entry_signals").fetchone() == (1,)
+    app.state.database_sessions.dispose()
+
+
+def test_embedding_persistence_failure_rolls_back_completed_analysis() -> None:
+    value = database_url()
+    bootstrap(value)
+    app = application(value, Provider())
+    with psycopg.connect(value) as connection, connection.transaction():
+        entry_id, _job_id = insert_and_enqueue(
+            connection,
+            "I felt capable after explaining a difficult plan clearly.",
+        )
+
+    repository = JobRepository()
+    uow = app.state.database_sessions.unit_of_work_factory
+    with uow.for_worker() as work:
+        claim = repository.claim(work.session, worker_id="embedding-rollback-worker")
+    assert claim is not None and claim.entry_id == entry_id
+    with uow.for_worker() as work:
+        payload = repository.entry_payload(
+            work.session,
+            claim=claim,
+            worker_id="embedding-rollback-worker",
+        )
+    assert payload is not None
+    prepared = app.state.processing_service.analyze(
+        user_id=USER,
+        entry_id=entry_id,
+        entry_date=payload.entry_date,
+        theme_config_id=payload.theme_config_id,
+        content=cipher().decrypt(payload.envelope, user_id=USER, record_id=entry_id),
+        uow=uow,
+    )
+    prepared.signals[0]["embedding"] = [0.0]
+
+    with pytest.raises(DBAPIError):
+        app.state.processing_service.apply_job_analysis(
+            claim=claim,
+            worker_id="embedding-rollback-worker",
+            theme_config_id=payload.theme_config_id,
+            prepared=prepared,
+            apply_legacy=True,
+            uow=uow,
+        )
+
+    with psycopg.connect(value) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM public.entry_analyses WHERE entry_id = %s",
+            (entry_id,),
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM public.entry_signals WHERE entry_id = %s",
+            (entry_id,),
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT entry.processing_status, job.status "
+            "FROM public.entries AS entry "
+            "JOIN public.processing_jobs AS job ON job.entry_id = entry.id "
+            "WHERE entry.id = %s",
+            (entry_id,),
+        ).fetchone() == ("processing", "running")
     app.state.database_sessions.dispose()
 
 

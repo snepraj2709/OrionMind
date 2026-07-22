@@ -33,9 +33,8 @@ flowchart TD
 
     Luna --> Decision{"Final local eligibility"}:::implemented
     Decision -->|"uncertain or excluded"| NoSignals["Store entry_analysis<br/>Store no reflection signals"]:::implemented
-    Decision -->|"accepted"| Signals["Store entry_analysis and atomic entry_signals<br/>with exact original offsets"]:::implemented
-
-    Signals -.-> Embeddings["Signal embeddings and pgvector<br/>not implemented"]:::skipped
+    Decision -->|"accepted"| Embeddings["Batch accepted redacted signal summaries<br/>OpenAI embedding, fixed 1,536 dimensions"]:::implemented
+    Embeddings --> Signals["Store entry_analysis, entry_signals and pgvector embeddings<br/>atomically with exact original offsets"]:::implemented
     Signals --> Counters["Update reflection_user_state counters"]:::implemented
     Luna --> Legacy["Store ideas, memories, themes and<br/>entry-level reflections"]:::implemented
     Legacy --> ReviewRows["Pending approval rows in PostgreSQL"]:::implemented
@@ -75,25 +74,26 @@ GitHub-compatible Markdown viewers, and requires no account or credentials.
 
 ## Step-by-step execution contract
 
-| Step                       | Current boundary                                | Expected observable result                                                                                                   | Persistent effect                                                                   | Model |
-| -------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----- |
-| 1. Authenticate            | `ProtectedAPIRoute` and Supabase bearer token   | Owner UUID is derived from the verified token; no request owner field is accepted                                            | None                                                                                | None  |
-| 2. Submit                  | Entry controllers and `EntryService`            | Text/voice returns 201; historical entry returns 202                                                                         | Encrypted `entries` row and one idempotent `entry_processing` job                   | None  |
-| 3. Claim                   | `JobService.run_one` and `claim_processing_job` | Oldest eligible job becomes `running`; attempts, worker ID, claim token and heartbeat are set                                | Entry becomes `processing` under the same claim                                     | None  |
-| 4. Decrypt                 | `JobService._dispatch` and `ContentCipher`      | Plaintext exists only inside the worker process                                                                              | None                                                                                | None  |
-| 5. Deterministic quality   | `processing/quality.py`                         | Word/token ratios, keyed n-gram sketch, duplicate checks and hard exclusion codes are computed                               | Included in `entry_analyses`                                                        | None  |
-| 6. Redact PII              | `processing/redaction.py`                       | Stable per-user placeholders, encrypted vault, redacted text and an exact offset map are produced                            | `user_pii_vaults` and encrypted analysis fields                                     | None  |
-| 7. Analyze                 | `OpenAIEntryAnalysisProvider`                   | Strict `ModelEntryAnalysis` response; provider storage and SDK retries are disabled                                          | No write until local validation passes                                              | Luna  |
-| 8. Bind and validate       | `ProcessingService.analyze`                     | Quotes are rebound to exact redacted spans, final eligibility is recalculated, and offsets map back to exact original slices | Prepared analysis, signals and legacy extraction                                    | None  |
-| 9. Apply atomically        | `apply_combined_entry_analysis`                 | Claim is current and all rows commit together                                                                                | Completed entry, analysis, accepted signals, legacy rows, counters, completed job   | None  |
-| 10. Schedule               | `JobService.schedule_reflections`               | At or after local 18:00, one daily check enqueues at most one synthesis job for the latest accepted source version           | `last_schedule_local_date` and possibly `reflection_synthesis` job                  | None  |
-| 10a. Request on read       | `ReflectionsService.read`                       | An eligible newer basis creates or expedites one idempotent synthesis job with `run_after=now()`                             | At most one `reflection_synthesis` job per owner and source version                 | None  |
-| 11. Build candidates       | `ReflectionEngineService.construct_candidates`  | Hidden-driver, loop and tension candidates receive deterministic scores, gates and evidence links                            | Applied with the snapshot, or counted only in shadow mode                           | None  |
-| 12. Synthesize             | `OpenAIReflectionProvider.synthesize`           | Strict proposals may use only supplied candidate/signal IDs and must cite every supplied reference                           | No write until validation                                                           | Terra |
-| 13. Critique conditionally | `critic_required`                               | Borderline or contradictory candidates receive publish/discard only                                                          | No direct write                                                                     | Sol   |
-| 14. Validate               | `EvidenceValidator`                             | Ownership, dates, offsets, exact quotes, roles, counterevidence, dominance and safe language pass                            | Unsupported proposals are discarded, never repaired                                 | None  |
-| 15. Snapshot               | `apply_reflection_snapshot`                     | A versioned immutable snapshot contains available or explicit insufficient sections                                          | Candidate lifecycle, insights, evidence, state counters and completed synthesis job | None  |
-| 16. Read                   | `ReflectionsService.read`                       | Strict aggregate response for `7d`, `30d` or `all`; latest successful snapshot may be stale while refresh is pending/failed  | Idempotent queue request plus persisted aggregate read                              | None  |
+| Step                       | Current boundary                                | Expected observable result                                                                                                   | Persistent effect                                                                             | Model     |
+| -------------------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | --------- |
+| 1. Authenticate            | `ProtectedAPIRoute` and Supabase bearer token   | Owner UUID is derived from the verified token; no request owner field is accepted                                            | None                                                                                          | None      |
+| 2. Submit                  | Entry controllers and `EntryService`            | Text/voice returns 201; historical entry returns 202                                                                         | Encrypted `entries` row and one idempotent `entry_processing` job                             | None      |
+| 3. Claim                   | `JobService.run_one` and `claim_processing_job` | Oldest eligible job becomes `running`; attempts, worker ID, claim token and heartbeat are set                                | Entry becomes `processing` under the same claim                                               | None      |
+| 4. Decrypt                 | `JobService._dispatch` and `ContentCipher`      | Plaintext exists only inside the worker process                                                                              | None                                                                                          | None      |
+| 5. Deterministic quality   | `processing/quality.py`                         | Word/token ratios, keyed n-gram sketch, duplicate checks and hard exclusion codes are computed                               | Included in `entry_analyses`                                                                  | None      |
+| 6. Redact PII              | `processing/redaction.py`                       | Stable per-user placeholders, encrypted vault, redacted text and an exact offset map are produced                            | `user_pii_vaults` and encrypted analysis fields                                               | None      |
+| 7. Analyze                 | `OpenAIEntryAnalysisProvider`                   | Strict `ModelEntryAnalysis` response; provider storage and SDK retries are disabled                                          | No write until local validation passes                                                        | Luna      |
+| 8. Bind and validate       | `ProcessingService.analyze`                     | Quotes are rebound to exact redacted spans, final eligibility is recalculated, and offsets map back to exact original slices | Prepared analysis, signals and legacy extraction                                              | None      |
+| 8a. Embed accepted signals | `OpenAISignalEmbeddingProvider`                 | One fixed 1,536-dimension vector is returned for each accepted redacted signal summary; excluded content makes no call       | Prepared vectors only; no write before the claim-bound transaction                            | Embedding |
+| 9. Apply atomically        | processing repository and claim-bound RPCs      | Claim is current and analysis plus vector persistence commit or roll back together                                           | Completed entry, analysis, accepted signals, embeddings, legacy rows, counters, completed job | None      |
+| 10. Schedule               | `JobService.schedule_reflections`               | At or after local 18:00, one daily check enqueues at most one synthesis job for the latest accepted source version           | `last_schedule_local_date` and possibly `reflection_synthesis` job                            | None      |
+| 10a. Request on read       | `ReflectionsService.read`                       | An eligible newer basis creates or expedites one idempotent synthesis job with `run_after=now()`                             | At most one `reflection_synthesis` job per owner and source version                           | None      |
+| 11. Build candidates       | `ReflectionEngineService.construct_candidates`  | Hidden-driver, loop and tension candidates receive deterministic scores, gates and evidence links                            | Applied with the snapshot, or counted only in shadow mode                                     | None      |
+| 12. Synthesize             | `OpenAIReflectionProvider.synthesize`           | Strict proposals may use only supplied candidate/signal IDs and must cite every supplied reference                           | No write until validation                                                                     | Terra     |
+| 13. Critique conditionally | `critic_required`                               | Borderline or contradictory candidates receive publish/discard only                                                          | No direct write                                                                               | Sol       |
+| 14. Validate               | `EvidenceValidator`                             | Ownership, dates, offsets, exact quotes, roles, counterevidence, dominance and safe language pass                            | Unsupported proposals are discarded, never repaired                                           | None      |
+| 15. Snapshot               | `apply_reflection_snapshot`                     | A versioned immutable snapshot contains available or explicit insufficient sections                                          | Candidate lifecycle, insights, evidence, state counters and completed synthesis job           | None      |
+| 16. Read                   | `ReflectionsService.read`                       | Strict aggregate response for `7d`, `30d` or `all`; latest successful snapshot may be stale while refresh is pending/failed  | Idempotent queue request plus persisted aggregate read                                        | None      |
 
 ## Scheduler rules currently implemented
 
@@ -109,8 +109,10 @@ least one accepted signal is new, and either:
 - at least three valid entries are new; or
 - at least two valid entries occur on at least two pending local dates.
 
-The P0 implementation does not use the 500-word trigger, aged-entry trigger,
-weekly rebuild, pgvector, or a separate synthesis service.
+The current implementation does not yet use the 500-word trigger, aged-entry
+trigger, weekly rebuild, or a separate synthesis service. Newly processed
+accepted signals are stored as fixed 1,536-dimension pgvector embeddings;
+upgrade rows remain nullable and are not automatically re-embedded.
 
 ## Aggregate GET states
 

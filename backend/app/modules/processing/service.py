@@ -24,6 +24,7 @@ from app.modules.processing.source_segments import SourceSegment, create_source_
 from app.modules.processing.types import (
     EntryAnalysisProvider,
     PreparedEntryAnalysis,
+    SignalEmbeddingProvider,
     ThemeDefinition,
 )
 from app.shared.database.unit_of_work import UnitOfWorkFactory
@@ -66,6 +67,8 @@ class ProcessingService:
         redactor: PiiRedactor,
         model_id: str,
         reflection_threshold: float,
+        embedding_provider: SignalEmbeddingProvider | None = None,
+        embedding_model_id: str = "disabled",
         telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         self._repository = repository
@@ -74,6 +77,8 @@ class ProcessingService:
         self._redactor = redactor
         self._model_id = model_id
         self._reflection_threshold = reflection_threshold
+        self._embedding_provider = embedding_provider
+        self._embedding_model_id = embedding_model_id
         self._telemetry = telemetry or ReflectionTelemetry()
 
     def analyze(
@@ -129,6 +134,7 @@ class ProcessingService:
         if deterministic.features.hard_exclusion_codes:
             model_result = _deterministic_exclusion(deterministic)
             model_id = "deterministic"
+            safety_identifier = ""
         else:
             _, safety_identifier = self._cipher.reflection_fingerprint(
                 str(user_id), user_id=user_id, purpose="safety_identifier"
@@ -167,21 +173,27 @@ class ProcessingService:
         except ValueError as exc:
             raise AnalysisValidationError("legacy_extraction") from exc
         try:
-            signals = (
-                _materialize_signals(
-                    model_result,
-                    user_id=user_id,
-                    original_content=content,
-                    redacted_text=provider_text,
-                    offset_map=protected.offset_map,
-                    duplicate_cluster_key=deterministic.duplicate_cluster_key,
-                    cipher=self._cipher,
+            embeddings: tuple[tuple[float, ...], ...] = ()
+            if final_quality.eligibility == "accepted" and model_result.signals:
+                if self._embedding_provider is None:
+                    raise RuntimeError("signal embedding provider is not configured")
+                embeddings = self._embedding_provider.embed(
+                    texts=tuple(_embedding_text(item) for item in model_result.signals),
+                    safety_identifier=safety_identifier,
                 )
-                if final_quality.eligibility == "accepted"
-                else ()
-            )
+            signals = _materialize_signals(
+                model_result,
+                user_id=user_id,
+                original_content=content,
+                redacted_text=provider_text,
+                offset_map=protected.offset_map,
+                duplicate_cluster_key=deterministic.duplicate_cluster_key,
+                cipher=self._cipher,
+                embeddings=embeddings,
+                embedding_model_id=self._embedding_model_id,
+            ) if final_quality.eligibility == "accepted" else ()
         except ValueError as exc:
-            raise AnalysisValidationError("signals") from exc
+            raise AnalysisValidationError("embeddings") from exc
         analysis: dict[str, object] = {
             "id": str(analysis_id),
             "entry_kind": model_result.quality.entry_kind,
@@ -456,9 +468,13 @@ def _materialize_signals(
     offset_map: OffsetMap,
     duplicate_cluster_key: str | None,
     cipher: ContentCipher,
+    embeddings: tuple[tuple[float, ...], ...] = (),
+    embedding_model_id: str = "disabled",
 ) -> tuple[dict[str, object], ...]:
+    if len(embeddings) != len(result.signals):
+        raise ValueError("every accepted signal requires one embedding")
     rows: list[dict[str, object]] = []
-    for signal in result.signals:
+    for signal, embedding in zip(result.signals, embeddings, strict=True):
         translated = offset_map.translate_redacted_span(
             redacted_text=redacted_text,
             original_text=original_content,
@@ -495,9 +511,23 @@ def _materialize_signals(
                 "source_end": translated.original_end,
                 "occurred_on": signal.occurred_on.isoformat(),
                 "duplicate_cluster_key": duplicate_cluster_key,
+                "embedding": list(embedding),
+                "embedding_model": embedding_model_id,
             }
         )
     return tuple(rows)
+
+
+def _embedding_text(signal) -> str:
+    fields = (
+        f"signal_type: {signal.signal_type}",
+        f"normalized_label: {' '.join(signal.normalized_label.split()).casefold()}",
+        f"interpretation: {' '.join(signal.interpretation.split())}",
+        f"themes: {', '.join(signal.themes)}",
+        f"needs: {', '.join(signal.need_tags)}",
+        f"loop_role: {signal.loop_role or 'none'}",
+    )
+    return "\n".join(fields)
 
 
 def _deterministic_exclusion(

@@ -25,6 +25,10 @@ from app.modules.processing.provider import (
     OpenAIEntryAnalysisProvider,
     UnavailableEntryAnalysisProvider,
 )
+from app.modules.processing.embeddings import (
+    OpenAISignalEmbeddingProvider,
+    UnavailableSignalEmbeddingProvider,
+)
 from app.modules.processing.redaction import (
     PiiRedactor,
     initialize_offline_privacy_runtime,
@@ -111,6 +115,22 @@ def _build_extraction_provider(settings: Settings, telemetry: ReflectionTelemetr
     )
 
 
+def _build_signal_embedding_provider(
+    settings: Settings, telemetry: ReflectionTelemetry
+):
+    api_key = settings.OPENAI_API_KEY.get_secret_value().strip()
+    if not api_key:
+        return UnavailableSignalEmbeddingProvider()
+    return OpenAISignalEmbeddingProvider(
+        build_openai_client(api_key),
+        model=settings.OPENAI_SIGNAL_EMBEDDING_MODEL,
+        connect_timeout=settings.OPENAI_CONNECT_TIMEOUT_SECONDS,
+        response_timeout=settings.OPENAI_RESPONSE_TIMEOUT_SECONDS,
+        total_timeout=settings.PROCESSING_TOTAL_TIMEOUT_SECONDS,
+        telemetry=telemetry,
+    )
+
+
 def _build_content_cipher(settings: Settings):
     try:
         return AesGcmContentCipher.from_settings(settings)
@@ -142,6 +162,7 @@ def create_app(
     token_verifier=None,
     account_auth=None,
     extraction_provider=None,
+    embedding_provider=None,
     reflection_provider=None,
     content_cipher=None,
     pii_redactor=None,
@@ -156,6 +177,9 @@ def create_app(
     verifier = token_verifier or _build_token_verifier(resolved_settings)
     resolved_account_auth = account_auth or _build_account_auth(resolved_settings)
     resolved_extraction_provider = extraction_provider or _build_extraction_provider(
+        resolved_settings, reflection_telemetry
+    )
+    resolved_embedding_provider = embedding_provider or _build_signal_embedding_provider(
         resolved_settings, reflection_telemetry
     )
     resolved_reflection_provider = reflection_provider or _build_reflection_provider(
@@ -248,6 +272,8 @@ def create_app(
         redactor=resolved_pii_redactor,
         model_id=resolved_settings.OPENAI_ENTRY_ANALYSIS_MODEL,
         reflection_threshold=resolved_settings.REFLECTION_REVIEW_THRESHOLD,
+        embedding_provider=resolved_embedding_provider,
+        embedding_model_id=resolved_settings.OPENAI_SIGNAL_EMBEDDING_MODEL,
         telemetry=reflection_telemetry,
     )
     app.state.reflection_engine_service = ReflectionEngineService(
