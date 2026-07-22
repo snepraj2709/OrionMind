@@ -20,6 +20,7 @@ from scripts.run_sample_reflection_e2e import (
     model_usage_report,
     parse_args,
     schedule_synthesis,
+    verify_worker_database,
 )
 
 
@@ -58,7 +59,7 @@ def test_dataset_validation_rejects_unknown_fields(tmp_path: Path) -> None:
     assert exc_info.value.code == "INVALID_DATASET"
 
 
-def test_worker_database_falls_back_to_application_connection(
+def test_worker_database_is_required_for_live_runner(
     tmp_path: Path,
 ) -> None:
     environment = tmp_path / ".env"
@@ -68,11 +69,69 @@ def test_worker_database_falls_back_to_application_connection(
         encoding="utf-8",
     )
 
-    settings = build_settings(environment, uuid4())
+    with pytest.raises(LiveRunError) as exc_info:
+        build_settings(environment, uuid4())
 
-    assert settings.WORKER_DATABASE_URL.get_secret_value() == (
-        settings.APP_DATABASE_URL.get_secret_value()
+    assert exc_info.value.code == "WORKER_DATABASE_CONFIG_MISSING"
+
+
+def test_worker_database_preflight_requires_worker_role(monkeypatch) -> None:
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, _statement):
+            raise RuntimeError("role denied")
+
+    class Engine:
+        def begin(self):
+            return Connection()
+
+    sessions = SimpleNamespace(worker_engine=Engine(), dispose=lambda: None)
+    monkeypatch.setattr(
+        "scripts.run_sample_reflection_e2e.build_database_sessions",
+        lambda _settings: sessions,
     )
+
+    with pytest.raises(LiveRunError) as exc_info:
+        verify_worker_database(SimpleNamespace())
+
+    assert exc_info.value.code == "WORKER_DATABASE_ROLE_UNAVAILABLE"
+
+
+def test_worker_database_preflight_accepts_worker_role(monkeypatch) -> None:
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, _statement):
+            return None
+
+        def scalar(self, _statement):
+            return "orion_worker"
+
+    class Engine:
+        def begin(self):
+            return Connection()
+
+    disposed = []
+    sessions = SimpleNamespace(
+        worker_engine=Engine(), dispose=lambda: disposed.append(True)
+    )
+    monkeypatch.setattr(
+        "scripts.run_sample_reflection_e2e.build_database_sessions",
+        lambda _settings: sessions,
+    )
+
+    verify_worker_database(SimpleNamespace())
+
+    assert disposed == [True]
 
 
 def test_token_usage_reads_cache_and_reasoning_details() -> None:

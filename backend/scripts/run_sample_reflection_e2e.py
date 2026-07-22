@@ -34,6 +34,7 @@ from app.modules.reflection_engine.preflight import (
 )
 from app.modules.reflections.schemas import ReflectionResponse
 from app.shared.config.settings import Settings
+from app.shared.database.session import build_database_sessions
 from app.shared.integrations.openai import build_openai_client
 
 
@@ -227,15 +228,9 @@ def build_settings(backend_env: Path, user_id: UUID) -> Settings:
         **overrides,
     )
     if not settings.WORKER_DATABASE_URL.get_secret_value().strip():
-        if not settings.APP_DATABASE_URL.get_secret_value().strip():
-            raise LiveRunError(
-                "DATABASE_CONFIG_MISSING",
-                "Neither a worker nor application database URL is configured.",
-            )
-        settings = Settings(
-            _env_file=backend_env,
-            WORKER_DATABASE_URL=settings.APP_DATABASE_URL,
-            **overrides,
+        raise LiveRunError(
+            "WORKER_DATABASE_CONFIG_MISSING",
+            "The dedicated worker database URL is unavailable.",
         )
     configured = {
         "entry_analysis": settings.OPENAI_ENTRY_ANALYSIS_MODEL,
@@ -274,6 +269,32 @@ def sign_in(frontend: dict[str, str], backend: dict[str, str]) -> tuple[str, UUI
         raise LiveRunError(
             "SUPABASE_SIGN_IN_FAILED", "The Supabase test account could not sign in."
         ) from exc
+
+
+def verify_worker_database(settings: Settings) -> None:
+    sessions = build_database_sessions(settings)
+    engine = sessions.worker_engine
+    if engine is None:
+        sessions.dispose()
+        raise LiveRunError(
+            "WORKER_DATABASE_CONFIG_MISSING",
+            "The dedicated worker database URL is unavailable.",
+        )
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("SET LOCAL ROLE orion_worker"))
+            active_role = connection.scalar(
+                text("SELECT pg_catalog.current_setting('role', true)")
+            )
+            if active_role != "orion_worker":
+                raise RuntimeError("worker role was not activated")
+    except Exception as exc:
+        raise LiveRunError(
+            "WORKER_DATABASE_ROLE_UNAVAILABLE",
+            "The worker database login cannot assume the orion_worker role.",
+        ) from exc
+    finally:
+        sessions.dispose()
 
 
 def run_model_preflight(settings: Settings) -> None:
@@ -747,6 +768,11 @@ def run(
     stage_seconds["supabaseAuthentication"] = time.monotonic() - stage_started
     checks.append({"name": "supabase_authentication", "status": "passed"})
     settings = build_settings(args.backend_env, user_id)
+
+    stage_started = time.monotonic()
+    verify_worker_database(settings)
+    stage_seconds["workerDatabasePreflight"] = time.monotonic() - stage_started
+    checks.append({"name": "worker_database_role", "status": "passed"})
 
     stage_started = time.monotonic()
     run_model_preflight(settings)
