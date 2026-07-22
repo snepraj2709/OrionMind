@@ -159,6 +159,18 @@ https://www.orionmind.in/login
 Keep `http://localhost:3000/signup` and `http://localhost:3000/login` as
 additional redirect URLs only when local email-flow testing is required.
 
+The apex production URL redirects to the canonical `https://www.orionmind.in`
+origin. Configure the Railway API with all exact production browser origins
+(without wrapping quotes):
+
+```text
+CORS_ALLOW_ORIGINS=https://orion-mind.vercel.app,https://orionmind.in,https://www.orionmind.in
+```
+
+Allowing the apex domain does not allow the distinct `www` origin. See
+[`backend/docs/DEPLOYMENT.md`](backend/docs/DEPLOYMENT.md) for the production
+preflight verification command.
+
 Configure the Confirm signup and Reset password templates to route Supabase
 `token_hash` values through Orion. This removes browser-local PKCE coupling and
 lets Orion validate and scrub each one-time callback before showing the login or

@@ -47,6 +47,28 @@ Use HTTPS Supabase and CORS origins. Keep API docs disabled. Retain the fixed re
 request limits, one-worker setting, and separate application/worker URLs enforced by production
 settings validation.
 
+The production frontend canonicalizes the apex domain to `https://www.orionmind.in`. Railway must
+therefore allow the post-redirect browser origin as well as the Vercel hostname and apex domain:
+
+```text
+CORS_ALLOW_ORIGINS=https://orion-mind.vercel.app,https://orionmind.in,https://www.orionmind.in
+```
+
+Enter the value without wrapping quotes in Railway. CORS origins are exact: allowing
+`https://orionmind.in` does not allow `https://www.orionmind.in`. Before handoff, verify the
+canonical origin against the deployed API:
+
+```bash
+curl --fail-with-body --request OPTIONS \
+  'https://orionmind-production.up.railway.app/api/v1/entries?page=1&page_size=10' \
+  --header 'Origin: https://www.orionmind.in' \
+  --header 'Access-Control-Request-Method: GET' \
+  --header 'Access-Control-Request-Headers: authorization'
+```
+
+The response must be HTTP 200 and include
+`Access-Control-Allow-Origin: https://www.orionmind.in`.
+
 Keep `REFLECTION_ENGINE_ENABLED=false`, `REFLECTION_SCHEDULER_ENABLED=false`,
 `REFLECTION_API_ENABLED=false`, `REFLECTION_ROLLOUT_MODE=off`, and
 `REFLECTION_ROLLOUT_USER_IDS` empty in production until all Reflection release blockers are closed.
