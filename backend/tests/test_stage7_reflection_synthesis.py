@@ -247,6 +247,9 @@ class Repository:
     def load_synthesis_basis(self, _session, **_kwargs) -> dict[str, object]:
         return self.raw
 
+    def load_semantic_neighbors(self, _session, **_kwargs):
+        return ()
+
     def apply_snapshot(self, _session, **kwargs):
         self.applied = kwargs
         return UUID(str(kwargs["snapshot"]["id"]))

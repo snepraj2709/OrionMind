@@ -115,7 +115,14 @@ create duplicate jobs under replay.
 
 The independent weekly trigger remains deferred. Newly processed accepted
 signals are stored as fixed 1,536-dimension pgvector embeddings; upgrade rows
-remain nullable and are not automatically re-embedded.
+remain nullable until the explicitly invoked, dry-run-first backfill claims and
+stores them in bounded null-only batches.
+
+Synthesis retrieves up to eight same-owner, same-model semantic neighbors per
+accepted basis signal at cosine similarity `>= 0.90`. Structural compatibility
+and direct-edge-only clustering prevent unrelated or transitive association.
+Every available API insight also reports the selected snapshot's distinct
+evidence-entry count before the 12-row display evidence cap.
 
 ## Aggregate GET states
 

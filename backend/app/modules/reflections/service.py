@@ -535,6 +535,9 @@ class ReflectionsService:
             "id": insight_id,
             "confidence": confidence,
             "score": score,
+            "evidence_entry_count": _positive_int(
+                row.get("evidence_entry_count"), "evidence entry count"
+            ),
             "evidence": public_evidence,
             "feedback": feedback.get(insight_id),
         }

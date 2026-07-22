@@ -1192,6 +1192,7 @@
           "id",
           "confidence",
           "score",
+          "evidenceEntryCount",
           "statement",
           "underlyingNeed",
           "drivers",
@@ -1214,6 +1215,10 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1
+          },
+          "evidenceEntryCount": {
+            "type": "integer",
+            "minimum": 1
           },
           "statement": {
             "type": "string",
@@ -1283,6 +1288,7 @@
           "id",
           "confidence",
           "score",
+          "evidenceEntryCount",
           "title",
           "description",
           "steps",
@@ -1307,6 +1313,10 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1
+          },
+          "evidenceEntryCount": {
+            "type": "integer",
+            "minimum": 1
           },
           "title": {
             "type": "string",
@@ -1362,6 +1372,7 @@
           "id",
           "confidence",
           "score",
+          "evidenceEntryCount",
           "leftTitle",
           "leftBody",
           "rightTitle",
@@ -1383,6 +1394,10 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1
+          },
+          "evidenceEntryCount": {
+            "type": "integer",
+            "minimum": 1
           },
           "leftTitle": {
             "type": "string",

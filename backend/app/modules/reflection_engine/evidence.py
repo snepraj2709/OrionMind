@@ -134,6 +134,7 @@ class EvidenceValidator:
         basis_end,
         expected_counter_signal_ids: Collection[UUID] = (),
         transition_support: Mapping[str, tuple[int, int]] | None = None,
+        semantic_clusters: Mapping[UUID, str] | None = None,
     ) -> tuple[EvidenceRejectionCode, ...]:
         reasons: list[EvidenceRejectionCode] = []
         support = self._resolve(
@@ -158,18 +159,13 @@ class EvidenceValidator:
         expected_counters = set(expected_counter_signal_ids)
         if expected_counters != set(candidate.counter_signal_ids):
             reasons.append("COUNTEREVIDENCE_OMITTED")
-        identities = [
-            (
-                signal.cluster_key,
-                signal.signal_type,
-                signal.normalized_label_fingerprint,
-                signal.loop_role,
-            )
-            for signal in support
-        ]
+        clusters = semantic_clusters or {}
+        identities = [_evidence_identity(signal, clusters) for signal in support]
         if len(identities) != len(set(identities)):
             reasons.append("DUPLICATE_EVIDENCE")
-        if set(candidate.support_clusters) != {signal.cluster_key for signal in support}:
+        if set(candidate.support_clusters) != {
+            clusters.get(signal.id, signal.cluster_key) for signal in support
+        }:
             reasons.append("DUPLICATE_EVIDENCE")
         if candidate.publication_gate_passed:
             dates = {signal.entry_date for signal in support}
@@ -374,3 +370,19 @@ class EvidenceValidator:
         if not framed:
             reasons.append("HYPOTHESIS_FRAMING_REQUIRED")
         return tuple(reasons)
+
+
+def _evidence_identity(
+    signal: CandidateSignal, semantic_clusters: Mapping[UUID, str]
+) -> tuple[str, str, str, str | None]:
+    semantic_cluster = semantic_clusters.get(signal.id)
+    return (
+        semantic_cluster or signal.cluster_key,
+        signal.signal_type,
+        (
+            "semantic"
+            if semantic_cluster is not None
+            else signal.normalized_label_fingerprint
+        ),
+        signal.loop_role,
+    )

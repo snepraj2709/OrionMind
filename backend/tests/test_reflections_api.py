@@ -262,6 +262,7 @@ def add_available_hidden(raw: dict[str, object], content_cipher: AesGcmContentCi
         ),
         "confidence_label": "emerging",
         "score": 0.74,
+        "evidence_entry_count": 17,
     }
     return insight_id
 
@@ -347,6 +348,7 @@ def add_tension(
             ),
             "confidence_label": "preliminary",
             "score": 0.71,
+            "evidence_entry_count": 4,
         }
     else:
         rows.append(
@@ -363,6 +365,7 @@ def add_tension(
                 ),
                 "confidence_label": "emerging",
                 "score": 0.76,
+                "evidence_entry_count": 5,
             }
         )
     return insight_id
@@ -485,6 +488,7 @@ def test_aggregate_read_is_authenticated_owner_scoped_bounded_and_llm_free(
     }
     assert body["data"]["hiddenDriver"]["id"] == str(insight_id)
     assert body["data"]["hiddenDriver"]["status"] == "available"
+    assert body["data"]["hiddenDriver"]["evidenceEntryCount"] == 17
     assert body["data"]["hiddenDriver"]["evidence"][0] == {
         "id": body["data"]["hiddenDriver"]["evidence"][0]["id"],
         "entryDate": "2026-07-20",

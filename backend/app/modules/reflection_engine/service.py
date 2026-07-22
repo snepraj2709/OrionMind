@@ -30,6 +30,7 @@ from app.modules.reflection_engine.repository import (
     PersistedCandidateSignal,
     PersistedPreviousCandidate,
     ReflectionEngineRepository,
+    SemanticNeighbor,
 )
 from app.modules.reflection_engine.schemas import (
     AnalysisBasis,
@@ -78,6 +79,9 @@ PUBLICATION_THRESHOLDS = {
     "recurring_loop": 0.72,
     "inner_tension": 0.70,
 }
+SEMANTIC_SIMILARITY_THRESHOLD = 0.90
+SEMANTIC_NEIGHBOR_TOP_K = 8
+SEMANTIC_ANCHOR_BATCH_SIZE = 4096
 
 
 class SnapshotValidationError(ValueError):
@@ -111,6 +115,7 @@ class ReflectionEngineService:
         provider: Any | None = None,
         validator: EvidenceValidator | None = None,
         basis_days: int = 90,
+        embedding_model_id: str = "text-embedding-3-small",
         telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         if basis_days != 90:
@@ -120,6 +125,7 @@ class ReflectionEngineService:
         self._provider = provider or UnavailableReflectionProvider()
         self._validator = validator or EvidenceValidator()
         self._basis_days = basis_days
+        self._embedding_model_id = embedding_model_id
         self._telemetry = telemetry or ReflectionTelemetry()
 
     def construct_and_apply(
@@ -137,11 +143,18 @@ class ReflectionEngineService:
                 basis_days=self._basis_days,
             )
         basis, signals, previous = self._materialize_basis(raw, user_id=user_id)
+        semantic_neighbors = self._load_semantic_neighbors(
+            uow=uow,
+            user_id=user_id,
+            source_version=source_version,
+            signals=signals,
+        )
         batch = self.construct_candidates(
             user_id=user_id,
             basis=basis,
             signals=signals,
             previous_candidates=previous,
+            semantic_neighbors=semantic_neighbors,
         )
         candidate_rows = [
             self._candidate_row(candidate, user_id=user_id, source_version=source_version)
@@ -183,11 +196,19 @@ class ReflectionEngineService:
         basis, signals, previous = self._materialize_basis(raw, user_id=claim.user_id)
         if basis.source_version != source_version:
             raise SnapshotValidationError("synthesis basis source does not match the job")
+        semantic_neighbors = self._load_semantic_neighbors(
+            uow=uow,
+            user_id=claim.user_id,
+            source_version=source_version,
+            signals=signals,
+        )
+        semantic_clusters = _semantic_cluster_keys(signals, semantic_neighbors)
         batch = self.construct_candidates(
             user_id=claim.user_id,
             basis=basis,
             signals=signals,
             previous_candidates=previous,
+            semantic_neighbors=semantic_neighbors,
         )
         feedback = self._feedback_qualifications(raw)
         previously_rejected = {
@@ -274,6 +295,7 @@ class ReflectionEngineService:
                 basis_end=basis.basis_end,
                 expected_counter_signal_ids=materialized.counter_signal_ids,
                 transition_support=_final_transition_support(materialized),
+                semantic_clusters=semantic_clusters,
             )
             if reasons:
                 self._record_discard(reasons[0], candidate=materialized)
@@ -690,6 +712,7 @@ class ReflectionEngineService:
         basis: AnalysisBasis,
         signals: Sequence[CandidateSignal],
         previous_candidates: Sequence[PreviousCandidate] = (),
+        semantic_neighbors: Sequence[SemanticNeighbor] = (),
     ) -> CandidateBatch:
         eligible = overall_basis_eligible(
             valid_entry_count=basis.valid_entry_count,
@@ -708,6 +731,7 @@ class ReflectionEngineService:
             (candidate.pattern_type, candidate.canonical_key): candidate
             for candidate in previous_candidates
         }
+        semantic_clusters = _semantic_cluster_keys(signals, semantic_neighbors)
         valid_signals: list[CandidateSignal] = []
         discarded: list[str] = []
         for signal in signals:
@@ -727,18 +751,21 @@ class ReflectionEngineService:
                 source_version=basis.source_version,
                 signals=valid_signals,
                 previous=previous,
+                semantic_clusters=semantic_clusters,
             ),
             *self._loop_drafts(
                 user_id=user_id,
                 source_version=basis.source_version,
                 signals=valid_signals,
                 previous=previous,
+                semantic_clusters=semantic_clusters,
             ),
             *self._tension_drafts(
                 user_id=user_id,
                 source_version=basis.source_version,
                 signals=valid_signals,
                 previous=previous,
+                semantic_clusters=semantic_clusters,
             ),
         ]
         by_id = {signal.id: signal for signal in valid_signals}
@@ -759,6 +786,7 @@ class ReflectionEngineService:
                 basis_end=basis.basis_end,
                 expected_counter_signal_ids=draft.expected_counter_ids,
                 transition_support=draft.transition_support,
+                semantic_clusters=semantic_clusters,
             )
             if reasons:
                 discarded.extend(reasons)
@@ -819,6 +847,35 @@ class ReflectionEngineService:
             evidence=evidence,
             discarded_reason_codes=list(dict.fromkeys(discarded)),
         )
+
+    def _load_semantic_neighbors(
+        self,
+        *,
+        uow: UnitOfWorkFactory,
+        user_id: UUID,
+        source_version: int,
+        signals: Sequence[CandidateSignal],
+    ) -> tuple[SemanticNeighbor, ...]:
+        signal_ids = [signal.id for signal in signals]
+        if not signal_ids:
+            return ()
+        neighbors: list[SemanticNeighbor] = []
+        with uow.for_worker() as work:
+            for start in range(0, len(signal_ids), SEMANTIC_ANCHOR_BATCH_SIZE):
+                neighbors.extend(
+                    self._repository.load_semantic_neighbors(
+                        work.session,
+                        user_id=user_id,
+                        anchor_signal_ids=signal_ids[
+                            start : start + SEMANTIC_ANCHOR_BATCH_SIZE
+                        ],
+                        source_version=source_version,
+                        model_id=self._embedding_model_id,
+                        top_k=SEMANTIC_NEIGHBOR_TOP_K,
+                        similarity_threshold=SEMANTIC_SIMILARITY_THRESHOLD,
+                    )
+                )
+        return tuple(neighbors)
 
     def _materialize_basis(
         self, raw: Mapping[str, object], *, user_id: UUID
@@ -893,21 +950,24 @@ class ReflectionEngineService:
         source_version: int,
         signals: Sequence[CandidateSignal],
         previous: Mapping[tuple[str, str], PreviousCandidate],
+        semantic_clusters: Mapping[UUID, str],
     ) -> list[_Draft]:
         drafts: list[_Draft] = []
         for raw_need in NEED_TAGS:
             need = cast(NeedTag, raw_need)
             tagged = [signal for signal in signals if need in signal.need_tags]
             raw_support = [signal for signal in tagged if not _is_counter(signal)]
-            counters = _collapse([signal for signal in tagged if _is_counter(signal)])
-            support = _collapse(raw_support)
+            counters = _collapse(
+                [signal for signal in tagged if _is_counter(signal)], semantic_clusters
+            )
+            support = _collapse(raw_support, semantic_clusters)
             if not support:
                 continue
             canonical_key = self._canonical_key(
                 f"hidden_driver:{need}", user_id=user_id
             )
             prior = previous.get(("hidden_driver", canonical_key))
-            clusters = _clusters(support)
+            clusters = _clusters(support, semantic_clusters)
             entries = {signal.entry_id for signal in support}
             dates = {signal.entry_date for signal in support}
             score, components = score_hidden_driver(
@@ -988,8 +1048,11 @@ class ReflectionEngineService:
         source_version: int,
         signals: Sequence[CandidateSignal],
         previous: Mapping[tuple[str, str], PreviousCandidate],
+        semantic_clusters: Mapping[UUID, str],
     ) -> list[_Draft]:
-        chains = _build_chains(signals)
+        chains = _build_chains(
+            _deduplicate_semantic_signals(signals, semantic_clusters)
+        )
         observations: dict[tuple[Node, Node], list[_Chain]] = defaultdict(list)
         for chain in chains:
             for left, right in zip(chain.nodes, chain.nodes[1:]):
@@ -1026,7 +1089,7 @@ class ReflectionEngineService:
                 for signal in chain.signals
                 if _signal_node(signal) in node_set
             ]
-            support = _collapse(raw_support)
+            support = _collapse(raw_support, semantic_clusters)
             if not support:
                 continue
             labels = {node[1] for node in nodes}
@@ -1036,12 +1099,13 @@ class ReflectionEngineService:
                     for signal in signals
                     if _is_counter(signal)
                     and signal.normalized_label_fingerprint in labels
-                ]
+                ],
+                semantic_clusters,
             )
             descriptor = "recurring_loop:" + "|".join(_node_text(node) for node in nodes)
             canonical_key = self._canonical_key(descriptor, user_id=user_id)
             prior = previous.get(("recurring_loop", canonical_key))
-            clusters = _clusters(support)
+            clusters = _clusters(support, semantic_clusters)
             entries = {signal.entry_id for signal in support}
             dates = {signal.entry_date for signal in support}
             score, components = score_recurring_loop(
@@ -1138,6 +1202,7 @@ class ReflectionEngineService:
         source_version: int,
         signals: Sequence[CandidateSignal],
         previous: Mapping[tuple[str, str], PreviousCandidate],
+        semantic_clusters: Mapping[UUID, str],
     ) -> list[_Draft]:
         pairs: set[tuple[NeedTag, NeedTag]] = set()
         for signal in signals:
@@ -1169,8 +1234,10 @@ class ReflectionEngineService:
                 if left in signal.need_tags or right in signal.need_tags
             ]
             raw_support = [signal for signal in tagged if not _is_counter(signal)]
-            support = _collapse(raw_support)
-            counters = _collapse([signal for signal in tagged if _is_counter(signal)])
+            support = _collapse(raw_support, semantic_clusters)
+            counters = _collapse(
+                [signal for signal in tagged if _is_counter(signal)], semantic_clusters
+            )
             left_support = [signal for signal in support if left in signal.need_tags]
             right_support = [signal for signal in support if right in signal.need_tags]
             if not left_support or not right_support:
@@ -1183,7 +1250,7 @@ class ReflectionEngineService:
                 f"inner_tension:{left}|{right}", user_id=user_id
             )
             prior = previous.get(("inner_tension", canonical_key))
-            clusters = _clusters(support)
+            clusters = _clusters(support, semantic_clusters)
             dates = {signal.entry_date for signal in support}
             left_entries = {signal.entry_id for signal in left_support}
             right_entries = {signal.entry_id for signal in right_support}
@@ -1487,7 +1554,11 @@ def _candidate_id(user_id: UUID, pattern_type: str, canonical_key: str) -> UUID:
     )
 
 
-def _collapse(signals: Collection[CandidateSignal]) -> list[CandidateSignal]:
+def _collapse(
+    signals: Collection[CandidateSignal],
+    semantic_clusters: Mapping[UUID, str] | None = None,
+) -> list[CandidateSignal]:
+    semantic_clusters = semantic_clusters or {}
     chosen: dict[tuple[str, str, str, str | None], CandidateSignal] = {}
     for signal in sorted(
         signals,
@@ -1499,10 +1570,15 @@ def _collapse(signals: Collection[CandidateSignal]) -> list[CandidateSignal]:
             str(item.id),
         ),
     ):
+        semantic_cluster = semantic_clusters.get(signal.id)
         identity = (
-            signal.cluster_key,
+            semantic_cluster or signal.cluster_key,
             signal.signal_type,
-            signal.normalized_label_fingerprint,
+            (
+                "semantic"
+                if semantic_cluster is not None
+                else signal.normalized_label_fingerprint
+            ),
             signal.loop_role,
         )
         chosen.setdefault(identity, signal)
@@ -1513,8 +1589,98 @@ def _signal_order(signal: CandidateSignal):
     return signal.entry_date, str(signal.entry_id), signal.source_start, str(signal.id)
 
 
-def _clusters(signals: Collection[CandidateSignal]) -> list[str]:
-    return sorted({signal.cluster_key for signal in signals})
+def _clusters(
+    signals: Collection[CandidateSignal],
+    semantic_clusters: Mapping[UUID, str] | None = None,
+) -> list[str]:
+    semantic_clusters = semantic_clusters or {}
+    return sorted(
+        {semantic_clusters.get(signal.id, signal.cluster_key) for signal in signals}
+    )
+
+
+def _deduplicate_semantic_signals(
+    signals: Sequence[CandidateSignal], semantic_clusters: Mapping[UUID, str]
+) -> list[CandidateSignal]:
+    chosen: dict[tuple[str, str, str | None], CandidateSignal] = {}
+    untouched: list[CandidateSignal] = []
+    for signal in sorted(
+        signals,
+        key=lambda item: (-item.confidence, *_signal_order(item)),
+    ):
+        semantic_cluster = semantic_clusters.get(signal.id)
+        if semantic_cluster is None:
+            untouched.append(signal)
+            continue
+        chosen.setdefault(
+            (semantic_cluster, signal.signal_type, signal.loop_role), signal
+        )
+    return sorted([*untouched, *chosen.values()], key=_signal_order)
+
+
+def _semantic_cluster_keys(
+    signals: Sequence[CandidateSignal],
+    neighbors: Sequence[SemanticNeighbor],
+) -> dict[UUID, str]:
+    by_id = {signal.id: signal for signal in signals}
+    compatible_edges: dict[UUID, dict[UUID, SemanticNeighbor]] = defaultdict(dict)
+    for neighbor in neighbors:
+        anchor = by_id.get(neighbor.anchor_signal_id)
+        candidate = by_id.get(neighbor.neighbor_signal_id)
+        if (
+            anchor is None
+            or candidate is None
+            or neighbor.similarity < SEMANTIC_SIMILARITY_THRESHOLD
+            or not _semantic_signals_compatible(anchor, candidate)
+        ):
+            continue
+        existing = compatible_edges[anchor.id].get(candidate.id)
+        if existing is None or neighbor.similarity > existing.similarity:
+            compatible_edges[anchor.id][candidate.id] = neighbor
+        compatible_edges[candidate.id].setdefault(anchor.id, neighbor)
+
+    result: dict[UUID, str] = {}
+    for signal in sorted(signals, key=_signal_order):
+        earlier = [
+            (by_id[neighbor_id], edge)
+            for neighbor_id, edge in compatible_edges.get(signal.id, {}).items()
+            if _signal_order(by_id[neighbor_id]) < _signal_order(signal)
+        ]
+        if not earlier:
+            continue
+        chosen, _edge = min(
+            earlier,
+            key=lambda item: (
+                -item[1].similarity,
+                item[1].cosine_distance,
+                _signal_order(item[0]),
+            ),
+        )
+        # Deliberately use the direct neighbor's persisted cluster, not its computed
+        # semantic root. This prevents A~B~C transitive chaining without A~C.
+        result.setdefault(chosen.id, chosen.cluster_key)
+        result[signal.id] = chosen.cluster_key
+    return result
+
+
+def _semantic_signals_compatible(
+    left: CandidateSignal, right: CandidateSignal
+) -> bool:
+    if (
+        left.entry_id == right.entry_id
+        or left.user_id != right.user_id
+        or left.entry_user_id != right.entry_user_id
+        or left.analysis_user_id != right.analysis_user_id
+        or left.analysis_eligibility != "accepted"
+        or right.analysis_eligibility != "accepted"
+        or left.signal_type != right.signal_type
+        or left.loop_role != right.loop_role
+        or _is_counter(left) != _is_counter(right)
+    ):
+        return False
+    return bool(set(left.need_tags) & set(right.need_tags)) or bool(
+        set(left.themes) & set(right.themes)
+    )
 
 
 def _span_days(signals: Collection[CandidateSignal]) -> int:

@@ -2,9 +2,42 @@
 
 Status: implementation contract for the next coding agent  
 Scope: FastAPI backend, Supabase PostgreSQL, one PostgreSQL worker, and the existing Next.js Reflection screen  
-Source documents: `docs/Reflection-Algorithm.md`, the MVP brief attached to this task, and the repository as inspected through 2026-07-22
+Source documents: `docs/Reflection-Algorithm.md`, the MVP brief attached to this task, and the repository as inspected through 2026-07-23
 
 This document specifies the smallest repository-compatible implementation of an evidence-backed, privacy-first longitudinal reflection engine. It is intentionally prescriptive: alternatives are deferred rather than left for the implementer to choose.
+
+## Implemented P1 semantic-retrieval extension (2026-07-23)
+
+Migration `0018_semantic_signal_retrieval.sql` supersedes the P0-only
+statements below that defer pgvector. Synthesis now performs one bounded,
+worker-only semantic-neighbor retrieval over accepted same-owner signals in the
+requested 90-day/source-version basis. Retrieval requires the configured
+1,536-dimension embedding model, excludes the anchor and same-entry signals,
+uses exact cosine distance with a `0.90` similarity threshold, returns only
+opaque signal IDs plus distance metadata, and has deterministic tie ordering.
+Bases above the RPC's 4,096-anchor bound are split into deterministic batches
+inside one worker transaction instead of failing or dropping semantic retrieval.
+
+The deterministic engine applies those neighbors only to structurally
+compatible duplicate/support clustering. Candidate IDs, canonical keys,
+scoring formulas, publication thresholds, counterevidence, snapshot semantics,
+and bounded Terra context are unchanged. Semantic grouping is direct-edge only
+and therefore cannot drift through transitive chains. Missing or mismatched
+embeddings preserve the previous deterministic behavior.
+
+The same migration provides a null-only, `SKIP LOCKED` historical embedding
+backfill with claim tokens, stale-claim recovery, bounded batches, and exact
+claim-bound storage. `scripts/backfill_signal_embeddings.py` defaults to a
+content-free count/cost dry run; execution additionally requires both
+`--execute` and `--acknowledge-external-cost`. It reuses the accepted redacted
+signal summary and never invokes Luna. Completed claim tokens remain attached
+to their stored rows so identical or concurrent store retries return the prior
+result; a retry with different IDs, model metadata, or vectors is rejected.
+
+Every available insight now exposes `evidenceEntryCount`, computed as
+`COUNT(DISTINCT entry_id)` from that selected snapshot's supporting evidence
+links before the API's 12-row evidence display cap. Counterevidence remains
+separate and does not inflate the frontend's existing “Supported by” total.
 
 ## Decision log
 
@@ -1138,6 +1171,7 @@ Response envelope:
       "id": "9d282576-8e5f-4f70-a3b9-ece43e766fa9",
       "confidence": "emerging",
       "score": 0.74,
+      "evidenceEntryCount": 17,
       "statement": "A possible pattern across your entries…",
       "underlyingNeed": "competence",
       "drivers": ["Curiosity becoming something tangible"],
@@ -1158,7 +1192,12 @@ Response envelope:
 }
 ```
 
-Every available evidence item includes an opaque ID, entry date, source label, exact decrypted quote, Orion interpretation, optional theme, and what it supports. It never exposes raw offsets, user ID, model IDs, prompts, candidate internals, or PII mappings.
+Every available insight includes `evidenceEntryCount`, the distinct source-entry
+count over supporting evidence links in the selected snapshot before evidence-row
+bounding. Every available evidence item includes an opaque ID, entry date,
+source label, exact decrypted quote, Orion interpretation, optional theme, and
+what it supports. It never exposes raw offsets, user ID, model IDs, prompts,
+candidate internals, or PII mappings.
 
 State behavior:
 

@@ -72,11 +72,13 @@ NEW_FUNCTIONS = (
     "enqueue_processing_job",
     "enqueue_processing_job_for_owner",
     "fail_processing_job",
+    "find_signal_semantic_neighbors",
     "get_user_pii_vault_for_update",
     "get_entry_processing_payload",
     "get_entry_processing_backfill_status",
     "get_processing_queue_observability",
     "get_entry_quality_history",
+    "get_signal_embedding_backfill_status",
     "get_reflection_candidate_basis",
     "get_reflection_synthesis_basis",
     "get_reflections_for_owner",
@@ -85,9 +87,11 @@ NEW_FUNCTIONS = (
     "is_valid_encrypted_envelope_v1",
     "put_reflection_feedback_for_owner",
     "plan_entry_processing_backfill",
+    "claim_signal_embedding_backfill_batch",
     "recover_stale_processing_jobs",
     "retry_entry_processing_for_owner",
     "renew_processing_job",
+    "release_signal_embedding_backfill_batch",
     "request_reflection_synthesis_if_eligible",
     "run_entry_processing_backfill_batch",
     "save_user_pii_vault",
@@ -95,6 +99,7 @@ NEW_FUNCTIONS = (
     "schedule_reflection_jobs_observed",
     "set_entry_processing_backfill_state",
     "store_entry_signal_embeddings",
+    "store_signal_embedding_backfill_batch",
 )
 RETIRED_ENTRY_APPLY_SIGNATURE = (
     "public.apply_legacy_entry_processing_job("
@@ -291,6 +296,12 @@ def evidence_payload(candidate_id: UUID, signal_id: UUID) -> dict[str, object]:
     }
 
 
+def vector_value(first: float, second: float = 0.0) -> str:
+    return "[" + ",".join(
+        [str(first), str(second), *("0" for _index in range(1534))]
+    ) + "]"
+
+
 def schema_signature(connection: psycopg.Connection) -> tuple:
     columns = connection.execute(
         "SELECT table_name, ordinal_position, column_name, data_type, udt_name, "
@@ -364,6 +375,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0015_fix_reflection_job_expedite.sql",
         "0016_signal_embeddings.sql",
         "0017_reflection_recalculation_eligibility.sql",
+        "0018_semantic_signal_retrieval.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -405,6 +417,26 @@ def test_schema_constraints_owner_rls_and_account_cascades() -> None:
             ("orion_app", False),
             ("orion_worker", True),
         ]
+        for signature in (
+            "public.find_signal_semantic_neighbors(uuid,uuid[],bigint,text,integer,numeric)",
+            "public.get_signal_embedding_backfill_status(text)",
+            "public.claim_signal_embedding_backfill_batch(integer,text)",
+            "public.store_signal_embedding_backfill_batch(uuid,jsonb,text)",
+            "public.release_signal_embedding_backfill_batch(uuid)",
+        ):
+            privileges = connection.execute(
+                "SELECT role_name, pg_catalog.has_function_privilege("
+                "role_name, %s, 'EXECUTE') FROM pg_catalog.unnest("
+                "ARRAY['anon', 'authenticated', 'orion_app', 'orion_worker']) "
+                "AS role_name ORDER BY role_name",
+                (signature,),
+            ).fetchall()
+            assert privileges == [
+                ("anon", False),
+                ("authenticated", False),
+                ("orion_app", False),
+                ("orion_worker", True),
+            ]
         rls_count = connection.execute(
             "SELECT count(*) FROM pg_catalog.pg_class c "
             "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
@@ -1865,6 +1897,293 @@ def test_reflection_api_read_rpc_is_authenticated_owner_checked_and_bounded() ->
             connection.execute(
                 "SELECT public.get_reflections_for_owner(%s, 13)", (USER_ONE,)
             )
+
+
+def test_reflection_api_evidence_counts_are_snapshot_distinct_entries_per_insight() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        signals: list[tuple[UUID, UUID]] = []
+        latest_source = 0
+        for entry_date in ("2026-07-18", "2026-07-19", "2026-07-20"):
+            entry_id = insert_entry(connection, USER_ONE, entry_date=entry_date)
+            _, signal_id, latest_source = insert_analysis_signal(
+                connection, USER_ONE, entry_id
+            )
+            signals.append((entry_id, signal_id))
+
+        duplicate_step_signal = uuid4()
+        connection.execute(
+            "INSERT INTO public.entry_signals "
+            "(id, user_id, entry_id, analysis_id, signal_type, "
+            "normalized_label_fingerprint, payload_envelope, themes, need_tags, "
+            "loop_role, confidence, source_start, source_end, occurred_on) "
+            "SELECT %s, user_id, entry_id, analysis_id, signal_type, %s, "
+            "payload_envelope, themes, need_tags, loop_role, confidence, 1, 4, "
+            "occurred_on FROM public.entry_signals WHERE id = %s",
+            (duplicate_step_signal, "e" * 64, signals[0][1]),
+        )
+
+        snapshot_id = uuid4()
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count) "
+            "VALUES (%s, %s, 1, %s, '2026-07-18', '2026-07-20', 3, 0, 3, 300)",
+            (snapshot_id, USER_ONE, latest_source),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, last_snapshot_source_version, "
+            "last_successful_snapshot_id) VALUES (%s, %s, %s, %s)",
+            (USER_ONE, latest_source, latest_source, snapshot_id),
+        )
+
+        insights: dict[tuple[str, int], UUID] = {}
+        for index, (pattern_type, ordinal) in enumerate(
+            (
+                ("hidden_driver", 0),
+                ("recurring_loop", 0),
+                ("inner_tension", 0),
+                ("inner_tension", 1),
+            )
+        ):
+            candidate_id = uuid4()
+            insight_id = uuid4()
+            insights[(pattern_type, ordinal)] = insight_id
+            connection.execute(
+                "INSERT INTO public.pattern_candidates "
+                "(id, user_id, pattern_type, canonical_key, status, score, "
+                "score_components, payload_envelope, first_seen_at, last_seen_at, "
+                "last_source_version) VALUES (%s, %s, %s, %s, 'published', 0.8, "
+                "%s::jsonb, %s::jsonb, pg_catalog.now(), pg_catalog.now(), %s)",
+                (
+                    candidate_id,
+                    USER_ONE,
+                    pattern_type,
+                    f"{index + 1:x}" * 64,
+                    json.dumps({"recurrence": 0.8}),
+                    json.dumps(ENVELOPE_V1),
+                    latest_source,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO public.reflection_snapshot_insights "
+                "(id, user_id, snapshot_id, candidate_id, pattern_type, ordinal, "
+                "status, payload_envelope, confidence_label, score) "
+                "VALUES (%s, %s, %s, %s, %s, %s, 'available', %s::jsonb, "
+                "'emerging', 0.8)",
+                (
+                    insight_id,
+                    USER_ONE,
+                    snapshot_id,
+                    candidate_id,
+                    pattern_type,
+                    ordinal,
+                    json.dumps(ENVELOPE_V1),
+                ),
+            )
+
+        evidence_by_insight = {
+            insights[("hidden_driver", 0)]: [
+                (*signals[0], "supporting"),
+                (*signals[1], "supporting"),
+                (*signals[2], "counter"),
+            ],
+            insights[("recurring_loop", 0)]: [
+                (*signals[0], "supporting"),
+                (signals[0][0], duplicate_step_signal, "supporting"),
+                (*signals[1], "supporting"),
+            ],
+            insights[("inner_tension", 0)]: [
+                (*signals[0], "supporting"),
+                (*signals[1], "counter"),
+            ],
+            insights[("inner_tension", 1)]: [(*signals[2], "supporting")],
+        }
+        for insight_id, evidence_rows in evidence_by_insight.items():
+            for ordinal, (entry_id, signal_id, role) in enumerate(evidence_rows):
+                connection.execute(
+                    "INSERT INTO public.reflection_snapshot_evidence "
+                    "(insight_id, signal_id, entry_id, user_id, evidence_role, "
+                    "ordinal, source_start, source_end) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, 0, 4)",
+                    (insight_id, signal_id, entry_id, USER_ONE, role, ordinal),
+                )
+        connection.commit()
+
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            payload = connection.execute(
+                "SELECT public.get_reflections_for_owner(%s, 1)", (USER_ONE,)
+            ).fetchone()[0]
+
+        counts = {
+            (row["pattern_type"], row["ordinal"]): row["evidence_entry_count"]
+            for row in payload["insights"]
+        }
+        assert counts == {
+            ("hidden_driver", 0): 2,
+            ("recurring_loop", 0): 2,
+            ("inner_tension", 0): 1,
+            ("inner_tension", 1): 1,
+        }
+
+
+def test_semantic_neighbors_are_owner_basis_model_same_entry_and_topk_scoped() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    model_id = "text-embedding-3-small"
+    with psycopg.connect(value) as connection:
+        def stored_signal(
+            user_id: UUID,
+            entry_date: str,
+            vector: str | None,
+            *,
+            embedding_model: str = model_id,
+        ) -> tuple[UUID, UUID, int]:
+            entry_id = insert_entry(connection, user_id, entry_date=entry_date)
+            analysis_id, signal_id, source_version = insert_analysis_signal(
+                connection, user_id, entry_id
+            )
+            if vector is not None:
+                connection.execute(
+                    "UPDATE public.entry_signals SET embedding = %s::extensions.vector, "
+                    "embedding_model = %s, embedded_at = pg_catalog.now() WHERE id = %s",
+                    (vector, embedding_model, signal_id),
+                )
+            return analysis_id, signal_id, source_version
+
+        _, anchor_id, source_version = stored_signal(
+            USER_ONE, "2026-07-01", vector_value(1)
+        )
+        _, nearest_id, source_version = stored_signal(
+            USER_ONE, "2026-07-08", vector_value(0.999, 0.001)
+        )
+        _, second_id, source_version = stored_signal(
+            USER_ONE, "2026-07-09", vector_value(0.98, 0.02)
+        )
+        _, _, source_version = stored_signal(
+            USER_ONE, "2026-07-10", vector_value(0, 1)
+        )
+        _, _, source_version = stored_signal(
+            USER_ONE,
+            "2026-07-11",
+            vector_value(1),
+            embedding_model="different-model",
+        )
+        _, _, source_version = stored_signal(USER_ONE, "2026-07-12", None)
+        _, _, source_version = stored_signal(
+            USER_ONE, "2026-01-01", vector_value(1)
+        )
+        _, foreign_id, _ = stored_signal(USER_TWO, "2026-07-08", vector_value(1))
+
+        same_entry_signal = uuid4()
+        connection.execute(
+            "INSERT INTO public.entry_signals "
+            "(id, user_id, entry_id, analysis_id, signal_type, "
+            "normalized_label_fingerprint, payload_envelope, themes, need_tags, "
+            "loop_role, confidence, source_start, source_end, occurred_on, "
+            "embedding, embedding_model, embedded_at) "
+            "SELECT %s, user_id, entry_id, analysis_id, signal_type, %s, "
+            "payload_envelope, themes, need_tags, loop_role, confidence, 1, 4, "
+            "occurred_on, %s::extensions.vector, %s, pg_catalog.now() "
+            "FROM public.entry_signals WHERE id = %s",
+            (same_entry_signal, "b" * 64, vector_value(1), model_id, anchor_id),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            worker(connection)
+            rows = connection.execute(
+                "SELECT anchor_signal_id, neighbor_signal_id, similarity "
+                "FROM public.find_signal_semantic_neighbors(%s, %s, %s, %s, 1, 0.90)",
+                (USER_ONE, [anchor_id], source_version, model_id),
+            ).fetchall()
+            assert len(rows) == 1
+            assert rows[0][0] == anchor_id
+            assert rows[0][1] == nearest_id
+            assert rows[0][2] >= 0.90
+            assert rows[0][1] not in {same_entry_signal, foreign_id}
+
+            all_ids = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT neighbor_signal_id "
+                    "FROM public.find_signal_semantic_neighbors("
+                    "%s, %s, %s, %s, 8, 0.90)",
+                    (USER_ONE, [anchor_id], source_version, model_id),
+                ).fetchall()
+            }
+            assert all_ids == {nearest_id, second_id}
+
+            assert connection.execute(
+                "SELECT count(*) FROM public.find_signal_semantic_neighbors("
+                "%s, %s, %s, %s, 8, 0.90)",
+                (USER_ONE, [foreign_id], source_version, model_id),
+            ).fetchone() == (0,)
+
+
+def test_signal_embedding_backfill_store_retry_is_idempotent_after_commit() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    model_id = "text-embedding-3-small"
+    with psycopg.connect(value) as connection:
+        entry_id = insert_entry(connection, USER_ONE, entry_date="2026-07-20")
+        _, signal_id, _ = insert_analysis_signal(connection, USER_ONE, entry_id)
+        connection.commit()
+
+        with connection.transaction():
+            worker(connection)
+            batch = connection.execute(
+                "SELECT public.claim_signal_embedding_backfill_batch(1, %s)",
+                (model_id,),
+            ).fetchone()[0]
+        batch_token = UUID(batch["batch_token"])
+        assert [UUID(item["signal_id"]) for item in batch["items"]] == [signal_id]
+        embeddings = json.dumps(
+            [{"signal_id": str(signal_id), "values": [1.0, *([0.0] * 1535)]}]
+        )
+
+        with connection.transaction():
+            worker(connection)
+            first = connection.execute(
+                "SELECT public.store_signal_embedding_backfill_batch(%s, %s::jsonb, %s)",
+                (batch_token, embeddings, model_id),
+            ).fetchone()[0]
+        stored_at = connection.execute(
+            "SELECT embedded_at FROM public.entry_signals WHERE id = %s", (signal_id,)
+        ).fetchone()[0]
+        connection.commit()
+
+        with connection.transaction():
+            worker(connection)
+            retried = connection.execute(
+                "SELECT public.store_signal_embedding_backfill_batch(%s, %s::jsonb, %s)",
+                (batch_token, embeddings, model_id),
+            ).fetchone()[0]
+
+        assert first == retried == 1
+        altered = json.dumps(
+            [{"signal_id": str(signal_id), "values": [0.0, 1.0, *([0.0] * 1534)]}]
+        )
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            with connection.transaction():
+                worker(connection)
+                connection.execute(
+                    "SELECT public.store_signal_embedding_backfill_batch("
+                    "%s, %s::jsonb, %s)",
+                    (batch_token, altered, model_id),
+                )
+
+        admin(connection)
+        assert connection.execute(
+            "SELECT embedding_model, embedded_at, embedding_backfill_token, "
+            "extensions.vector_dims(embedding) "
+            "FROM public.entry_signals WHERE id = %s",
+            (signal_id,),
+        ).fetchone() == (model_id, stored_at, batch_token, 1536)
 
 
 def test_observability_rpcs_are_worker_only_and_report_scheduler_and_queue_counts() -> None:

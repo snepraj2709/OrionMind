@@ -102,6 +102,7 @@ const availableInsightFields = {
   id: z.uuid(),
   confidence: reflectionConfidenceSchema,
   score: z.number().finite().min(0).max(1),
+  evidenceEntryCount: z.number().int().min(1),
   evidence: z.array(evidenceItemSchema),
   feedback: reflectionFeedbackResponseSchema.nullable(),
 } as const;
@@ -149,6 +150,7 @@ export const innerTensionSchema = z
     id: z.uuid(),
     confidence: reflectionConfidenceSchema,
     score: z.number().finite().min(0).max(1),
+    evidenceEntryCount: z.number().int().min(1),
     leftTitle: needTagSchema,
     leftBody: z.string().trim().min(1).max(1000),
     rightTitle: needTagSchema,

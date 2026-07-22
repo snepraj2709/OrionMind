@@ -204,5 +204,13 @@ describe('reflection wire schemas', () => {
         },
       }).success,
     ).toBe(false);
+    const invalidCount = structuredClone(reflectionApiFixture);
+    if (invalidCount.data.hiddenDriver.status !== 'available') {
+      throw new Error('Fixture invariant');
+    }
+    invalidCount.data.hiddenDriver.evidenceEntryCount = 0;
+    expect(reflectionApiResponseSchema.safeParse(invalidCount).success).toBe(
+      false,
+    );
   });
 });

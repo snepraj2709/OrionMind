@@ -92,6 +92,7 @@ class AvailableInsight(StrictPublicModel):
     id: UUID
     confidence: Confidence
     score: UnitScore
+    evidence_entry_count: PositiveCount
     evidence: list[EvidenceItem]
     feedback: FeedbackResponse | None
 
@@ -120,6 +121,7 @@ class InnerTension(StrictPublicModel):
     id: UUID
     confidence: Confidence
     score: UnitScore
+    evidence_entry_count: PositiveCount
     left_title: NeedTag
     left_body: str = Field(min_length=1, max_length=1000)
     right_title: NeedTag

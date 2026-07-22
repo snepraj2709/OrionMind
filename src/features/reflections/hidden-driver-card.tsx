@@ -24,9 +24,7 @@ export function HiddenDriverCard({
   pending = false,
   response,
 }: HiddenDriverCardProps) {
-  const supportingEntryCount = new Set(
-    driver.evidence.map((item) => item.entryDate),
-  ).size;
+  const supportingEntryCount = driver.evidenceEntryCount;
 
   return (
     <ReflectionFeedbackSurface

@@ -35,6 +35,7 @@ function adaptTension(
     id: fixtureUuid(500 + index),
     confidence: 'recurring',
     score: 1,
+    evidenceEntryCount: tension.evidence.length,
     leftTitle: tension.leftTitle as InnerTension['leftTitle'],
     leftBody: tension.leftBody,
     rightTitle: tension.rightTitle as InnerTension['rightTitle'],
@@ -75,6 +76,7 @@ const fixtureResponse: ReflectionApiResponse = {
       id: fixtureUuid(2),
       confidence: 'recurring',
       score: 1,
+      evidenceEntryCount: demoReflection.data.hiddenDriver.evidence.length,
       evidence: demoReflection.data.hiddenDriver.evidence.map((item, index) =>
         adaptEvidence(item, fixtureUuid(100 + index)),
       ),
@@ -88,6 +90,7 @@ const fixtureResponse: ReflectionApiResponse = {
       id: fixtureUuid(3),
       confidence: 'recurring',
       score: 1,
+      evidenceEntryCount: demoReflection.data.recurringLoop.evidence.length,
       evidence: demoReflection.data.recurringLoop.evidence.map((item, index) =>
         adaptEvidence(item, fixtureUuid(200 + index)),
       ),

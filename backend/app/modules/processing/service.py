@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import unicodedata
+from collections.abc import Collection
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -178,7 +179,17 @@ class ProcessingService:
                 if self._embedding_provider is None:
                     raise RuntimeError("signal embedding provider is not configured")
                 embeddings = self._embedding_provider.embed(
-                    texts=tuple(_embedding_text(item) for item in model_result.signals),
+                    texts=tuple(
+                        signal_embedding_text(
+                            signal_type=item.signal_type,
+                            normalized_label=item.normalized_label,
+                            interpretation=item.interpretation,
+                            themes=item.themes,
+                            need_tags=item.need_tags,
+                            loop_role=item.loop_role,
+                        )
+                        for item in model_result.signals
+                    ),
                     safety_identifier=safety_identifier,
                 )
             signals = _materialize_signals(
@@ -518,14 +529,22 @@ def _materialize_signals(
     return tuple(rows)
 
 
-def _embedding_text(signal) -> str:
+def signal_embedding_text(
+    *,
+    signal_type: str,
+    normalized_label: str,
+    interpretation: str,
+    themes: Collection[str],
+    need_tags: Collection[str],
+    loop_role: str | None,
+) -> str:
     fields = (
-        f"signal_type: {signal.signal_type}",
-        f"normalized_label: {' '.join(signal.normalized_label.split()).casefold()}",
-        f"interpretation: {' '.join(signal.interpretation.split())}",
-        f"themes: {', '.join(signal.themes)}",
-        f"needs: {', '.join(signal.need_tags)}",
-        f"loop_role: {signal.loop_role or 'none'}",
+        f"signal_type: {signal_type}",
+        f"normalized_label: {' '.join(normalized_label.split()).casefold()}",
+        f"interpretation: {' '.join(interpretation.split())}",
+        f"themes: {', '.join(themes)}",
+        f"needs: {', '.join(need_tags)}",
+        f"loop_role: {loop_role or 'none'}",
     )
     return "\n".join(fields)
 

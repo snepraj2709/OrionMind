@@ -345,6 +345,9 @@ class OfflineRepository:
     def load_synthesis_basis(self, _session: object, **_kwargs: object) -> dict[str, object]:
         return self.raw
 
+    def load_semantic_neighbors(self, _session: object, **_kwargs: object):
+        return ()
+
     def apply_snapshot(self, _session: object, **kwargs: object) -> UUID:
         self.applied = kwargs
         return UUID(str(kwargs["snapshot"]["id"]))  # type: ignore[index]

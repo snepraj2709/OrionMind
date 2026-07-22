@@ -247,19 +247,17 @@ describe('ReflectionsScreen', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('counts distinct supporting entries rather than evidence rows', async () => {
+  it('uses the snapshot evidence-entry count rather than bounded evidence rows', async () => {
     const response = fixture((value) => {
       if (value.data.hiddenDriver.status === 'available') {
-        value.data.hiddenDriver.evidence[1]!.entryDate =
-          value.data.hiddenDriver.evidence[0]!.entryDate;
+        value.data.hiddenDriver.evidenceEntryCount = 7;
+        value.data.hiddenDriver.evidence =
+          value.data.hiddenDriver.evidence.slice(0, 1);
       }
     });
     renderReflections(repositoryFor(response).repository);
 
-    expect(await screen.findByText('Supported by 1 entry')).toBeVisible();
-    expect(
-      screen.queryByText('Supported by 2 entries'),
-    ).not.toBeInTheDocument();
+    expect(await screen.findByText('Supported by 7 entries')).toBeVisible();
   });
 
   it('renders persisted feedback and opens only the selected insight evidence', async () => {

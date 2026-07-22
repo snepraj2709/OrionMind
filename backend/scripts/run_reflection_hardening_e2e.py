@@ -503,8 +503,14 @@ def _section_summary(section: object) -> dict[str, Any]:
         "status": section.get("status"),
         "confidence": section.get("confidence"),
         "reasonCode": section.get("reasonCode"),
+        "evidenceEntryCount": section.get("evidenceEntryCount"),
         "evidenceEntryIds": sorted(set(evidence_ids)),
         "tensionCount": len(tensions) if isinstance(tensions, list) else None,
+        "tensionEvidenceEntryCounts": (
+            [item.get("evidenceEntryCount") for item in tensions if isinstance(item, dict)]
+            if isinstance(tensions, list)
+            else None
+        ),
     }
 
 

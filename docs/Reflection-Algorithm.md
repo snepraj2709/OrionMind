@@ -348,6 +348,22 @@ Confidence levels:
 
 These are product thresholds, not scientific cut-offs. Tune them using your evaluation set.
 
+## Step 1.5: retrieve semantic signal neighbors
+
+For each accepted signal in the requested 90-day synthesis basis, retrieve at
+most eight same-owner neighbors from the same 1,536-dimension embedding model.
+Use exact pgvector cosine distance with a minimum similarity of `0.90`; exclude
+the anchor and all signals from its source entry. Null embeddings, different
+models, excluded analyses, future source versions, and signals outside the
+basis do not participate.
+
+Semantic retrieval augments deterministic grouping; it does not create a new
+candidate type or change candidate identity. A retrieved pair may share a
+duplicate/support cluster only when signal type, loop role, counterevidence
+role, and at least one controlled need or theme are compatible. Resolve ties by
+date and opaque IDs, and never extend similarity transitively: `A ~ B` and
+`B ~ C` do not imply `A ~ C`.
+
 ## Step 2: update the candidate ledger
 
 Maintain candidate rows instead of recreating everything from scratch.

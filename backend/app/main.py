@@ -281,6 +281,7 @@ def create_app(
         provider=resolved_reflection_provider,
         cipher=resolved_content_cipher,
         basis_days=resolved_settings.REFLECTION_BASIS_DAYS,
+        embedding_model_id=resolved_settings.OPENAI_SIGNAL_EMBEDDING_MODEL,
         telemetry=reflection_telemetry,
     )
     app.state.reflections_service = ReflectionsService(

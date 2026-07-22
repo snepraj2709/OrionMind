@@ -69,6 +69,13 @@ class PersistedPreviousCandidate(_StrictStoredModel):
         return self.model_dump(mode="python", exclude={"payload_envelope"})
 
 
+class SemanticNeighbor(_StrictStoredModel):
+    anchor_signal_id: UUID
+    neighbor_signal_id: UUID
+    cosine_distance: float = Field(ge=0, le=2, allow_inf_nan=False)
+    similarity: UnitFloat
+
+
 class StaleCandidateBasisError(RuntimeError):
     pass
 
@@ -78,6 +85,37 @@ class StaleSynthesisClaimError(RuntimeError):
 
 
 class ReflectionEngineRepository:
+    def load_semantic_neighbors(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        anchor_signal_ids: list[UUID],
+        source_version: int,
+        model_id: str,
+        top_k: int = 8,
+        similarity_threshold: float = 0.90,
+    ) -> tuple[SemanticNeighbor, ...]:
+        if not anchor_signal_ids:
+            return ()
+        rows = session.execute(
+            text(
+                "SELECT anchor_signal_id, neighbor_signal_id, cosine_distance, similarity "
+                "FROM public.find_signal_semantic_neighbors("
+                ":user_id, :anchor_signal_ids, :source_version, :model_id, "
+                ":top_k, :similarity_threshold)"
+            ),
+            {
+                "user_id": user_id,
+                "anchor_signal_ids": anchor_signal_ids,
+                "source_version": source_version,
+                "model_id": model_id,
+                "top_k": top_k,
+                "similarity_threshold": similarity_threshold,
+            },
+        ).mappings()
+        return tuple(SemanticNeighbor.model_validate(dict(row)) for row in rows)
+
     def load_synthesis_basis(
         self,
         session: Session,

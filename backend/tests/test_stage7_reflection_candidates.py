@@ -10,7 +10,10 @@ from app.modules.reflection_engine.evidence import (
     EvidenceValidator,
     transition_key,
 )
-from app.modules.reflection_engine.repository import ReflectionEngineRepository
+from app.modules.reflection_engine.repository import (
+    ReflectionEngineRepository,
+    SemanticNeighbor,
+)
 from app.modules.reflection_engine.schemas import (
     AnalysisBasis,
     CandidateSignal,
@@ -139,6 +142,29 @@ def signal(
             "occurred_on": occurred,
             "duplicate_cluster_key": duplicate_cluster_key,
         }
+    )
+
+
+def semantic_neighbor(
+    left: CandidateSignal,
+    right: CandidateSignal,
+    *,
+    similarity: float = 0.94,
+) -> SemanticNeighbor:
+    return SemanticNeighbor(
+        anchor_signal_id=left.id,
+        neighbor_signal_id=right.id,
+        cosine_distance=1 - similarity,
+        similarity=similarity,
+    )
+
+
+def hidden_driver_from(batch):
+    return next(
+        candidate
+        for candidate in batch.candidates
+        if candidate.pattern_type == "hidden_driver"
+        and candidate.structure.canonical_need == "competence"
     )
 
 
@@ -941,3 +967,111 @@ def test_materialize_basis_rejects_undeclared_candidate_storage_fields() -> None
 
     with pytest.raises(ValidationError, match="unexpected_storage_field"):
         engine._materialize_basis(raw, user_id=USER)  # noqa: SLF001
+
+
+def test_strong_compatible_semantic_paraphrase_counts_once() -> None:
+    signals = [signal(index) for index in range(4)]
+    baseline = hidden_driver_from(
+        service().construct_candidates(user_id=USER, basis=basis(), signals=signals)
+    )
+    semantic = hidden_driver_from(
+        service().construct_candidates(
+            user_id=USER,
+            basis=basis(),
+            signals=signals,
+            semantic_neighbors=[semantic_neighbor(signals[0], signals[1])],
+        )
+    )
+
+    assert len(baseline.support_signal_ids) == 4
+    assert len(semantic.support_signal_ids) == 3
+    assert semantic.id == baseline.id
+    assert semantic.canonical_key == baseline.canonical_key
+
+
+def test_below_threshold_and_structurally_incompatible_neighbors_remain_distinct() -> None:
+    signals = [signal(index) for index in range(4)]
+    weak = semantic_neighbor(signals[0], signals[1], similarity=0.899)
+    incompatible_signal = signal(4, signal_type="emotion")
+    incompatible = semantic_neighbor(signals[0], incompatible_signal)
+
+    weak_candidate = hidden_driver_from(
+        service().construct_candidates(
+            user_id=USER,
+            basis=basis(),
+            signals=signals,
+            semantic_neighbors=[weak],
+        )
+    )
+    mixed_candidate = hidden_driver_from(
+        service().construct_candidates(
+            user_id=USER,
+            basis=basis(),
+            signals=[*signals, incompatible_signal],
+            semantic_neighbors=[incompatible],
+        )
+    )
+
+    assert len(weak_candidate.support_signal_ids) == 4
+    assert len(mixed_candidate.support_signal_ids) == 5
+
+
+def test_same_entry_neighbor_is_ignored_and_counter_role_is_preserved() -> None:
+    shared_entry = uuid4()
+    same_entry = [signal(0, entry_id=shared_entry), signal(1, entry_id=shared_entry)]
+    other = [signal(2), signal(3)]
+    same_entry_candidate = hidden_driver_from(
+        service().construct_candidates(
+            user_id=USER,
+            basis=basis(),
+            signals=[*same_entry, *other],
+            semantic_neighbors=[semantic_neighbor(*same_entry)],
+        )
+    )
+    first = signal(0)
+    counter = signal(
+        4,
+        entry_text="I no longer need recognition.",
+        source_quote="I no longer need recognition.",
+    ).model_copy(update={"interpretation": "I no longer need recognition."})
+    counter_candidate = hidden_driver_from(
+        service().construct_candidates(
+            user_id=USER,
+            basis=basis(),
+            signals=[first, signal(1), signal(2), counter],
+            semantic_neighbors=[semantic_neighbor(first, counter)],
+        )
+    )
+
+    assert len(same_entry_candidate.support_signal_ids) == 4
+    assert counter.id in counter_candidate.counter_signal_ids
+    assert counter.id not in counter_candidate.support_signal_ids
+
+
+def test_semantic_association_is_deterministic_and_does_not_chain_transitively() -> None:
+    signals = [signal(index) for index in range(4)]
+    edges = [
+        semantic_neighbor(signals[0], signals[1], similarity=0.96),
+        semantic_neighbor(signals[1], signals[2], similarity=0.95),
+    ]
+    first = hidden_driver_from(
+        service().construct_candidates(
+            user_id=USER,
+            basis=basis(),
+            signals=signals,
+            semantic_neighbors=edges,
+        )
+    )
+    shuffled = hidden_driver_from(
+        service().construct_candidates(
+            user_id=USER,
+            basis=basis(),
+            signals=list(reversed(signals)),
+            semantic_neighbors=list(reversed(edges)),
+        )
+    )
+
+    assert len(first.support_signal_ids) == 3
+    assert first.support_signal_ids == shuffled.support_signal_ids
+    assert first.support_clusters == shuffled.support_clusters
+    assert signals[2].id in first.support_signal_ids

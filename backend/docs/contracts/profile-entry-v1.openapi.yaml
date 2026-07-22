@@ -585,6 +585,7 @@ components:
           id,
           confidence,
           score,
+          evidenceEntryCount,
           statement,
           underlyingNeed,
           drivers,
@@ -596,6 +597,7 @@ components:
         id: { type: string, format: uuid }
         confidence: { $ref: '#/components/schemas/ReflectionConfidence' }
         score: { type: number, minimum: 0, maximum: 1 }
+        evidenceEntryCount: { type: integer, minimum: 1 }
         statement: { type: string, minLength: 1, maxLength: 1000 }
         underlyingNeed: { type: string, minLength: 1, maxLength: 200 }
         drivers:
@@ -630,6 +632,7 @@ components:
           id,
           confidence,
           score,
+          evidenceEntryCount,
           title,
           description,
           steps,
@@ -643,6 +646,7 @@ components:
         id: { type: string, format: uuid }
         confidence: { $ref: '#/components/schemas/ReflectionConfidence' }
         score: { type: number, minimum: 0, maximum: 1 }
+        evidenceEntryCount: { type: integer, minimum: 1 }
         title: { type: string, minLength: 1, maxLength: 300 }
         description: { type: string, minLength: 1, maxLength: 1000 }
         steps:
@@ -668,6 +672,7 @@ components:
           id,
           confidence,
           score,
+          evidenceEntryCount,
           leftTitle,
           leftBody,
           rightTitle,
@@ -681,6 +686,7 @@ components:
         id: { type: string, format: uuid }
         confidence: { $ref: '#/components/schemas/ReflectionConfidence' }
         score: { type: number, minimum: 0, maximum: 1 }
+        evidenceEntryCount: { type: integer, minimum: 1 }
         leftTitle: { type: string, minLength: 1 }
         leftBody: { type: string, minLength: 1, maxLength: 1000 }
         rightTitle: { type: string, minLength: 1 }
