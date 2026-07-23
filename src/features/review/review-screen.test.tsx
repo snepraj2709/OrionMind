@@ -145,6 +145,14 @@ function renderReview(repository: ReviewRepository) {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 afterEach(() => {
   Reflect.deleteProperty(navigator, 'onLine');
 });
@@ -184,6 +192,57 @@ describe('ReviewScreen', () => {
     ).not.toBeInTheDocument();
     const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
     expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(1);
+  });
+
+  it('shows only the central loader while feedback refreshes the queue', async () => {
+    const refresh =
+      deferred<Awaited<ReturnType<ReviewRepository['listItems']>>>();
+    let listCallCount = 0;
+    const repository: ReviewRepository = {
+      listItems: vi.fn((query) => {
+        listCallCount += 1;
+        if (listCallCount > 1) return refresh.promise;
+        return Promise.resolve({
+          items: [entryItem],
+          pagination: {
+            page: query.page,
+            pageSize: query.page_size,
+            total: 1,
+          },
+        });
+      }),
+      submitFeedback: vi.fn(async (input) => ({
+        ...entryItem,
+        status: statusFor(input),
+        feedback: {
+          ...input.feedback,
+          correctedStatement: null,
+          note: null,
+          evidenceWeight: weightFor(input),
+          updatedAt: '2026-07-23T10:30:00Z',
+        },
+      })),
+    };
+    const user = userEvent.setup();
+    renderReview(repository);
+
+    await screen.findByText(entryItem.statement);
+    await user.click(
+      screen.getByRole('button', {
+        name: `Accurate: ${entryItem.statement}`,
+      }),
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Refreshing' }),
+    ).toBeVisible();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(1);
+
+    refresh.resolve({
+      items: [],
+      pagination: { page: 1, pageSize: 20, total: 0 },
+    });
   });
 
   it('switches scopes and requests every pending category from page one', async () => {

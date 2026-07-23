@@ -275,6 +275,7 @@ for (const viewport of [
 
     await openReview(page, { waitForRelease });
     await expectCenteredStateCard(page, 'Loading', viewport.width);
+    await expect(page.locator('.animate-spin:visible')).toHaveCount(1);
 
     releaseRequests();
     await expect(page.getByText(entryItem.statement)).toBeVisible();

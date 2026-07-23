@@ -130,8 +130,7 @@ export function EntryDetailScreen({
       <PageHeader
         actions={
           <RefreshButton
-            loading={entryQuery.isFetching && !entryQuery.isPending}
-            loadingLabel="Refreshing entry"
+            disabled={entryQuery.isFetching}
             onClick={() => void entryQuery.refetch()}
           >
             Refresh
@@ -212,7 +211,7 @@ export function EntryDetailScreen({
             action={
               <AppButton
                 disabled={!isOnline || retry.isPending}
-                loading={retry.isPending}
+                loading={viewStatus === 'ready' && retry.isPending}
                 loadingLabel="Retrying reflection"
                 onClick={() => retry.mutate()}
               >

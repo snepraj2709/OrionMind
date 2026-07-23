@@ -111,9 +111,7 @@ export function JourneyScreen({
             {statusQuery.data?.enabled ? (
               <RefreshButton
                 aria-label="Refresh journey"
-                disabled={!isOnline}
-                loading={entriesQuery.isFetching}
-                loadingLabel="Refreshing journey"
+                disabled={!isOnline || entriesQuery.isFetching}
                 onClick={() => void entriesQuery.refetch()}
                 variant="icon"
               />

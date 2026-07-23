@@ -153,7 +153,7 @@ export function ProfileScreen({
             </Typography>
             <SubmitButton
               disabled={!form.formState.isDirty || !isOnline}
-              loading={updateMutation.isPending}
+              loading={viewStatus === 'ready' && updateMutation.isPending}
               loadingLabel="Saving profile"
             >
               Save changes

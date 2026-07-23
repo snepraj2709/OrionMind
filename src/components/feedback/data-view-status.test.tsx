@@ -42,6 +42,7 @@ describe('DataViewStatus', () => {
       'bg-card',
     );
     expect(screen.getByText('Orion is loading this page.')).toBeVisible();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(1);
   });
 
   it('renders background refresh in the same card with common copy', () => {
@@ -54,6 +55,7 @@ describe('DataViewStatus', () => {
         'Orion is checking for updates. Your current view will stay in place.',
       ),
     ).toBeVisible();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(1);
   });
 
   it.each([

@@ -186,7 +186,9 @@ export function ReviewScreen({
                 item={item}
                 key={`${item.id}:${item.feedback?.updatedAt ?? 'pending'}`}
                 loadingVerdict={
-                  feedback.isPending && feedback.variables?.itemId === item.id
+                  viewStatus === 'ready' &&
+                  feedback.isPending &&
+                  feedback.variables?.itemId === item.id
                     ? feedback.variables.feedback.verdict
                     : undefined
                 }
