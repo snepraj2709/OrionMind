@@ -21,7 +21,9 @@ test('uses live Supabase auth and sends its bearer token to the configured API',
 
   await page.goto(routes.login.path);
   await page.getByLabel('Email').fill(liveTestCredentials.email);
-  await page.getByLabel('Password').fill(liveTestCredentials.password);
+  await page
+    .getByRole('textbox', { name: 'Password', exact: true })
+    .fill(liveTestCredentials.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page).toHaveURL(routes.entries.path);

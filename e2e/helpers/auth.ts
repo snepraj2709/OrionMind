@@ -91,7 +91,9 @@ export async function logInWithSyntheticSession(
 
   await page.goto(routes.login.path);
   await page.getByLabel('Email').fill(identity.email);
-  await page.getByLabel('Password').fill('e2e-password');
+  await page
+    .getByRole('textbox', { name: 'Password', exact: true })
+    .fill('e2e-password');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(routes.entries.path);
   return { accessToken } satisfies SyntheticTestSession;
@@ -221,7 +223,9 @@ export async function logIn(page: Page) {
   await installMockSupabaseAuth(page);
   await page.goto(routes.login.path);
   await page.getByLabel('Email').fill(testCredentials.email);
-  await page.getByLabel('Password').fill(testCredentials.password);
+  await page
+    .getByRole('textbox', { name: 'Password', exact: true })
+    .fill(testCredentials.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(routes.entries.path);
 }

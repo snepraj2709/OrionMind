@@ -76,6 +76,24 @@ test('keeps password recovery on the public login route', async ({ page }) => {
   await expect(page).toHaveURL(`${routes.login.path}?mode=forgot`);
 });
 
+test('hydrates the configured login route without recoverable errors', async ({
+  page,
+}) => {
+  const browserErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') browserErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+
+  await page.goto(routes.login.path);
+  await page.waitForLoadState('networkidle');
+
+  await expect(
+    page.getByRole('heading', { name: 'Welcome back' }),
+  ).toBeVisible();
+  expect(browserErrors).toEqual([]);
+});
+
 test('loads the mobile landing route without runtime errors or overflow', async ({
   page,
 }) => {
@@ -196,7 +214,9 @@ test('shows email confirmation after signup', async ({ page }) => {
   await installMockSupabaseAuth(page);
   await page.goto(routes.signup.path);
   await page.getByLabel('Email').fill(testCredentials.email);
-  await page.getByLabel('Password').fill(testCredentials.password);
+  await page
+    .getByRole('textbox', { name: 'Password', exact: true })
+    .fill(testCredentials.password);
   await page.getByRole('button', { name: 'Create account' }).click();
 
   await expect(page.getByRole('status')).toContainText(
@@ -225,7 +245,9 @@ test('returns a successful login to the protected destination', async ({
   await installMockSupabaseAuth(page);
 
   await page.getByLabel('Email').fill(testCredentials.email);
-  await page.getByLabel('Password').fill(testCredentials.password);
+  await page
+    .getByRole('textbox', { name: 'Password', exact: true })
+    .fill(testCredentials.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page).toHaveURL(routes.newEntry.path);
