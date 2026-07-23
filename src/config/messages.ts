@@ -1,5 +1,5 @@
 export const dataViewMessages = {
-  approvals: {
+  review: {
     initial: {
       description:
         'The review queue could not be loaded. Try again when you are ready.',

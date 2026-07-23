@@ -338,6 +338,7 @@ export type ReviewStatus = z.infer<typeof reviewStatusSchema>;
 export type InferenceLevel = z.infer<typeof inferenceLevelSchema>;
 export type EntryInsightVerdict = z.infer<typeof entryInsightVerdictSchema>;
 export type PatternVerdict = z.infer<typeof patternVerdictSchema>;
+export type ReviewVerdict = z.infer<typeof reviewVerdictSchema>;
 export type ReviewListQuery = z.infer<typeof reviewListQuerySchema>;
 export type ReviewFeedbackRequest = z.infer<typeof reviewFeedbackRequestSchema>;
 export type EntryInsightFeedback = z.infer<typeof entryInsightFeedbackSchema>;

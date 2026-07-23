@@ -24,7 +24,8 @@ export type RouteKey =
   | 'entries'
   | 'newEntry'
   | 'entryDetail'
-  | 'approvals'
+  | 'review'
+  | 'legacyApprovals'
   | 'reflections'
   | 'journey'
   | 'profile'
@@ -97,14 +98,24 @@ export const routes = {
     safeQueryKeys: [],
     navigationParent: 'entries',
   },
-  approvals: {
-    path: '/approvals',
+  review: {
+    path: '/review',
     label: 'Review',
     visibility: 'authenticated',
     authentication: 'required',
     showInSidebar: true,
     icon: CheckCircle2,
+    safeQueryKeys: ['scope', 'category', 'status', 'page'],
+  },
+  legacyApprovals: {
+    path: '/approvals',
+    label: 'Review',
+    visibility: 'authenticated',
+    authentication: 'required',
+    showInSidebar: false,
+    icon: CheckCircle2,
     safeQueryKeys: [],
+    navigationParent: 'review',
   },
   reflections: {
     path: '/reflections',

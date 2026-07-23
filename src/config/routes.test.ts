@@ -35,6 +35,17 @@ describe('route registry', () => {
     expect(findRouteByPathname('/memories')).toBeUndefined();
   });
 
+  it('uses Review as the canonical route and keeps approvals as a hidden redirect', () => {
+    expect(routes.review.path).toBe('/review');
+    expect(routes.review.showInSidebar).toBe(true);
+    expect(routes.legacyApprovals.path).toBe('/approvals');
+    expect(routes.legacyApprovals.showInSidebar).toBe(false);
+    expect(getActiveSidebarRoute('/approvals')).toBe('review');
+    expect(
+      Object.values(routes).filter((route) => route.path === '/review'),
+    ).toHaveLength(1);
+  });
+
   it('builds encoded entry detail paths', () => {
     expect(entryDetailPath('entry / 123')).toBe('/entries/entry%20%2F%20123');
   });
@@ -46,6 +57,10 @@ describe('returnTo sanitization', () => {
     ['/entries?access_token=secret&search=focus', '/entries?search=focus'],
     ['/reflections?range=30d&unknown=value', '/reflections?range=30d'],
     ['/journey?range=all', '/journey?range=all'],
+    [
+      '/review?scope=pattern&category=hidden_driver&status=pending&page=2&search=secret',
+      '/review?scope=pattern&category=hidden_driver&status=pending&page=2',
+    ],
   ])(
     'keeps known protected routes and only allowlisted query keys',
     (value, expected) => {

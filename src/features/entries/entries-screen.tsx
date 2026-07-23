@@ -20,11 +20,11 @@ import {
 
 export interface EntriesScreenProps {
   repository?: EntriesListRepository;
-  pendingReviewCount?: number;
+  pendingReviewCount?: number | null;
 }
 
 export function EntriesScreen({
-  pendingReviewCount = 0,
+  pendingReviewCount,
   repository = entriesListRepository,
 }: EntriesScreenProps) {
   const [pageIndex, setPageIndex] = useState(0);
@@ -42,6 +42,16 @@ export function EntriesScreen({
     ? pageIndex
     : responsePageIndex;
   const entryCount = query.data?.total;
+  const reviewCountLabel =
+    pendingReviewCount === undefined
+      ? 'Loading review count'
+      : pendingReviewCount === null
+        ? 'Review count unavailable'
+        : `${pendingReviewCount} awaiting review`;
+  const reviewCountClassName =
+    typeof pendingReviewCount === 'number' && pendingReviewCount > 0
+      ? 'text-status-warning'
+      : 'text-muted-foreground';
 
   useEffect(() => {
     if (
@@ -75,16 +85,13 @@ export function EntriesScreen({
         }
         description={
           <span
-            aria-label={`${entryCount ?? 'Loading'} ${entryCount === 1 ? 'entry' : 'entries'}, ${pendingReviewCount} awaiting review`}
+            aria-label={`${entryCount ?? 'Loading'} ${entryCount === 1 ? 'entry' : 'entries'}, ${reviewCountLabel}`}
             aria-live="polite"
           >
             {entryCount === undefined
               ? 'Loading entries'
               : `${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`}{' '}
-            ·{' '}
-            <span className="text-status-warning">
-              {pendingReviewCount} awaiting review
-            </span>
+            · <span className={reviewCountClassName}>{reviewCountLabel}</span>
           </span>
         }
         title={routes.entries.label}

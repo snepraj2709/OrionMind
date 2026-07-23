@@ -506,7 +506,7 @@ Each section can abstain independently.
 |     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `completed`   | High       | Blocking                                    |
 |     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `completed`   | High       | Blocking                                    |
 |     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `completed`   | High       | Blocking                                    |
-|     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `not_started` | High       | Blocking                                    |
+|     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `completed`   | High       | Blocking                                    |
 |     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `not_started` | Medium     | Blocking                                    |
 |    10 | Full P0 integration verification                  | P0       | 1–9          | `test(review): verify p0 review reflection flow`          | `not_started` | High       | Blocking                                    |
 |    11 | Safety and privacy hardening                      | Post-P0  | 10           | `fix(reflections): harden review privacy boundaries`      | `not_started` | Medium     | Non-blocking for P0; blocked until Stage 10 |
@@ -1237,7 +1237,77 @@ No paid/live-provider call is authorized by this stage. A live Supabase or model
 
 ### Stage 8 — Integrate Review frontend
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Added the canonical
+  `src/app/(protected)/review/page.tsx`, the production
+  `src/features/review/{index,repository,queries}.ts` and
+  `src/features/review/{review-screen,review-queue-item,review-navigation}.tsx`
+  boundary and its repository/screen/navigation tests, plus
+  `e2e/review.spec.ts`. Updated the Review wire-model exports, protected
+  layout, Entries pending-count consumer, route registry/tests, navigation
+  badge/tests, data-view messages, `FilterField`, `EvidenceDrawer`, and the
+  legacy `/approvals` page. Removed the obsolete mock-backed
+  `src/features/approvals` implementation/tests and replaced its browser spec.
+- **Migrations added:** None. No backend, database, API contract, dependency,
+  infrastructure, Reflections card, Ideas, or Memories behavior changed.
+- **Frontend behavior:** `/review` now uses the authorized API client and
+  strict Zod parsing for list and feedback requests. Query keys include the
+  authenticated user and every scope/filter/page dimension. The screen exposes
+  only Entry Insights and Patterns, resets invalid category/page state on
+  scope changes, omits search and theme filtering, renders the existing
+  editorial row treatment, uses scope-correct feedback verdicts with optional
+  correction/note, opens source evidence in `EvidenceDrawer`, and handles
+  loading, error, empty, filtered-empty, success, refresh, mutation-error,
+  offline, retry, and pagination states. Rows and controls are non-actionable
+  during every fetch, mutation, or failed refresh. Error-envelope parsing
+  distinguishes durable feedback followed by recalculation failure from a
+  feedback write that cannot be confirmed, and every mutation error refreshes
+  the queue before another action is allowed.
+- **Review corrections:** Pattern source IDs and dates are independent contract
+  arrays, so the evidence drawer now presents distinct supporting dates without
+  inventing positional ID/date pairs or displaying generic evidence context as
+  a journal quotation. Entries also preserve an unknown/failed pending-count
+  state instead of presenting it as a real zero.
+- **Navigation and compatibility:** Desktop, mobile, and Entries summary counts
+  now sum real `page_size=1&status=pending` requests for both scopes. The route
+  registry uses `review` as the canonical sidebar key while retaining a hidden
+  protected legacy route, and `/approvals` performs a server redirect to
+  `/review`.
+- **Commands and results:**
+  - Focused Review, route, navigation, and authorized-client regressions:
+    `95 passed`.
+  - `npm run typecheck`: passed.
+  - `npm run lint`: passed, including design-system policy checks.
+  - `npm test`: `323 passed` across `48` files.
+  - `npm run build`: passed; both `/review` and the `/approvals` redirect route
+    were generated.
+  - `npm run test:e2e -- e2e/review.spec.ts`: `5 passed`, covering mobile and
+    desktop layout, exact feedback payloads, keyboard evidence access,
+    empty/error states, real pending-count queries, and the legacy redirect.
+  - Targeted Prettier and `git diff --check`: passed.
+- **Manual verification:** The focused Playwright run exercised the production
+  build at 320px and 1440px, verified no horizontal page overflow, switched
+  scopes, opened evidence by keyboard, submitted Entry and Pattern feedback,
+  observed empty/error states, and followed `/approvals` to `/review`.
+- **Deviations from the proposed plan:** The old Approvals files were removed
+  rather than retained because repository-wide searches and the completed
+  build proved they had no remaining production consumers. `EvidenceDrawer`
+  gained an optional description so Pattern evidence dates are not mislabeled
+  as exposed journal quotations, plus optional content semantics so generic
+  evidence context renders as body copy. The first Playwright attempt used the
+  repository's live-test-session helper and stopped at an unavailable external
+  test account; the final Stage 8 spec uses a local synthetic Supabase browser
+  session and intercepted Review API, avoiding a live dependency while still
+  exercising AuthProvider and authorized request behavior.
+- **Remaining risks:** The browser suite uses the exact public Review wire
+  contract with an intercepted backend; the combined live browser/backend/
+  worker/disposable-database path remains Stage 10 scope. Pattern list responses
+  expose source IDs/dates but no raw source quote, so the drawer truthfully
+  identifies supporting dates and keeps full text in Entries. No commit was
+  created, per the user's explicit instruction.
 
 **Objective:** Replace mock Approvals UI behavior with the real two-scope Review experience while preserving Orion's visual system.
 

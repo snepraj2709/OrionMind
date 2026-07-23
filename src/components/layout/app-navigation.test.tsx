@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AppNavigation } from './app-navigation';
 
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/approvals',
+  usePathname: () => '/review',
 }));
 
 describe('AppNavigation', () => {

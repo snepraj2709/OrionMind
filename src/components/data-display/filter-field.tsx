@@ -10,6 +10,7 @@ export interface FilterFieldProps {
   onValueChange: (value: string) => void;
   placeholder?: string;
   hideLabel?: boolean;
+  disabled?: boolean;
 }
 
 export function FilterField(props: FilterFieldProps) {

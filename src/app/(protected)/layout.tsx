@@ -6,20 +6,14 @@ import {
   MobileNavigation,
   Sidebar,
 } from '@/components/layout';
-import {
-  ApprovalAwareNavigation,
-  ReviewQueueSummary,
-} from '@/features/approvals';
+import { ReviewAwareNavigation, ReviewQueueSummary } from '@/features/review';
 import { ProtectedRoute, UserMenu } from '@/features/auth';
-import { mockOrionStore } from '@/services/mock-orion-store';
 
 interface ProtectedLayoutProps {
   children: ReactNode;
 }
 
 export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
-  const pendingReviewCount = mockOrionStore.listPendingApprovals().length;
-
   return (
     <ProtectedRoute>
       <AppShell
@@ -27,14 +21,14 @@ export default function ProtectedLayout({ children }: ProtectedLayoutProps) {
           <MobileNavigation
             brand={<BrandMark />}
             footer={<UserMenu />}
-            utility={<ReviewQueueSummary initialCount={pendingReviewCount} />}
+            utility={<ReviewQueueSummary />}
           >
-            <ApprovalAwareNavigation initialCount={pendingReviewCount} />
+            <ReviewAwareNavigation />
           </MobileNavigation>
         }
         sidebar={
           <Sidebar footer={<UserMenu />} header={<BrandMark />}>
-            <ApprovalAwareNavigation initialCount={pendingReviewCount} />
+            <ReviewAwareNavigation />
           </Sidebar>
         }
       >

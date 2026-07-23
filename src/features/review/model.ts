@@ -15,4 +15,5 @@ export type {
   ReviewListQuery,
   ReviewScope,
   ReviewStatus,
+  ReviewVerdict,
 } from './api-schema';

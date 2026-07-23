@@ -1,10 +1,7 @@
-import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
 
 import { routes } from '@/config/routes';
-import { ApprovalsScreen } from '@/features/approvals';
-
-export const metadata: Metadata = { title: routes.approvals.label };
 
 export default function ApprovalsPage() {
-  return <ApprovalsScreen />;
+  redirect(routes.review.path);
 }
