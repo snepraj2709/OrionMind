@@ -181,6 +181,14 @@ export function NewEntryScreen({
           createEntry.error.status === 415
         ? 'This recording format is not supported. Record again using your browser’s default format.'
         : 'The voice entry could not be added. Your recording is still here—try again when you are ready.';
+  const draftStatus =
+    mode === 'text' && !isPreparingTextSubmit
+      ? draft.saveStatus === 'saving'
+        ? 'Saving draft…'
+        : draft.saveStatus === 'saved'
+          ? 'Draft saved'
+          : null
+      : null;
 
   return (
     <PageShell className="space-y-8">
@@ -197,27 +205,39 @@ export function NewEntryScreen({
         title={routes.newEntry.label}
       />
 
-      <SegmentedControl
-        ariaLabel="Entry mode"
-        items={[
-          {
-            disabled:
-              createEntry.isPending ||
-              (mode === 'voice' && voice.state !== 'idle'),
-            icon: <PenLine aria-hidden="true" className="size-4" />,
-            label: 'Write',
-            value: 'text',
-          },
-          {
-            disabled: createEntry.isPending,
-            icon: <Mic aria-hidden="true" className="size-4" />,
-            label: 'Record',
-            value: 'voice',
-          },
-        ]}
-        onValueChange={changeMode}
-        value={mode}
-      />
+      <div className="text-measure-wide flex items-center justify-between gap-3">
+        <SegmentedControl
+          ariaLabel="Entry mode"
+          className="min-w-0"
+          items={[
+            {
+              disabled:
+                createEntry.isPending ||
+                (mode === 'voice' && voice.state !== 'idle'),
+              icon: <PenLine aria-hidden="true" className="size-4" />,
+              label: 'Write',
+              value: 'text',
+            },
+            {
+              disabled: createEntry.isPending,
+              icon: <Mic aria-hidden="true" className="size-4" />,
+              label: 'Record',
+              value: 'voice',
+            },
+          ]}
+          onValueChange={changeMode}
+          value={mode}
+        />
+        {draftStatus ? (
+          <Typography
+            className="text-muted-foreground shrink-0 text-right"
+            role="status"
+            variant="bodySmall"
+          >
+            {draftStatus}
+          </Typography>
+        ) : null}
+      </div>
 
       {mode === 'text' ? (
         <form
@@ -273,24 +293,6 @@ export function NewEntryScreen({
             >
               Your draft could not be synchronized. Your writing is still here.
             </InlineError>
-          ) : null}
-          {draft.saveStatus === 'saving' && !isPreparingTextSubmit ? (
-            <Typography
-              className="text-muted-foreground"
-              role="status"
-              variant="bodySmall"
-            >
-              Saving draft…
-            </Typography>
-          ) : null}
-          {draft.saveStatus === 'saved' && !isPreparingTextSubmit ? (
-            <Typography
-              className="text-muted-foreground"
-              role="status"
-              variant="bodySmall"
-            >
-              Draft saved
-            </Typography>
           ) : null}
           {createEntry.isError ? (
             <FormError>
