@@ -4,6 +4,13 @@ Orion Mind is a private journal that looks for patterns across what a person wri
 
 This repository contains the web app, API, database migrations, and background worker. The reflection features are guarded by feature flags and a user rollout list, so a local installation needs more than the frontend alone.
 
+## Try it live
+
+Open [orionmind.in](https://www.orionmind.in) and sign in with the demo account:
+
+- **Email:** `snevandan27@gmail.com`
+- **Password:** `Sneha@#2019`
+
 ## What works today
 
 | Area             | Current state                                                                                                                                                                                     |
