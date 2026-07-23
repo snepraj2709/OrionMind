@@ -63,9 +63,15 @@ describe('authentication forms', () => {
     expect(password).toHaveAttribute('type', 'password');
     expect(password).toHaveAttribute('autocomplete', 'current-password');
     expect(password).toBeRequired();
+    const visibilityToggle = screen.getByRole('button', {
+      name: 'Show password',
+    });
+    expect(visibilityToggle).toHaveAttribute('aria-pressed', 'false');
 
     await userEvent.type(email, 'reader@example.com');
     await userEvent.type(password, 'secure-password');
+    await userEvent.click(visibilityToggle);
+    expect(password).toHaveAttribute('type', 'text');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(signIn).toHaveBeenCalledWith({
       email: 'reader@example.com',
@@ -101,6 +107,7 @@ describe('authentication forms', () => {
     expect(email).toHaveAttribute('type', 'email');
     expect(password).toHaveAttribute('autocomplete', 'new-password');
     expect(password).toHaveAttribute('type', 'password');
+    expect(screen.getByRole('button', { name: 'Show password' })).toBeVisible();
 
     await userEvent.type(email, 'reader@example.com');
     await userEvent.type(password, 'secure-password');
@@ -176,6 +183,9 @@ describe('authentication forms', () => {
       isRequiredRecoveryActive: true,
       updatePassword,
     });
+    expect(
+      screen.getAllByRole('button', { name: 'Show password' }),
+    ).toHaveLength(2);
     await userEvent.type(
       screen.getByLabelText('New password *'),
       'new-password',

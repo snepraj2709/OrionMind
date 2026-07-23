@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form';
 
 import { FormError } from '@/components/forms/form-error';
 import { FormField } from '@/components/forms/form-field';
+import { PasswordInput } from '@/components/forms/password-input';
 import { SubmitButton } from '@/components/forms/submit-button';
 import { TextInput } from '@/components/forms/text-input';
 import { signUpSchema, type SignUpInput } from '@/services/auth/schemas';
@@ -59,11 +60,10 @@ export function SignUpForm() {
         label="Password"
         required
       >
-        <TextInput
+        <PasswordInput
           autoComplete="new-password"
           minLength={8}
           required
-          type="password"
           {...register('password')}
         />
       </FormField>
