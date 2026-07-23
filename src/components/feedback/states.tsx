@@ -74,6 +74,29 @@ export function PageErrorState({
   );
 }
 
+export interface PageLoadingStateProps {
+  title?: string;
+  description?: string;
+  className?: string;
+}
+
+export function PageLoadingState({
+  className,
+  description = 'Orion is loading this page.',
+  title = 'Loading',
+}: PageLoadingStateProps) {
+  return (
+    <Surface className={cn('px-6 py-12', className)}>
+      <StateFrame
+        description={description}
+        icon={<CircleDashed className="size-6 animate-spin" />}
+        role="status"
+        title={title}
+      />
+    </Surface>
+  );
+}
+
 export interface InlineErrorProps {
   children: ReactNode;
   action?: ReactNode;

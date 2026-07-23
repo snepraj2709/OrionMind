@@ -187,6 +187,9 @@ class ProcessingService:
                 offset_map=protected.offset_map,
                 duplicate_cluster_key=deterministic.duplicate_cluster_key,
                 cipher=self._cipher,
+                entry_date=entry_date,
+                model_id=model_id,
+                prompt_version=ENTRY_ANALYSIS_PROMPT_VERSION,
                 embeddings=embeddings,
                 embedding_model_id=self._embedding_model_id,
             ) if final_quality.eligibility == "accepted" else ()

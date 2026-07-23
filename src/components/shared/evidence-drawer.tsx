@@ -21,9 +21,15 @@ export interface EvidenceDrawerProps {
   onOpenChange: (open: boolean) => void;
   items: EvidenceItem[];
   title?: string;
+  description?: string;
+  contentLabel?: string;
+  contentIsQuote?: boolean;
 }
 
 export function EvidenceDrawer({
+  contentIsQuote = true,
+  contentLabel = 'Your journal',
+  description = "Original journal wording is shown separately from Orion's interpretation.",
   items,
   onOpenChange,
   open,
@@ -47,10 +53,7 @@ export function EvidenceDrawer({
               {title}
             </Typography>
           </SheetTitle>
-          <SheetDescription>
-            Original journal wording is shown separately from Orion&apos;s
-            interpretation.
-          </SheetDescription>
+          <SheetDescription>{description}</SheetDescription>
         </SheetHeader>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -70,10 +73,14 @@ export function EvidenceDrawer({
                 </Typography>
               </div>
               <div className="space-y-2">
-                <Typography variant="eyebrow">Your journal</Typography>
-                <Typography as="blockquote" variant="journalExcerpt">
-                  {item.text}
-                </Typography>
+                <Typography variant="eyebrow">{contentLabel}</Typography>
+                {contentIsQuote ? (
+                  <Typography as="blockquote" variant="journalExcerpt">
+                    {item.text}
+                  </Typography>
+                ) : (
+                  <Typography variant="body">{item.text}</Typography>
+                )}
               </div>
               {item.interpretation ? (
                 <div className="border-border space-y-2 border-t pt-6">

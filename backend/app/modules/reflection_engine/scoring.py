@@ -254,7 +254,7 @@ def overall_basis_eligible(
     return (
         valid_entry_count >= 3
         and distinct_entry_dates >= 2
-        and reflective_word_count >= 200
+        and reflective_word_count >= 150
     )
 
 
@@ -278,9 +278,9 @@ def recurring_loop_publishable(
     score: float,
 ) -> bool:
     return (
-        observed_chains >= 3
+        observed_chains >= 2
         and supporting_entries >= 3
-        and supported_transitions >= 4
+        and supported_transitions >= 3
         and distinct_dates >= 2
         and score >= 0.72
     )

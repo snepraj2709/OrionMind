@@ -114,6 +114,21 @@ class JobRepository:
             )
         )
 
+    def complete(self, session: Session, *, claim: JobClaim, worker_id: str) -> bool:
+        return bool(
+            session.scalar(
+                text(
+                    "SELECT public.complete_processing_job("
+                    ":job_id, :worker_id, :claim_token)"
+                ),
+                {
+                    "job_id": claim.job_id,
+                    "worker_id": worker_id,
+                    "claim_token": claim.claim_token,
+                },
+            )
+        )
+
     def fail(
         self,
         session: Session,

@@ -1,10 +1,12 @@
 'use client';
 
-import { usePendingApprovalCount } from '@/features/approvals';
 import { EntriesScreen } from '@/features/entries';
+import { useAuth } from '@/features/auth';
+import { usePendingReviewCount } from '@/features/review';
 
 export function EntriesPageContent() {
-  const pendingReviewCount = usePendingApprovalCount();
+  const { user } = useAuth();
+  const { count, isError } = usePendingReviewCount(user?.id);
 
-  return <EntriesScreen pendingReviewCount={pendingReviewCount} />;
+  return <EntriesScreen pendingReviewCount={isError ? null : count} />;
 }

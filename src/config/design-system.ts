@@ -11,6 +11,7 @@ export const typographyVariants = {
   button: 'type-button',
   bodySmall: 'type-body-small',
   metadata: 'type-metadata',
+  tag: 'type-tag',
   eyebrow: 'type-eyebrow',
   brandWordmarkProminent: 'type-brand-wordmark-prominent',
 } as const;

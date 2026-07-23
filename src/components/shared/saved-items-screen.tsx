@@ -64,9 +64,7 @@ export function SavedItemsScreen({
       <SearchControl
         actions={
           <RefreshButton
-            disabled={!isOnline}
-            loading={query.isFetching && !query.isPending}
-            loadingLabel={`Refreshing ${title.toLocaleLowerCase()}`}
+            disabled={!isOnline || query.isFetching}
             onClick={() => void query.refetch()}
           >
             Refresh
@@ -89,7 +87,6 @@ export function SavedItemsScreen({
         initialError={errorMessages.initial}
         onRetry={() => void query.refetch()}
         refreshError={errorMessages.refresh}
-        refreshingLabel={`Refreshing ${title.toLocaleLowerCase()}…`}
         retryDisabled={!isOnline}
         status={viewStatus}
       />

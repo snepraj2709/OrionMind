@@ -146,8 +146,16 @@ describe('NewEntryScreen', () => {
     );
 
     expect(screen.getByText('Restoring saved draft')).toBeVisible();
-    expect(await editableTextbox()).toHaveValue('Restored words');
-    expect(screen.getByText('Draft saved')).toBeVisible();
+    const textbox = await editableTextbox();
+    const draftStatus = screen.getByRole('status');
+    const modeControl = screen.getByRole('radiogroup', {
+      name: 'Entry mode',
+    });
+
+    expect(textbox).toHaveValue('Restored words');
+    expect(draftStatus).toHaveTextContent('Draft saved');
+    expect(draftStatus.parentElement).toBe(modeControl.parentElement);
+    expect(textbox.closest('form')).not.toContainElement(draftStatus);
   });
 
   it('shows a retryable restore error', async () => {

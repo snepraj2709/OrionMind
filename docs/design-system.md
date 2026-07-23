@@ -39,6 +39,7 @@ Every text element must use a semantic role through the `Typography` component o
 | Button                    | `type-button`                    | Inter  | 15 / 20px          | 600    | Buttons and action labels                 |
 | Body small                | `type-body-small`                | Inter  | 14 / 20px          | 400    | Supporting interface copy                 |
 | Metadata                  | `type-metadata`                  | Inter  | 14 / 20px          | 500    | Dates, status context, and compact labels |
+| Tag                       | `type-tag`                       | Inter  | 12 / 16px          | 500    | Title-case taxonomy and compact tags      |
 | Eyebrow                   | `type-eyebrow`                   | Inter  | 12 / 16px          | 600    | Uppercase with `0.08em` tracking          |
 | Prominent brand wordmark  | `type-brand-wordmark-prominent`  | Lora   | 32 / 40px          | 400    | Italic; shared Orion brandmark only       |
 
@@ -180,11 +181,11 @@ When a compact filter row uses the selected value as its visible copy, `FilterFi
 
 `PaginationControls` always renders outlined Prev and Next actions around `Page X of Y` metadata. First/last actions and user-facing page-size selectors are not part of Orion's pagination language. Consumers keep a fixed page size in their data/query boundary.
 
-The Review queue uses a feature-owned editorial row instead of a card: one full Lora statement, accent-outline Approve, neutral-to-destructive-hover Reject, and a semantic horizontal separator after every row. The row has no surface background, border, radius, shadow, title, date, or status badge. This treatment is specific to Review; richer extracted-item cards remain valid in Entry Detail and saved collections.
+The Review queue uses the shared bordered review card with one full Lora statement, the existing evidence and context actions, and scope-specific feedback actions. Each card has an icon-free, color-coded taxonomy tag at the top-right: Entry Insights use Energy, Self Knowledge, or Needs & Beliefs; Patterns use Hidden Driver, Recurring Loop, or Inner Tension. Tags use the semantic primary, accent, and counterpoint treatments with `type-tag` typography. Review remains an actionable pending-only queue and does not show category or status filters.
 
 ## Required view states
 
-Every data view handles loading, error, empty, and success. Where applicable, it also handles processing, failure, insufficient data, offline, and retry states. Shared state components must preserve the page heading and approximate final layout to prevent disruptive replacement.
+Every data view handles loading, error, empty, and success. Where applicable, it also handles processing, failure, insufficient data, offline, and retry states. Page-level query loading, refreshing, initial-error, and refresh-error states render through `DataViewStatus` as a full-width card with centered content; background states preserve the last loaded content below the card. `RefreshButton` never renders a second spinner: it becomes disabled while `DataViewStatus` owns the page-level loading signal, and action loaders already on the page are suppressed while that central refresh state is visible. Reflections has one page-data state slot directly below its Hidden drivers, Recurring loops, and Inner tensions switch. Its bounded background polling is visually silent: it never renders a page loader or replaces the last loaded snapshot. Processing UI is reserved for a first reflection or an active insight with no result to display. Local form, offline, and mutation feedback remains inline beside the affected interaction.
 
 ## Enforcement
 

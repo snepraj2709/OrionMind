@@ -49,6 +49,8 @@ from app.modules.reflection_engine.service import ReflectionEngineService
 from app.modules.reflection_engine.types import ReflectionProvider
 from app.modules.reflections.repository import ReflectionsRepository
 from app.modules.reflections.service import ReflectionsService
+from app.modules.review.repository import ReviewRepository
+from app.modules.review.service import ReviewService
 from app.shared.auth.service import AuthenticationService, TokenVerifier
 from app.shared.config.settings import Settings
 from app.shared.database.session import DatabaseSessions, build_database_sessions
@@ -83,6 +85,7 @@ class ApplicationServices:
     processing_service: ProcessingService
     reflection_engine_service: ReflectionEngineService
     reflections_service: ReflectionsService
+    review_service: ReviewService
     content_cipher: ContentCipher
     entry_service: EntryService
     transcriber: Transcriber
@@ -248,6 +251,7 @@ def compose_application_services(
         cipher=resolved_content_cipher,
         basis_days=settings.REFLECTION_BASIS_DAYS,
         embedding_model_id=settings.OPENAI_SIGNAL_EMBEDDING_MODEL,
+        synthesis_model_id=settings.OPENAI_REFLECTION_SYNTHESIS_MODEL,
         telemetry=reflection_telemetry,
     )
     job_service = JobService(
@@ -266,6 +270,27 @@ def compose_application_services(
         heartbeat_interval_seconds=settings.PROCESSING_JOB_HEARTBEAT_SECONDS,
         telemetry=reflection_telemetry,
     )
+    reflections_repository = ReflectionsRepository()
+    review_service = ReviewService(
+        repository=ReviewRepository(cipher=resolved_content_cipher),
+        recalculation_repository=reflections_repository,
+        enabled=settings.REFLECTION_API_ENABLED,
+        allowed_user_ids=settings.reflection_rollout_user_ids(),
+        telemetry=reflection_telemetry,
+    )
+    reflections_service = ReflectionsService(
+        repository=reflections_repository,
+        review_service=review_service,
+        cipher=resolved_content_cipher,
+        basis_days=settings.REFLECTION_BASIS_DAYS,
+        enabled=settings.REFLECTION_API_ENABLED,
+        recalculation_enabled=(
+            settings.REFLECTION_ENGINE_ENABLED
+            and settings.REFLECTION_ROLLOUT_MODE == "publish"
+        ),
+        allowed_user_ids=settings.reflection_rollout_user_ids(),
+        telemetry=reflection_telemetry,
+    )
     return ApplicationServices(
         settings=settings,
         reflection_telemetry=reflection_telemetry,
@@ -281,14 +306,8 @@ def compose_application_services(
         ),
         processing_service=processing_service,
         reflection_engine_service=reflection_engine_service,
-        reflections_service=ReflectionsService(
-            repository=ReflectionsRepository(),
-            cipher=resolved_content_cipher,
-            basis_days=settings.REFLECTION_BASIS_DAYS,
-            enabled=settings.REFLECTION_API_ENABLED,
-            allowed_user_ids=settings.reflection_rollout_user_ids(),
-            telemetry=reflection_telemetry,
-        ),
+        reflections_service=reflections_service,
+        review_service=review_service,
         content_cipher=resolved_content_cipher,
         entry_service=EntryService(
             repository=EntryRepository(),
@@ -318,6 +337,7 @@ def register_application_state(app: FastAPI, services: ApplicationServices) -> N
     app.state.processing_service = services.processing_service
     app.state.reflection_engine_service = services.reflection_engine_service
     app.state.reflections_service = services.reflections_service
+    app.state.review_service = services.review_service
     app.state.content_cipher = services.content_cipher
     app.state.entry_service = services.entry_service
     app.state.transcriber = services.transcriber

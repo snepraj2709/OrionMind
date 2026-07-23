@@ -7,6 +7,7 @@ import { useForm } from 'react-hook-form';
 
 import { FormError } from '@/components/forms/form-error';
 import { FormField } from '@/components/forms/form-field';
+import { PasswordInput } from '@/components/forms/password-input';
 import { SubmitButton } from '@/components/forms/submit-button';
 import { TextInput } from '@/components/forms/text-input';
 import { AppLink } from '@/components/navigation';
@@ -65,10 +66,9 @@ export function SignInForm({
         label="Password"
         required
       >
-        <TextInput
+        <PasswordInput
           autoComplete="current-password"
           required
-          type="password"
           {...register('password')}
         />
       </FormField>

@@ -2,16 +2,13 @@ import { RefreshCw } from 'lucide-react';
 
 import { AppButton, type AppButtonProps } from '@/components/design-system';
 
-export interface RefreshButtonProps extends Omit<
+export type RefreshButtonProps = Omit<
   AppButtonProps,
-  'leftIcon' | 'loadingLabel'
-> {
-  loadingLabel: string;
-}
+  'leftIcon' | 'loading' | 'loadingLabel'
+>;
 
 export function RefreshButton({
   children,
-  loadingLabel,
   size = 'compact',
   variant = 'ghost',
   ...props
@@ -21,7 +18,6 @@ export function RefreshButton({
   return (
     <AppButton
       leftIcon={<RefreshCw aria-hidden="true" className="size-4" />}
-      loadingLabel={loadingLabel}
       size={size}
       variant={variant}
       {...props}

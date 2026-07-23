@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { entryDetailPath } from '../src/config/routes';
+import { installPendingReviewCountApi } from './helpers/api';
 import { logIn } from './helpers/auth';
 
 test.describe.configure({ mode: 'serial' });
+test.beforeEach(async ({ page }) => installPendingReviewCountApi(page));
 
 const entryId = '8a7cc7df-94e5-41b4-b983-ab6ddda47785';
 const failedEntryId = '27cf52b5-a015-427e-b7b5-914af00d19ee';
@@ -150,7 +152,7 @@ test('matches entry detail without mobile page overflow', async ({ page }) => {
   await interceptEntryDetailBackend(page);
   await logIn(page);
   await page.goto(entryDetailPath('e1'));
-  await expect(page.getByText('Needs review').first()).toBeVisible();
+  await expect(page.getByText('Extracted').first()).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
     content: document.documentElement.scrollWidth,
@@ -173,6 +175,11 @@ test('renders extracted items as read-only', async ({ page }) => {
       'I want to establish a morning ritual centered on slow, screen-free time before engaging with the day.',
     ),
   ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Slow, unstructured mornings help me hear what I need before the day starts asking things of me.',
+    ),
+  ).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Reject' })).toHaveCount(0);
 });

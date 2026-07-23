@@ -44,6 +44,7 @@ from app.modules.reflection_engine.schemas import (
 )
 from app.modules.reflection_engine.scoring import (
     confidence_label,
+    clamp01,
     hidden_driver_publishable,
     inner_tension_publishable,
     overall_basis_eligible,
@@ -200,7 +201,9 @@ class CandidateConstructionMixin:
                     candidate_id=draft.candidate.id,
                     signal_id=signal_id,
                     evidence_role="supporting",
-                    evidence_weight=by_id[signal_id].confidence,
+                    evidence_weight=(
+                        by_id[signal_id].confidence * draft.candidate.review_weight
+                    ),
                 )
                 for signal_id in draft.candidate.support_signal_ids
             )
@@ -209,7 +212,9 @@ class CandidateConstructionMixin:
                     candidate_id=draft.candidate.id,
                     signal_id=signal_id,
                     evidence_role="counter",
-                    evidence_weight=by_id[signal_id].confidence,
+                    evidence_weight=(
+                        by_id[signal_id].confidence * draft.candidate.review_weight
+                    ),
                 )
                 for signal_id in draft.candidate.counter_signal_ids
             )
@@ -376,6 +381,8 @@ class CandidateConstructionMixin:
                 previous_support_clusters=_previous_clusters(prior),
                 previous_score=prior.score if prior else None,
             )
+            review_weight = prior.review_weight if prior else 1.0
+            score = clamp01(score * review_weight)
             publishable = hidden_driver_publishable(
                 supporting_entries=len(entries),
                 distinct_dates=len(dates),
@@ -423,6 +430,8 @@ class CandidateConstructionMixin:
                 version=_next_version(prior, source_version),
                 rejected_at=rejected_at,
                 rejected_source_version=rejected_source,
+                review_weight=review_weight,
+                review_item_id=prior.review_item_id if prior else None,
             )
             drafts.append(
                 _Draft(
@@ -514,6 +523,8 @@ class CandidateConstructionMixin:
                 previous_support_clusters=_previous_clusters(prior),
                 previous_score=prior.score if prior else None,
             )
+            review_weight = prior.review_weight if prior else 1.0
+            score = clamp01(score * review_weight)
             publishable = recurring_loop_publishable(
                 observed_chains=len({chain.id for chain in observing_chains}),
                 supporting_entries=len(entries),
@@ -577,6 +588,8 @@ class CandidateConstructionMixin:
                 version=_next_version(prior, source_version),
                 rejected_at=rejected_at,
                 rejected_source_version=rejected_source,
+                review_weight=review_weight,
+                review_item_id=prior.review_item_id if prior else None,
             )
             drafts.append(
                 _Draft(
@@ -670,6 +683,8 @@ class CandidateConstructionMixin:
                 previous_support_clusters=_previous_clusters(prior),
                 previous_score=prior.score if prior else None,
             )
+            review_weight = prior.review_weight if prior else 1.0
+            score = clamp01(score * review_weight)
             publishable = inner_tension_publishable(
                 left_supporting_entries=len(left_entries),
                 right_supporting_entries=len(right_entries),
@@ -722,6 +737,8 @@ class CandidateConstructionMixin:
                 version=_next_version(prior, source_version),
                 rejected_at=rejected_at,
                 rejected_source_version=rejected_source,
+                review_weight=review_weight,
+                review_item_id=prior.review_item_id if prior else None,
             )
             drafts.append(
                 _Draft(

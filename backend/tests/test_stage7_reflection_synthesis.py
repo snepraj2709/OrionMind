@@ -269,6 +269,7 @@ class JobRepository:
     def __init__(self, claim: JobClaim) -> None:
         self.current_claim = claim
         self.claimed = False
+        self.completions = 0
         self.failures: list[tuple[str, bool]] = []
         self.scheduler_calls: list[datetime] = []
 
@@ -281,6 +282,11 @@ class JobRepository:
 
     def renew(self, _session, *, claim: JobClaim, worker_id: str) -> bool:
         return claim == self.current_claim and worker_id == "reflection-worker"
+
+    def complete(self, _session, *, claim: JobClaim, worker_id: str) -> bool:
+        assert claim == self.current_claim and worker_id == "reflection-worker"
+        self.completions += 1
+        return True
 
     def fail(
         self,
@@ -316,7 +322,19 @@ class ReflectionRunner:
         return uuid4()
 
 
-def job_claim() -> JobClaim:
+class JobTelemetry:
+    def __init__(self) -> None:
+        self.jobs: list[dict[str, object]] = []
+        self.retries: list[dict[str, object]] = []
+
+    def record_job(self, **values: object) -> None:
+        self.jobs.append(values)
+
+    def record_job_retry(self, **values: object) -> None:
+        self.retries.append(values)
+
+
+def job_claim(*, attempts: int = 1) -> JobClaim:
     return JobClaim(
         job_id=uuid4(),
         user_id=USER_ID,
@@ -325,7 +343,7 @@ def job_claim() -> JobClaim:
         execution_mode="publish",
         source_version="10",
         claim_token=uuid4(),
-        attempts=1,
+        attempts=attempts,
     )
 
 
@@ -397,31 +415,35 @@ class RateLimited(Exception):
 
 
 @pytest.mark.parametrize(
-    ("error", "expected_failure"),
+    ("error", "expected_failure", "expected_retry_outcomes"),
     [
         (
             ReflectionProviderUnavailableError("secret provider body"),
             ("REFLECTION_PROVIDER_UNAVAILABLE", True),
+            ["attempted", "scheduled"],
         ),
         (
             ReflectionProviderResponseError("secret invalid output"),
             ("INVALID_SYNTHESIS", False),
+            ["attempted", "terminal"],
         ),
-        (StaleSynthesisClaimError("lost claim"), None),
+        (StaleSynthesisClaimError("lost claim"), None, ["attempted"]),
     ],
 )
 def test_synthesis_retry_terminal_and_stale_claim_classification(
     caplog: pytest.LogCaptureFixture,
     error: Exception,
     expected_failure: tuple[str, bool] | None,
+    expected_retry_outcomes: list[str],
 ) -> None:
     if isinstance(error, ReflectionProviderUnavailableError):
         try:
             raise RateLimited("secret transport response")
         except RateLimited as cause:
             error.__cause__ = cause
-    claim = job_claim()
+    claim = job_claim(attempts=2)
     repository = JobRepository(claim)
+    telemetry = JobTelemetry()
     service = JobService(
         repository=repository,
         processing=object(),  # type: ignore[arg-type]
@@ -431,11 +453,18 @@ def test_synthesis_retry_terminal_and_stale_claim_classification(
         reflection_rollout_mode="publish",
         reflection_rollout_user_ids={USER_ID},
         heartbeat_interval_seconds=0.01,
+        telemetry=telemetry,  # type: ignore[arg-type]
     )
     assert service.run_one(
         worker_id="reflection-worker", uow=UnitOfWork()
     ) is True
     assert repository.failures == ([] if expected_failure is None else [expected_failure])
+    assert repository.completions == (
+        1 if isinstance(error, StaleSynthesisClaimError) else 0
+    )
+    assert [item["outcome"] for item in telemetry.retries] == (
+        expected_retry_outcomes
+    )
     assert "secret" not in caplog.text
 
 
@@ -494,6 +523,26 @@ class SynthesisProvider:
         )
 
 
+class SynthesisTelemetry:
+    def __init__(self) -> None:
+        self.sections: list[tuple[str, str, str]] = []
+
+    def record_candidate(self, **_values: object) -> None:
+        return None
+
+    def record_validator_discard(self, **_values: object) -> None:
+        return None
+
+    def record_synthesis_section(
+        self,
+        *,
+        pattern_type: str,
+        execution_mode: str,
+        outcome: str,
+    ) -> None:
+        self.sections.append((pattern_type, execution_mode, outcome))
+
+
 def synthesis_basis(*, contradictory: bool = False) -> dict[str, object]:
     service_cipher = cipher()
     source_version = 10
@@ -549,6 +598,8 @@ def synthesis_basis(*, contradictory: bool = False) -> dict[str, object]:
                 "need_tags": ["competence"],
                 "loop_role": None,
                 "confidence": 0.95,
+                "model_confidence": 0.95,
+                "evidence_weight": 1.0,
                 "source_start": start,
                 "source_end": start + len(quote),
                 "occurred_on": entry_date.isoformat(),
@@ -583,10 +634,12 @@ def test_synthesis_uses_minimum_context_and_discards_invalid_output(
     raw = synthesis_basis()
     repository = Repository(raw)
     provider = SynthesisProvider(unsafe=unsafe, fabricated=fabricated)
+    telemetry = SynthesisTelemetry()
     service = ReflectionEngineService(
         repository=repository,
         provider=provider,
         cipher=cipher(),
+        telemetry=telemetry,  # type: ignore[arg-type]
     )
     claim = JobClaim(
         job_id=uuid4(),
@@ -617,6 +670,15 @@ def test_synthesis_uses_minimum_context_and_discards_invalid_output(
     assert len([item for item in insights if item["pattern_type"] == "recurring_loop"]) == 1
     assert len([item for item in insights if item["pattern_type"] == "inner_tension"]) == 1
     assert len(repository.applied["snapshot_evidence"]) == (10 if available else 0)
+    assert telemetry.sections == [
+        (
+            "hidden_driver",
+            "publish",
+            "available" if available else "abstained",
+        ),
+        ("recurring_loop", "publish", "abstained"),
+        ("inner_tension", "publish", "abstained"),
+    ]
     assert "Private person" not in caplog.text
     assert "chose focused work" not in caplog.text
 

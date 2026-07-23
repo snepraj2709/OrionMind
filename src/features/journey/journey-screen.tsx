@@ -111,9 +111,7 @@ export function JourneyScreen({
             {statusQuery.data?.enabled ? (
               <RefreshButton
                 aria-label="Refresh journey"
-                disabled={!isOnline}
-                loading={entriesQuery.isFetching}
-                loadingLabel="Refreshing journey"
+                disabled={!isOnline || entriesQuery.isFetching}
                 onClick={() => void entriesQuery.refetch()}
                 variant="icon"
               />
@@ -130,10 +128,7 @@ export function JourneyScreen({
           void Promise.all([entriesQuery.refetch(), statusQuery.refetch()])
         }
         refreshError={dataViewMessages.journey.refresh}
-        refreshingAriaLabel="Refreshing journey"
-        refreshingLabel="Refreshing your journey… The current view will stay in place."
         retryDisabled={!isOnline}
-        skeletonCount={5}
         status={viewStatus}
       />
 

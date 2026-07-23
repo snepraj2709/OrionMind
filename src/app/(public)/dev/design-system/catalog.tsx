@@ -43,6 +43,7 @@ import {
   InlineError,
   NoResultsState,
   PageErrorState,
+  PageLoadingState,
   PageLoader,
   ProcessingState,
   SectionLoader,
@@ -405,6 +406,7 @@ export function DesignSystemCatalog() {
               action={<AppButton variant="secondary">Retry</AppButton>}
               description="The reflection could not be loaded."
             />
+            <PageLoadingState />
             <InlineError>
               Check the highlighted fields and try again.
             </InlineError>

@@ -20,6 +20,8 @@ describe('AuthShell', () => {
 
     const main = screen.getByRole('main');
     expect(main).toHaveAttribute('id', 'main-content');
+    expect(main.firstElementChild).toHaveClass('w-full', 'max-w-md');
+    expect(main.firstElementChild).not.toHaveClass('lg:w-1/2');
     expect(within(main).getByRole('heading', { level: 1 })).toHaveTextContent(
       'Log in',
     );

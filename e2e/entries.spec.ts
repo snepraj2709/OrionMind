@@ -1,7 +1,32 @@
 import { expect, test } from '@playwright/test';
 
 import { routes } from '../src/config/routes';
+import {
+  buildEntriesApiResponse,
+  entriesApiFixtures,
+} from '../src/features/entries';
+import { installPendingReviewCountApi } from './helpers/api';
 import { logIn } from './helpers/auth';
+
+test.beforeEach(async ({ page }) => {
+  await installPendingReviewCountApi(page);
+  await page.route('**/api/v1/entries?*', async (route) => {
+    const url = new URL(route.request().url());
+    const pageNumber = Number(url.searchParams.get('page') ?? '1');
+    const pageSize = Number(url.searchParams.get('page_size') ?? '10');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        buildEntriesApiResponse({
+          entries: entriesApiFixtures,
+          page: pageNumber,
+          page_size: pageSize,
+        }),
+      ),
+    });
+  });
+});
 
 test('matches the entries list at desktop width', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });

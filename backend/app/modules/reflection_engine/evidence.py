@@ -8,7 +8,7 @@ from hashlib import sha256
 from typing import Literal, TypeAlias
 from uuid import UUID
 
-from app.modules.processing.schemas import LoopRole
+from app.modules.processing.schemas import Eligibility, LoopRole
 from app.modules.reflection_engine.schemas import (
     CandidateSignal,
     ConstructedCandidate,
@@ -98,6 +98,54 @@ ELIMINATION_LANGUAGE = re.compile(
     r"choose only|stop needing)\b",
     re.IGNORECASE,
 )
+
+
+def evidence_presence_rejection_codes(
+    *,
+    signal_present: bool,
+) -> tuple[EvidenceRejectionCode, ...]:
+    return () if signal_present else ("EVIDENCE_SIGNAL_MISSING",)
+
+
+def evidence_signal_rejection_codes(
+    *,
+    expected_user_id: UUID,
+    signal_user_id: UUID,
+    entry_user_id: UUID,
+    analysis_user_id: UUID,
+    entry_id: UUID,
+    analysis_entry_id: UUID,
+    analysis_eligibility: Eligibility,
+    entry_date: date,
+    basis_start: date | None,
+    basis_end: date | None,
+    entry_text: str,
+    source_quote: str,
+    source_start: int,
+    source_end: int,
+) -> tuple[EvidenceRejectionCode, ...]:
+    reasons: list[EvidenceRejectionCode] = []
+    if (
+        signal_user_id != expected_user_id
+        or entry_user_id != expected_user_id
+        or analysis_user_id != expected_user_id
+    ):
+        reasons.append("EVIDENCE_OWNER_MISMATCH")
+    if analysis_entry_id != entry_id:
+        reasons.append("EVIDENCE_ENTRY_MISMATCH")
+    if analysis_eligibility != "accepted":
+        reasons.append("EVIDENCE_ANALYSIS_NOT_ACCEPTED")
+    if (
+        basis_start is None
+        or basis_end is None
+        or not basis_start <= entry_date <= basis_end
+    ):
+        reasons.append("EVIDENCE_OUTSIDE_BASIS")
+    if not 0 <= source_start < source_end <= len(entry_text):
+        reasons.append("EVIDENCE_OFFSET_OUT_OF_BOUNDS")
+    elif entry_text[source_start:source_end] != source_quote:
+        reasons.append("EVIDENCE_OFFSET_MISMATCH")
+    return tuple(reasons)
 
 
 def loop_node_key(role: LoopRole, label_fingerprint: str) -> str:
@@ -193,36 +241,22 @@ class EvidenceValidator:
         basis_start: date | None,
         basis_end: date | None,
     ) -> tuple[EvidenceRejectionCode, ...]:
-        reasons: list[EvidenceRejectionCode] = []
-        if (
-            signal.user_id != user_id
-            or signal.entry_user_id != user_id
-            or signal.analysis_user_id != user_id
-        ):
-            reasons.append("EVIDENCE_OWNER_MISMATCH")
-        if signal.analysis_entry_id != signal.entry_id:
-            reasons.append("EVIDENCE_ENTRY_MISMATCH")
-        if signal.analysis_eligibility != "accepted":
-            reasons.append("EVIDENCE_ANALYSIS_NOT_ACCEPTED")
-        if (
-            basis_start is None
-            or basis_end is None
-            or not basis_start <= signal.entry_date <= basis_end
-        ):
-            reasons.append("EVIDENCE_OUTSIDE_BASIS")
-        if not (
-            0
-            <= signal.source_start
-            < signal.source_end
-            <= len(signal.entry_text)
-        ):
-            reasons.append("EVIDENCE_OFFSET_OUT_OF_BOUNDS")
-        elif (
-            signal.entry_text[signal.source_start : signal.source_end]
-            != signal.source_quote
-        ):
-            reasons.append("EVIDENCE_OFFSET_MISMATCH")
-        return tuple(reasons)
+        return evidence_signal_rejection_codes(
+            expected_user_id=user_id,
+            signal_user_id=signal.user_id,
+            entry_user_id=signal.entry_user_id,
+            analysis_user_id=signal.analysis_user_id,
+            entry_id=signal.entry_id,
+            analysis_entry_id=signal.analysis_entry_id,
+            analysis_eligibility=signal.analysis_eligibility,
+            entry_date=signal.entry_date,
+            basis_start=basis_start,
+            basis_end=basis_end,
+            entry_text=signal.entry_text,
+            source_quote=signal.source_quote,
+            source_start=signal.source_start,
+            source_end=signal.source_end,
+        )
 
     @staticmethod
     def _resolve(
@@ -235,7 +269,11 @@ class EvidenceValidator:
         for signal_id in signal_ids:
             signal = signals.get(signal_id)
             if signal is None:
-                reasons.append("EVIDENCE_SIGNAL_MISSING")
+                reasons.extend(
+                    evidence_presence_rejection_codes(
+                        signal_present=False,
+                    )
+                )
             else:
                 resolved.append(signal)
         return tuple(resolved)

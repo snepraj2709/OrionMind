@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -18,6 +18,7 @@ from app.modules.reflection_engine.candidates import (
 from app.modules.reflection_engine.errors import SnapshotValidationError
 from app.modules.reflection_engine.evidence import EvidenceValidator
 from app.modules.reflection_engine.prompts import (
+    REFLECTION_SYNTHESIS_PROMPT_VERSION,
     build_reflection_critic_input,
     build_reflection_synthesis_input,
 )
@@ -33,6 +34,7 @@ from app.modules.reflection_engine.schemas import (
     InnerTensionProposal,
     InnerTensionStructure,
     LoopStepStructure,
+    PatternType,
     PreviousCandidate,
     RecurringLoopProposal,
     RecurringLoopStructure,
@@ -48,6 +50,7 @@ from app.modules.reflection_engine.synthesis import (
     _select_synthesis_support_ids,
     _snapshot_candidate_status,
     critic_required,
+    synthesis_section_status,
 )
 from app.modules.reflection_engine.types import ReflectionProvider
 from app.shared.database.unit_of_work import UnitOfWorkFactory
@@ -57,6 +60,7 @@ from app.shared.security.encryption import ContentCipher
 
 
 logger = logging.getLogger("orion.reflection.service")
+PATTERN_REVIEW_SOURCE_ENTRY_LIMIT = 100
 
 
 class ReflectionEngineService(CandidateConstructionMixin):
@@ -69,6 +73,7 @@ class ReflectionEngineService(CandidateConstructionMixin):
         validator: EvidenceValidator | None = None,
         basis_days: int = 90,
         embedding_model_id: str = "text-embedding-3-small",
+        synthesis_model_id: str = "gpt-5.6-terra",
         telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         if basis_days != 90:
@@ -79,6 +84,7 @@ class ReflectionEngineService(CandidateConstructionMixin):
         self._validator = validator or EvidenceValidator()
         self._basis_days = basis_days
         self._embedding_model_id = embedding_model_id
+        self._synthesis_model_id = synthesis_model_id
         self._telemetry = telemetry or ReflectionTelemetry()
 
     def construct_and_apply(
@@ -286,7 +292,10 @@ class ReflectionEngineService(CandidateConstructionMixin):
             _snapshot_candidate_status(candidate, published=candidate.id in selected_ids)
             for candidate in batch.candidates
         ]
-        phrased_by_id = {candidate.id: candidate for candidate in selected}
+        phrased_by_id = {
+            candidate.id: _snapshot_candidate_status(candidate, published=True)
+            for candidate in selected
+        }
         persisted_candidates = [
             phrased_by_id.get(candidate.id, candidate) for candidate in persisted_candidates
         ]
@@ -294,6 +303,12 @@ class ReflectionEngineService(CandidateConstructionMixin):
             user_id=claim.user_id,
             raw=raw,
             basis=basis,
+            candidates=selected,
+            signals=by_signal,
+        )
+        pattern_review_items = self._pattern_review_rows(
+            user_id=claim.user_id,
+            source_version=source_version,
             candidates=selected,
             signals=by_signal,
         )
@@ -308,7 +323,7 @@ class ReflectionEngineService(CandidateConstructionMixin):
         candidate_evidence = [link.model_dump(mode="json") for link in batch.evidence]
         with uow.for_worker() as work:
             if claim.execution_mode == "shadow":
-                return self._repository.complete_shadow(
+                snapshot_id = self._repository.complete_shadow(
                     work.session,
                     claim=claim,
                     worker_id=worker_id,
@@ -316,16 +331,34 @@ class ReflectionEngineService(CandidateConstructionMixin):
                     selected_count=len(selected),
                     provider_called=bool(publishable),
                 )
-            return self._repository.apply_snapshot(
-                work.session,
-                claim=claim,
-                worker_id=worker_id,
-                snapshot=snapshot,
-                candidates=candidate_rows,
-                candidate_evidence=candidate_evidence,
-                insights=insights,
-                snapshot_evidence=snapshot_evidence,
+            else:
+                snapshot_id = self._repository.apply_snapshot(
+                    work.session,
+                    claim=claim,
+                    worker_id=worker_id,
+                    snapshot=snapshot,
+                    candidates=candidate_rows,
+                    candidate_evidence=candidate_evidence,
+                    insights=insights,
+                    snapshot_evidence=snapshot_evidence,
+                    pattern_review_items=pattern_review_items,
+                )
+        selected_types = {candidate.pattern_type for candidate in selected}
+        for pattern_type in (
+            "hidden_driver",
+            "recurring_loop",
+            "inner_tension",
+        ):
+            section_status = synthesis_section_status(
+                pattern_type=pattern_type,
+                selected_pattern_types=selected_types,
             )
+            self._telemetry.record_synthesis_section(
+                pattern_type=pattern_type,
+                execution_mode=claim.execution_mode,
+                outcome="available" if section_status == "available" else "abstained",
+            )
+        return snapshot_id
 
     def _record_discard(
         self,
@@ -394,6 +427,12 @@ class ReflectionEngineService(CandidateConstructionMixin):
                         "need_tags": signal.need_tags,
                         "loop_role": signal.loop_role,
                         "confidence": signal.confidence,
+                        "model_confidence": (
+                            signal.model_confidence
+                            if signal.model_confidence is not None
+                            else signal.confidence
+                        ),
+                        "evidence_weight": signal.evidence_weight,
                         "is_new_since_previous": (
                             previous_candidate is None
                             or signal.analysis_source_version
@@ -460,6 +499,7 @@ class ReflectionEngineService(CandidateConstructionMixin):
             },
             "previous_candidate": prior_context,
             "feedback_qualification": feedback_qualification,
+            "review_weight": candidate.review_weight,
         }
 
     def _materialize_proposal(
@@ -586,19 +626,29 @@ class ReflectionEngineService(CandidateConstructionMixin):
             "distinct_entry_dates": basis.distinct_entry_dates,
             "reflective_word_count": basis.reflective_word_count,
             "status": "available",
+            "model_name": self._synthesis_model_id,
+            "prompt_version": REFLECTION_SYNTHESIS_PROMPT_VERSION,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
-        by_type: dict[str, list[ConstructedCandidate]] = defaultdict(list)
+        by_type: dict[PatternType, list[ConstructedCandidate]] = defaultdict(
+            list
+        )
         for candidate in candidates:
             by_type[candidate.pattern_type].append(candidate)
         insights: list[dict[str, object]] = []
         evidence: list[dict[str, object]] = []
-        for pattern_type, reason_code in (
+        section_reasons: tuple[tuple[PatternType, str], ...] = (
             ("hidden_driver", "DRIVER_NOT_REPEATED"),
             ("recurring_loop", "LOOP_NOT_REPEATED"),
             ("inner_tension", "BOTH_SIDES_NOT_SUPPORTED"),
-        ):
+        )
+        for pattern_type, reason_code in section_reasons:
             selected = by_type.get(pattern_type, [])
-            if not selected:
+            section_status = synthesis_section_status(
+                pattern_type=pattern_type,
+                selected_pattern_types=by_type,
+            )
+            if section_status == "insufficient_evidence":
                 insight_id = uuid5(snapshot_id, f"{pattern_type}:0")
                 insights.append(
                     {
@@ -660,3 +710,62 @@ class ReflectionEngineService(CandidateConstructionMixin):
                             }
                         )
         return snapshot, insights, evidence
+
+    def _pattern_review_rows(
+        self,
+        *,
+        user_id: UUID,
+        source_version: int,
+        candidates: Sequence[ConstructedCandidate],
+        signals: Mapping[UUID, CandidateSignal],
+    ) -> list[dict[str, object]]:
+        rows: list[dict[str, object]] = []
+        for candidate in candidates:
+            review_item_id = candidate.review_item_id or uuid5(
+                NAMESPACE_URL, f"orion-pattern-review-item:{candidate.id}"
+            )
+            if isinstance(candidate.structure, HiddenDriverStructure):
+                statement = candidate.structure.statement
+            elif isinstance(candidate.structure, RecurringLoopStructure):
+                statement = candidate.structure.description
+            else:
+                statement = candidate.structure.integration
+            supporting_signals = [
+                signals[signal_id] for signal_id in candidate.support_signal_ids
+            ]
+            supporting_entries = sorted(
+                {signal.entry_id: signal for signal in supporting_signals}.values(),
+                key=lambda signal: (signal.entry_date, str(signal.entry_id)),
+            )[:PATTERN_REVIEW_SOURCE_ENTRY_LIMIT]
+            source_entry_ids = [
+                str(signal.entry_id) for signal in supporting_entries
+            ]
+            source_dates = sorted(
+                {signal.entry_date.isoformat() for signal in supporting_entries}
+            )
+            rows.append(
+                {
+                    "id": str(review_item_id),
+                    "pattern_candidate_id": str(candidate.id),
+                    "item_type": candidate.pattern_type,
+                    "category": candidate.pattern_type,
+                    "statement_envelope": self._cipher.encrypt_json(
+                        statement,
+                        user_id=user_id,
+                        record_id=review_item_id,
+                        purpose="review_item_statement",
+                    ),
+                    "source_entry_ids": source_entry_ids,
+                    "source_dates": source_dates,
+                    "inference_level": "synthesized",
+                    "model_confidence": candidate.score,
+                    "metadata": {
+                        "model_id": self._synthesis_model_id,
+                        "prompt_version": REFLECTION_SYNTHESIS_PROMPT_VERSION,
+                        "source": "reflection_synthesis",
+                        "source_version": source_version,
+                        "candidate_version": candidate.version,
+                    },
+                }
+            )
+        return rows

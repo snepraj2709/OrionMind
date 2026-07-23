@@ -7677,3 +7677,2183 @@ GRANT EXECUTE ON FUNCTION public.store_signal_embedding_backfill_batch(uuid, jso
     TO orion_worker;
 GRANT EXECUTE ON FUNCTION public.release_signal_embedding_backfill_batch(uuid)
     TO orion_worker;
+
+-- Owner-scoped encrypted Review-item persistence.
+-- Producers and feedback functions are added by later migrations.
+
+CREATE TABLE public.review_items (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    entry_id uuid,
+    entry_signal_id uuid,
+    pattern_candidate_id uuid,
+    scope text NOT NULL,
+    item_type text NOT NULL,
+    category text NOT NULL,
+    statement_envelope jsonb NOT NULL,
+    source_quote_envelope jsonb,
+    source_entry_ids uuid[] NOT NULL,
+    source_dates date[] NOT NULL,
+    inference_level text NOT NULL,
+    model_confidence numeric(6,5) NOT NULL,
+    review_status text NOT NULL DEFAULT 'pending',
+    user_feedback jsonb,
+    corrected_statement_envelope jsonb,
+    feedback_note_envelope jsonb,
+    evidence_weight numeric(2,1) NOT NULL DEFAULT 1.0,
+    reflection_eligible boolean NOT NULL,
+    metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+    updated_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+    UNIQUE (id, user_id),
+    CONSTRAINT review_items_entry_owner_fk FOREIGN KEY (entry_id, user_id)
+        REFERENCES public.entries(id, user_id) ON DELETE CASCADE,
+    CONSTRAINT review_items_entry_signal_owner_fk
+        FOREIGN KEY (entry_signal_id, user_id)
+        REFERENCES public.entry_signals(id, user_id) ON DELETE CASCADE,
+    CONSTRAINT review_items_pattern_candidate_owner_fk
+        FOREIGN KEY (pattern_candidate_id, user_id)
+        REFERENCES public.pattern_candidates(id, user_id) ON DELETE CASCADE,
+    CONSTRAINT review_items_scope_check CHECK (
+        scope IN ('entry_insight', 'pattern')
+    ),
+    CONSTRAINT review_items_type_category_check CHECK (
+        (item_type IN ('energy_gain', 'energy_loss') AND category = 'energy')
+        OR (
+            item_type IN ('self_knowledge', 'realization', 'explicit_preference')
+            AND category = 'self_knowledge'
+        )
+        OR (
+            item_type IN (
+                'need', 'belief', 'avoidance', 'protective_strategy',
+                'conflict', 'causal_relationship'
+            )
+            AND category = 'needs_beliefs'
+        )
+        OR (item_type = 'hidden_driver' AND category = 'hidden_driver')
+        OR (item_type = 'recurring_loop' AND category = 'recurring_loop')
+        OR (item_type = 'inner_tension' AND category = 'inner_tension')
+    ),
+    CONSTRAINT review_items_scope_source_check CHECK (
+        (
+            scope = 'entry_insight'
+            AND entry_id IS NOT NULL
+            AND entry_signal_id IS NOT NULL
+            AND pattern_candidate_id IS NULL
+            AND item_type IN (
+                'energy_gain', 'energy_loss', 'self_knowledge', 'realization',
+                'explicit_preference', 'need', 'belief', 'avoidance',
+                'protective_strategy', 'conflict', 'causal_relationship'
+            )
+            AND inference_level IN ('direct', 'inferred')
+            AND source_entry_ids = ARRAY[entry_id]
+            AND pg_catalog.cardinality(source_dates) = 1
+        )
+        OR (
+            scope = 'pattern'
+            AND entry_id IS NULL
+            AND entry_signal_id IS NULL
+            AND pattern_candidate_id IS NOT NULL
+            AND item_type IN ('hidden_driver', 'recurring_loop', 'inner_tension')
+            AND inference_level = 'synthesized'
+            AND source_quote_envelope IS NULL
+        )
+    ),
+    CONSTRAINT review_items_single_source_check CHECK (
+        pg_catalog.num_nonnulls(entry_signal_id, pattern_candidate_id) = 1
+    ),
+    CONSTRAINT review_items_statement_envelope_check CHECK (
+        public.is_valid_encrypted_envelope_v1(statement_envelope)
+    ),
+    CONSTRAINT review_items_optional_envelopes_check CHECK (
+        (
+            source_quote_envelope IS NULL
+            OR public.is_valid_encrypted_envelope_v1(source_quote_envelope)
+        )
+        AND (
+            corrected_statement_envelope IS NULL
+            OR public.is_valid_encrypted_envelope_v1(corrected_statement_envelope)
+        )
+        AND (
+            feedback_note_envelope IS NULL
+            OR public.is_valid_encrypted_envelope_v1(feedback_note_envelope)
+        )
+    ),
+    CONSTRAINT review_items_sources_check CHECK (
+        pg_catalog.cardinality(source_entry_ids) BETWEEN 1 AND 100
+        AND pg_catalog.array_position(source_entry_ids, NULL) IS NULL
+        AND pg_catalog.cardinality(source_dates) BETWEEN 1 AND 100
+        AND pg_catalog.array_position(source_dates, NULL) IS NULL
+    ),
+    CONSTRAINT review_items_inference_check CHECK (
+        inference_level IN ('direct', 'inferred', 'synthesized')
+    ),
+    CONSTRAINT review_items_confidence_check CHECK (
+        model_confidence BETWEEN 0 AND 1
+    ),
+    CONSTRAINT review_items_status_check CHECK (
+        review_status IN ('pending', 'confirmed', 'partially_confirmed', 'rejected')
+    ),
+    CONSTRAINT review_items_feedback_shape_check CHECK (
+        user_feedback IS NULL
+        OR (
+            pg_catalog.jsonb_typeof(user_feedback) = 'object'
+            AND user_feedback ?& ARRAY['verdict', 'updated_at']
+            AND user_feedback - ARRAY['verdict', 'updated_at'] = '{}'::jsonb
+            AND pg_catalog.jsonb_typeof(user_feedback -> 'verdict') = 'string'
+            AND pg_catalog.jsonb_typeof(user_feedback -> 'updated_at') = 'string'
+            AND (
+                (
+                    scope = 'entry_insight'
+                    AND user_feedback ->> 'verdict'
+                        IN ('accurate', 'partly_accurate', 'not_accurate')
+                )
+                OR (
+                    scope = 'pattern'
+                    AND user_feedback ->> 'verdict'
+                        IN ('resonates', 'partly_true', 'not_true')
+                )
+            )
+        )
+    ),
+    CONSTRAINT review_items_feedback_status_weight_check CHECK (
+        (
+            review_status = 'pending'
+            AND evidence_weight = 1.0
+            AND user_feedback IS NULL
+            AND corrected_statement_envelope IS NULL
+            AND feedback_note_envelope IS NULL
+        )
+        OR (
+            review_status = 'confirmed'
+            AND evidence_weight = 1.0
+            AND user_feedback IS NOT NULL
+        )
+        OR (
+            review_status = 'partially_confirmed'
+            AND evidence_weight = 0.5
+            AND user_feedback IS NOT NULL
+        )
+        OR (
+            review_status = 'rejected'
+            AND evidence_weight = 0.0
+            AND user_feedback IS NOT NULL
+        )
+    ),
+    CONSTRAINT review_items_feedback_verdict_weight_check CHECK (
+        user_feedback IS NULL
+        OR (
+            user_feedback ->> 'verdict' IN ('accurate', 'resonates')
+            AND review_status = 'confirmed'
+            AND evidence_weight = 1.0
+        )
+        OR (
+            user_feedback ->> 'verdict' IN ('partly_accurate', 'partly_true')
+            AND review_status = 'partially_confirmed'
+            AND evidence_weight = 0.5
+        )
+        OR (
+            user_feedback ->> 'verdict' IN ('not_accurate', 'not_true')
+            AND review_status = 'rejected'
+            AND evidence_weight = 0.0
+        )
+    ),
+    CONSTRAINT review_items_metadata_check CHECK (
+        pg_catalog.jsonb_typeof(metadata) = 'object'
+        AND pg_catalog.pg_column_size(metadata) <= 16384
+    )
+);
+
+CREATE INDEX review_items_owner_list_idx
+    ON public.review_items (
+        user_id, scope, category, review_status, created_at DESC, id DESC
+    );
+CREATE INDEX review_items_owner_status_updated_idx
+    ON public.review_items (user_id, review_status, updated_at DESC);
+CREATE UNIQUE INDEX review_items_entry_signal_unique_idx
+    ON public.review_items (entry_signal_id)
+    WHERE entry_signal_id IS NOT NULL;
+CREATE UNIQUE INDEX review_items_pattern_candidate_unique_idx
+    ON public.review_items (pattern_candidate_id)
+    WHERE pattern_candidate_id IS NOT NULL;
+
+CREATE TRIGGER review_items_set_updated_at
+BEFORE UPDATE ON public.review_items
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+ALTER TABLE public.review_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.review_items FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY review_items_select_owner ON public.review_items
+    FOR SELECT TO authenticated USING (user_id = auth.uid());
+CREATE POLICY review_items_insert_worker ON public.review_items
+    FOR INSERT TO orion_worker WITH CHECK (
+        pg_catalog.current_setting('role', true) = 'orion_worker'
+    );
+
+REVOKE ALL ON public.review_items
+    FROM PUBLIC, anon, authenticated, orion_app, orion_worker;
+GRANT SELECT ON public.review_items TO authenticated;
+GRANT INSERT ON public.review_items TO orion_worker;
+GRANT EXECUTE ON FUNCTION public.is_valid_encrypted_envelope_v1(jsonb)
+    TO orion_worker;
+
+COMMENT ON TABLE public.review_items IS
+    'Encrypted owner-scoped review evidence; sensitive text is never stored in plaintext.';
+COMMENT ON COLUMN public.review_items.statement_envelope IS
+    'Encrypted JSON string using purpose review_item_statement.';
+COMMENT ON COLUMN public.review_items.source_quote_envelope IS
+    'Encrypted exact validated quote using purpose review_item_source_quote.';
+COMMENT ON COLUMN public.review_items.corrected_statement_envelope IS
+    'Encrypted user correction using purpose review_item_corrected_statement.';
+COMMENT ON COLUMN public.review_items.feedback_note_envelope IS
+    'Encrypted user note using purpose review_item_feedback_note.';
+
+-- Claim-bound Entry Insight Review materialization.
+-- Accepted signal rows, encrypted Review rows, and embeddings are applied by
+-- the worker in one transaction. Review feedback is never changed on replay.
+
+ALTER TABLE public.entry_signals
+    DROP CONSTRAINT entry_signals_type_check;
+ALTER TABLE public.entry_signals
+    ADD CONSTRAINT entry_signals_type_check CHECK (signal_type IN (
+        'event', 'emotion', 'energy_gain', 'energy_loss', 'self_knowledge',
+        'desire', 'explicit_preference', 'need', 'avoidance', 'belief',
+        'self_statement', 'action', 'outcome', 'conflict',
+        'protective_strategy', 'realization', 'causal_relationship'
+    ));
+
+DROP POLICY review_items_insert_worker ON public.review_items;
+REVOKE INSERT ON public.review_items FROM orion_worker;
+REVOKE EXECUTE ON FUNCTION public.is_valid_encrypted_envelope_v1(jsonb)
+    FROM orion_worker;
+
+CREATE FUNCTION public.materialize_entry_review_items(
+    p_job_id uuid,
+    p_claim_token uuid,
+    p_signals jsonb
+)
+RETURNS TABLE (
+    analysis_accepted boolean,
+    review_item_count integer
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    job public.processing_jobs%ROWTYPE;
+    analysis public.entry_analyses%ROWTYPE;
+    entry_local_date date;
+    persisted_signal public.entry_signals%ROWTYPE;
+    supplied_signal jsonb;
+    review_item jsonb;
+    expected_review_items integer := 0;
+    persisted_review_items integer := 0;
+BEGIN
+    IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'orion_worker'
+       OR pg_catalog.jsonb_typeof(p_signals) <> 'array'
+       OR EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(p_signals) AS item(value)
+           WHERE pg_catalog.jsonb_typeof(item.value) <> 'object'
+       )
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '42501', MESSAGE = 'operation not permitted';
+    END IF;
+
+    SELECT * INTO job
+    FROM public.processing_jobs
+    WHERE id = p_job_id
+    FOR UPDATE;
+    IF NOT FOUND
+       OR job.job_type <> 'entry_processing'
+       OR job.status <> 'completed'
+       OR job.claim_token IS DISTINCT FROM p_claim_token
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0001', MESSAGE = 'stale processing claim';
+    END IF;
+
+    SELECT * INTO analysis
+    FROM public.entry_analyses
+    WHERE entry_id = job.entry_id AND user_id = job.user_id;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0001', MESSAGE = 'stale processing claim';
+    END IF;
+
+    IF analysis.eligibility <> 'accepted' THEN
+        RETURN QUERY SELECT false, 0;
+        RETURN;
+    END IF;
+
+    SELECT entry_date INTO entry_local_date
+    FROM public.entries
+    WHERE id = job.entry_id AND user_id = job.user_id;
+
+    IF pg_catalog.jsonb_array_length(p_signals) <> (
+        SELECT pg_catalog.count(*)::integer
+        FROM public.entry_signals
+        WHERE analysis_id = analysis.id AND user_id = job.user_id
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'signal materialization is incomplete';
+    END IF;
+
+    FOR persisted_signal IN
+        SELECT *
+        FROM public.entry_signals
+        WHERE analysis_id = analysis.id AND user_id = job.user_id
+        ORDER BY id
+    LOOP
+        SELECT item.value INTO supplied_signal
+        FROM pg_catalog.jsonb_array_elements(p_signals) AS item(value)
+        WHERE item.value ->> 'id' = persisted_signal.id::text;
+
+        IF supplied_signal IS NULL
+           OR supplied_signal ->> 'signal_type'
+                IS DISTINCT FROM persisted_signal.signal_type
+           OR (supplied_signal ->> 'source_start')::integer
+                IS DISTINCT FROM persisted_signal.source_start
+           OR (supplied_signal ->> 'source_end')::integer
+                IS DISTINCT FROM persisted_signal.source_end
+           OR (supplied_signal ->> 'occurred_on')::date
+                IS DISTINCT FROM entry_local_date
+        THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '22023', MESSAGE = 'signal identity is invalid';
+        END IF;
+
+        IF persisted_signal.signal_type IN (
+            'energy_gain', 'energy_loss', 'self_knowledge', 'realization',
+            'explicit_preference', 'need', 'belief', 'avoidance',
+            'protective_strategy', 'conflict', 'causal_relationship'
+        ) THEN
+            review_item := supplied_signal -> 'review_item';
+            expected_review_items := expected_review_items + 1;
+            IF pg_catalog.jsonb_typeof(review_item) <> 'object'
+               OR NOT review_item ?& ARRAY[
+                    'id', 'category', 'statement_envelope',
+                    'source_quote_envelope', 'inference_level', 'metadata'
+               ]
+               OR review_item - ARRAY[
+                    'id', 'category', 'statement_envelope',
+                    'source_quote_envelope', 'inference_level', 'metadata'
+               ] <> '{}'::jsonb
+               OR public.is_valid_encrypted_envelope_v1(
+                    review_item -> 'statement_envelope'
+               ) IS NOT TRUE
+               OR public.is_valid_encrypted_envelope_v1(
+                    review_item -> 'source_quote_envelope'
+               ) IS NOT TRUE
+               OR review_item ->> 'inference_level'
+                    NOT IN ('direct', 'inferred')
+               OR pg_catalog.jsonb_typeof(review_item -> 'metadata') <> 'object'
+               OR NOT (review_item -> 'metadata') ?& ARRAY[
+                    'model_id', 'prompt_version', 'source'
+               ]
+               OR (review_item -> 'metadata') - ARRAY[
+                    'model_id', 'prompt_version', 'source'
+               ] <> '{}'::jsonb
+               OR review_item #>> '{metadata,model_id}'
+                    IS DISTINCT FROM analysis.model_id
+               OR review_item #>> '{metadata,prompt_version}'
+                    IS DISTINCT FROM analysis.prompt_version
+               OR review_item #>> '{metadata,source}'
+                    IS DISTINCT FROM 'entry_analysis'
+               OR review_item ->> 'category' IS DISTINCT FROM (CASE
+                    WHEN persisted_signal.signal_type IN (
+                        'energy_gain', 'energy_loss'
+                    ) THEN 'energy'
+                    WHEN persisted_signal.signal_type IN (
+                        'self_knowledge', 'realization', 'explicit_preference'
+                    ) THEN 'self_knowledge'
+                    ELSE 'needs_beliefs'
+               END)
+            THEN
+                RAISE EXCEPTION USING
+                    ERRCODE = '22023', MESSAGE = 'review item is invalid';
+            END IF;
+
+            INSERT INTO public.review_items (
+                id, user_id, entry_id, entry_signal_id, scope, item_type,
+                category, statement_envelope, source_quote_envelope,
+                source_entry_ids, source_dates, inference_level,
+                model_confidence, review_status, evidence_weight,
+                reflection_eligible, metadata
+            ) VALUES (
+                (review_item ->> 'id')::uuid, job.user_id, job.entry_id,
+                persisted_signal.id, 'entry_insight',
+                persisted_signal.signal_type, review_item ->> 'category',
+                review_item -> 'statement_envelope',
+                review_item -> 'source_quote_envelope',
+                ARRAY[job.entry_id], ARRAY[entry_local_date],
+                review_item ->> 'inference_level', persisted_signal.confidence,
+                'pending', 1.0, true, review_item -> 'metadata'
+            )
+            ON CONFLICT (entry_signal_id)
+                WHERE entry_signal_id IS NOT NULL
+            DO NOTHING;
+        ELSIF supplied_signal ? 'review_item' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '22023',
+                MESSAGE = 'non-reviewable signal has a review item';
+        END IF;
+    END LOOP;
+
+    IF (
+        SELECT pg_catalog.count(*)::integer
+        FROM pg_catalog.jsonb_array_elements(p_signals) AS item(value)
+        WHERE item.value ? 'review_item'
+    ) <> expected_review_items THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'review item mapping is incomplete';
+    END IF;
+
+    SELECT pg_catalog.count(*)::integer INTO persisted_review_items
+    FROM public.review_items
+    WHERE entry_signal_id IN (
+        SELECT id FROM public.entry_signals
+        WHERE analysis_id = analysis.id AND user_id = job.user_id
+    );
+    IF persisted_review_items <> expected_review_items THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'review item persistence is incomplete';
+    END IF;
+
+    RETURN QUERY SELECT true, persisted_review_items;
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.materialize_entry_review_items(uuid, uuid, jsonb)
+    FROM PUBLIC, anon, authenticated, orion_app, orion_worker;
+GRANT EXECUTE
+    ON FUNCTION public.materialize_entry_review_items(uuid, uuid, jsonb)
+    TO orion_worker;
+
+COMMENT ON FUNCTION public.materialize_entry_review_items(uuid, uuid, jsonb) IS
+    'Materializes validated encrypted Entry Insight Review rows for a completed claim without changing feedback on replay.';
+
+-- Owner-scoped, replaceable Review feedback with idempotent source-version
+-- invalidation. Correction and note plaintext never enter this function.
+
+CREATE FUNCTION public.put_review_feedback_for_owner(
+    p_user_id uuid,
+    p_item_id uuid,
+    p_verdict text,
+    p_corrected_statement_envelope jsonb,
+    p_corrected_statement_fingerprint text,
+    p_corrected_statement_compatible_fingerprints text[],
+    p_feedback_note_envelope jsonb,
+    p_feedback_note_fingerprint text,
+    p_feedback_note_compatible_fingerprints text[]
+)
+RETURNS TABLE (
+    item_id uuid,
+    changed boolean,
+    source_version bigint,
+    updated_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    item public.review_items%ROWTYPE;
+    state public.reflection_user_state%ROWTYPE;
+    candidate public.pattern_candidates%ROWTYPE;
+    next_status text;
+    next_weight numeric(2,1);
+    next_source_version bigint;
+    feedback_at timestamptz := pg_catalog.now();
+BEGIN
+    IF auth.uid() IS DISTINCT FROM p_user_id
+       OR p_item_id IS NULL
+       OR p_verdict IS NULL
+       OR p_corrected_statement_fingerprint IS NULL
+       OR p_corrected_statement_compatible_fingerprints IS NULL
+       OR p_feedback_note_fingerprint IS NULL
+       OR p_feedback_note_compatible_fingerprints IS NULL
+       OR p_corrected_statement_fingerprint
+            !~ '^(|[a-z0-9][a-z0-9._-]{0,63}:[0-9a-f]{64})$'
+       OR p_feedback_note_fingerprint
+            !~ '^(|[a-z0-9][a-z0-9._-]{0,63}:[0-9a-f]{64})$'
+       OR pg_catalog.cardinality(
+            p_corrected_statement_compatible_fingerprints
+       ) < 1
+       OR pg_catalog.array_position(
+            p_corrected_statement_compatible_fingerprints, NULL
+       ) IS NOT NULL
+       OR NOT (
+            p_corrected_statement_fingerprint
+            = ANY(p_corrected_statement_compatible_fingerprints)
+       )
+       OR EXISTS (
+            SELECT 1
+            FROM pg_catalog.unnest(
+                p_corrected_statement_compatible_fingerprints
+            ) AS compatible(fingerprint)
+            WHERE compatible.fingerprint
+                !~ '^(|[a-z0-9][a-z0-9._-]{0,63}:[0-9a-f]{64})$'
+       )
+       OR pg_catalog.cardinality(
+            p_feedback_note_compatible_fingerprints
+       ) < 1
+       OR pg_catalog.array_position(
+            p_feedback_note_compatible_fingerprints, NULL
+       ) IS NOT NULL
+       OR NOT (
+            p_feedback_note_fingerprint
+            = ANY(p_feedback_note_compatible_fingerprints)
+       )
+       OR EXISTS (
+            SELECT 1
+            FROM pg_catalog.unnest(
+                p_feedback_note_compatible_fingerprints
+            ) AS compatible(fingerprint)
+            WHERE compatible.fingerprint
+                !~ '^(|[a-z0-9][a-z0-9._-]{0,63}:[0-9a-f]{64})$'
+       )
+       OR (
+            p_corrected_statement_envelope IS NULL
+       ) IS DISTINCT FROM (
+            p_corrected_statement_fingerprint = ''
+       )
+       OR (
+            p_feedback_note_envelope IS NULL
+       ) IS DISTINCT FROM (
+            p_feedback_note_fingerprint = ''
+       )
+       OR (
+            p_corrected_statement_envelope IS NOT NULL
+            AND public.is_valid_encrypted_envelope_v1(
+                p_corrected_statement_envelope
+            ) IS NOT TRUE
+       )
+       OR (
+            p_feedback_note_envelope IS NOT NULL
+            AND public.is_valid_encrypted_envelope_v1(
+                p_feedback_note_envelope
+            ) IS NOT TRUE
+       )
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'invalid review feedback';
+    END IF;
+
+    PERFORM pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtextextended(
+            'orion-reflection:' || p_user_id::text,
+            0
+        )
+    );
+    SELECT * INTO item
+    FROM public.review_items
+    WHERE id = p_item_id AND user_id = p_user_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0002', MESSAGE = 'review item not found';
+    END IF;
+    IF item.reflection_eligible IS NOT TRUE THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0003', MESSAGE = 'review item is stale';
+    END IF;
+
+    IF item.scope = 'entry_insight' THEN
+        IF p_verdict = 'accurate' THEN
+            next_status := 'confirmed';
+            next_weight := 1.0;
+        ELSIF p_verdict = 'partly_accurate' THEN
+            next_status := 'partially_confirmed';
+            next_weight := 0.5;
+        ELSIF p_verdict = 'not_accurate' THEN
+            next_status := 'rejected';
+            next_weight := 0.0;
+        ELSE
+            RAISE EXCEPTION USING
+                ERRCODE = '22023', MESSAGE = 'invalid review feedback';
+        END IF;
+    ELSIF item.scope = 'pattern' THEN
+        SELECT * INTO candidate
+        FROM public.pattern_candidates
+        WHERE id = item.pattern_candidate_id AND user_id = p_user_id
+        FOR UPDATE;
+        IF NOT FOUND OR candidate.status = 'superseded' THEN
+            RAISE EXCEPTION USING
+                ERRCODE = 'P0003', MESSAGE = 'review item is stale';
+        END IF;
+        IF p_verdict = 'resonates' THEN
+            next_status := 'confirmed';
+            next_weight := 1.0;
+        ELSIF p_verdict = 'partly_true' THEN
+            next_status := 'partially_confirmed';
+            next_weight := 0.5;
+        ELSIF p_verdict = 'not_true' THEN
+            next_status := 'rejected';
+            next_weight := 0.0;
+        ELSE
+            RAISE EXCEPTION USING
+                ERRCODE = '22023', MESSAGE = 'invalid review feedback';
+        END IF;
+    ELSE
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'invalid review feedback';
+    END IF;
+
+    SELECT * INTO state
+    FROM public.reflection_user_state
+    WHERE user_id = p_user_id
+    FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0003', MESSAGE = 'review item is stale';
+    END IF;
+
+    IF item.user_feedback ->> 'verdict' IS NOT DISTINCT FROM p_verdict
+       AND item.metadata ->> 'feedback_correction_fingerprint'
+            = ANY(p_corrected_statement_compatible_fingerprints)
+       AND item.metadata ->> 'feedback_note_fingerprint'
+            = ANY(p_feedback_note_compatible_fingerprints)
+    THEN
+        RETURN QUERY SELECT
+            item.id,
+            false,
+            state.latest_accepted_source_version,
+            item.updated_at;
+        RETURN;
+    END IF;
+
+    next_source_version := pg_catalog.nextval(
+        'public.entry_analyses_source_version_seq'::pg_catalog.regclass
+    );
+    UPDATE public.review_items
+    SET review_status = next_status,
+        user_feedback = pg_catalog.jsonb_build_object(
+            'verdict', p_verdict,
+            'updated_at', feedback_at
+        ),
+        corrected_statement_envelope = p_corrected_statement_envelope,
+        feedback_note_envelope = p_feedback_note_envelope,
+        evidence_weight = next_weight,
+        metadata = metadata || pg_catalog.jsonb_build_object(
+            'feedback_correction_fingerprint',
+            p_corrected_statement_fingerprint,
+            'feedback_note_fingerprint',
+            p_feedback_note_fingerprint
+        )
+    WHERE id = item.id AND user_id = p_user_id
+    RETURNING * INTO item;
+
+    IF item.scope = 'pattern' THEN
+        UPDATE public.pattern_candidates
+        SET status = CASE
+                WHEN p_verdict = 'resonates' THEN 'published'
+                WHEN p_verdict = 'partly_true' THEN 'weakened'
+                ELSE 'rejected'
+            END,
+            rejected_at = CASE
+                WHEN p_verdict = 'not_true' THEN feedback_at
+                ELSE NULL
+            END,
+            rejected_source_version = CASE
+                WHEN p_verdict = 'not_true' THEN next_source_version
+                ELSE NULL
+            END,
+            version = version + 1
+        WHERE id = item.pattern_candidate_id AND user_id = p_user_id;
+    END IF;
+
+    UPDATE public.reflection_user_state
+    SET latest_accepted_source_version = next_source_version,
+        last_processing_error_code = NULL
+    WHERE user_id = p_user_id;
+    UPDATE public.reflection_snapshots
+    SET status = 'stale'
+    WHERE id = state.last_successful_snapshot_id
+      AND user_id = p_user_id
+      AND status = 'available';
+
+    RETURN QUERY SELECT
+        item.id,
+        true,
+        next_source_version,
+        item.updated_at;
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.put_review_feedback_for_owner(
+    uuid, uuid, text, jsonb, text, text[], jsonb, text, text[]
+) FROM PUBLIC, anon, authenticated, orion_app, orion_worker;
+GRANT EXECUTE ON FUNCTION public.put_review_feedback_for_owner(
+    uuid, uuid, text, jsonb, text, text[], jsonb, text, text[]
+) TO authenticated;
+
+COMMENT ON FUNCTION public.put_review_feedback_for_owner(
+    uuid, uuid, text, jsonb, text, text[], jsonb, text, text[]
+) IS
+    'Atomically replaces owner Review feedback, preserves idempotent replay, and invalidates the cached reflection source version.';
+
+-- Review-weighted reflection synthesis and atomic Pattern Review materialization.
+
+ALTER TABLE public.reflection_snapshots
+    ADD COLUMN model_name text,
+    ADD COLUMN prompt_version text,
+    ADD COLUMN generated_at timestamptz;
+
+UPDATE public.reflection_snapshots
+SET model_name = 'gpt-5.6-terra',
+    prompt_version = 'reflection-synthesis-v1',
+    generated_at = created_at;
+
+ALTER TABLE public.reflection_snapshots
+    ALTER COLUMN model_name SET DEFAULT 'gpt-5.6-terra',
+    ALTER COLUMN model_name SET NOT NULL,
+    ALTER COLUMN prompt_version SET DEFAULT 'reflection-synthesis-v1',
+    ALTER COLUMN prompt_version SET NOT NULL,
+    ALTER COLUMN generated_at SET DEFAULT pg_catalog.now(),
+    ALTER COLUMN generated_at SET NOT NULL,
+    ADD CONSTRAINT reflection_snapshots_model_name_check
+        CHECK (pg_catalog.btrim(model_name) <> ''),
+    ADD CONSTRAINT reflection_snapshots_prompt_version_check
+        CHECK (pg_catalog.btrim(prompt_version) <> '');
+
+CREATE OR REPLACE FUNCTION public.get_reflection_candidate_basis(
+    p_user_id uuid,
+    p_source_version bigint,
+    p_basis_days integer DEFAULT 90
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    latest_date date;
+    basis_start date;
+    valid_entry_count integer;
+    distinct_entry_dates integer;
+    reflective_word_count integer;
+    signals jsonb;
+    candidates jsonb;
+BEGIN
+    IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'orion_worker'
+       OR p_user_id IS NULL
+       OR p_source_version < 0
+       OR p_basis_days <> 90
+    THEN
+        RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'operation not permitted';
+    END IF;
+
+    SELECT pg_catalog.max(entry.entry_date)
+    INTO latest_date
+    FROM public.entry_analyses AS analysis
+    JOIN public.entries AS entry
+      ON entry.id = analysis.entry_id AND entry.user_id = analysis.user_id
+    WHERE analysis.user_id = p_user_id
+      AND analysis.eligibility = 'accepted'
+      AND analysis.source_version <= p_source_version
+      AND EXISTS (
+          SELECT 1
+          FROM public.entry_signals AS signal
+          JOIN public.review_items AS review
+            ON review.entry_signal_id = signal.id
+           AND review.user_id = signal.user_id
+          WHERE signal.analysis_id = analysis.id
+            AND signal.user_id = analysis.user_id
+            AND review.scope = 'entry_insight'
+            AND review.reflection_eligible
+            AND review.evidence_weight > 0
+      );
+
+    basis_start := latest_date - (p_basis_days - 1);
+
+    SELECT pg_catalog.count(*)::integer,
+           pg_catalog.count(DISTINCT entry.entry_date)::integer,
+           COALESCE(pg_catalog.sum(analysis.reflective_word_count), 0)::integer
+    INTO valid_entry_count, distinct_entry_dates, reflective_word_count
+    FROM public.entry_analyses AS analysis
+    JOIN public.entries AS entry
+      ON entry.id = analysis.entry_id AND entry.user_id = analysis.user_id
+    WHERE analysis.user_id = p_user_id
+      AND analysis.eligibility = 'accepted'
+      AND analysis.source_version <= p_source_version
+      AND entry.entry_date BETWEEN basis_start AND latest_date
+      AND EXISTS (
+          SELECT 1
+          FROM public.entry_signals AS signal
+          JOIN public.review_items AS review
+            ON review.entry_signal_id = signal.id
+           AND review.user_id = signal.user_id
+          WHERE signal.analysis_id = analysis.id
+            AND signal.user_id = analysis.user_id
+            AND review.scope = 'entry_insight'
+            AND review.reflection_eligible
+            AND review.evidence_weight > 0
+      );
+
+    SELECT COALESCE(pg_catalog.jsonb_agg(
+        pg_catalog.jsonb_build_object(
+            'id', signal.id,
+            'user_id', signal.user_id,
+            'entry_id', signal.entry_id,
+            'entry_user_id', entry.user_id,
+            'analysis_id', analysis.id,
+            'analysis_user_id', analysis.user_id,
+            'analysis_entry_id', analysis.entry_id,
+            'analysis_source_version', analysis.source_version,
+            'analysis_eligibility', analysis.eligibility,
+            'entry_date', entry.entry_date,
+            'signal_type', signal.signal_type,
+            'normalized_label_fingerprint', signal.normalized_label_fingerprint,
+            'payload_envelope', signal.payload_envelope,
+            'entry_content_envelope', entry.content_envelope,
+            'themes', signal.themes,
+            'need_tags', signal.need_tags,
+            'loop_role', signal.loop_role,
+            'confidence', signal.confidence * review.evidence_weight,
+            'model_confidence', signal.confidence,
+            'evidence_weight', review.evidence_weight,
+            'source_start', signal.source_start,
+            'source_end', signal.source_end,
+            'occurred_on', signal.occurred_on,
+            'duplicate_cluster_key', signal.duplicate_cluster_key
+        ) ORDER BY entry.entry_date, signal.entry_id, signal.source_start, signal.id
+    ), '[]'::jsonb)
+    INTO signals
+    FROM public.entry_signals AS signal
+    JOIN public.entry_analyses AS analysis
+      ON analysis.id = signal.analysis_id AND analysis.user_id = signal.user_id
+     AND analysis.entry_id = signal.entry_id
+    JOIN public.entries AS entry
+      ON entry.id = signal.entry_id AND entry.user_id = signal.user_id
+    JOIN public.review_items AS review
+      ON review.entry_signal_id = signal.id
+     AND review.user_id = signal.user_id
+     AND review.scope = 'entry_insight'
+     AND review.reflection_eligible
+     AND review.evidence_weight > 0
+    WHERE signal.user_id = p_user_id
+      AND analysis.eligibility = 'accepted'
+      AND analysis.source_version <= p_source_version
+      AND entry.entry_date BETWEEN basis_start AND latest_date;
+
+    SELECT COALESCE(pg_catalog.jsonb_agg(
+        pg_catalog.jsonb_build_object(
+            'id', candidate.id,
+            'pattern_type', candidate.pattern_type,
+            'canonical_key', candidate.canonical_key,
+            'status', candidate.status,
+            'score', candidate.score,
+            'version', candidate.version,
+            'first_seen_at', candidate.first_seen_at,
+            'last_seen_at', candidate.last_seen_at,
+            'last_source_version', candidate.last_source_version,
+            'rejected_at', candidate.rejected_at,
+            'rejected_source_version', candidate.rejected_source_version,
+            'review_weight', CASE
+                WHEN review.id IS NULL THEN 1.0
+                WHEN review.reflection_eligible THEN review.evidence_weight
+                ELSE 0.0
+            END,
+            'review_item_id', review.id,
+            'payload_envelope', candidate.payload_envelope
+        ) ORDER BY candidate.pattern_type, candidate.canonical_key
+    ), '[]'::jsonb)
+    INTO candidates
+    FROM public.pattern_candidates AS candidate
+    LEFT JOIN public.review_items AS review
+      ON review.pattern_candidate_id = candidate.id
+     AND review.user_id = candidate.user_id
+     AND review.scope = 'pattern'
+    WHERE candidate.user_id = p_user_id;
+
+    RETURN pg_catalog.jsonb_build_object(
+        'source_version', p_source_version,
+        'basis_start', basis_start,
+        'basis_end', latest_date,
+        'valid_entry_count', valid_entry_count,
+        'distinct_entry_dates', distinct_entry_dates,
+        'reflective_word_count', reflective_word_count,
+        'signals', signals,
+        'candidates', candidates
+    );
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.get_reflection_synthesis_basis(
+    p_job_id uuid,
+    p_worker_id text,
+    p_claim_token uuid,
+    p_basis_days integer DEFAULT 90
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    job public.processing_jobs%ROWTYPE;
+    basis jsonb;
+    excluded_count integer;
+    next_version integer;
+    qualifications jsonb;
+BEGIN
+    IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'orion_worker'
+       OR p_basis_days <> 90
+    THEN
+        RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'operation not permitted';
+    END IF;
+
+    SELECT * INTO job
+    FROM public.processing_jobs
+    WHERE id = p_job_id
+    FOR UPDATE;
+    IF NOT FOUND
+       OR job.job_type <> 'reflection_synthesis'
+       OR job.entry_id IS NOT NULL
+       OR job.status <> 'running'
+       OR job.worker_id IS DISTINCT FROM p_worker_id
+       OR job.claim_token IS DISTINCT FROM p_claim_token
+       OR job.source_version !~ '^[1-9][0-9]*$'
+    THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'stale processing claim';
+    END IF;
+
+    basis := public.get_reflection_candidate_basis(
+        job.user_id,
+        job.source_version::bigint,
+        p_basis_days
+    );
+
+    SELECT pg_catalog.count(*)::integer
+    INTO excluded_count
+    FROM public.entry_analyses AS analysis
+    JOIN public.entries AS entry
+      ON entry.id = analysis.entry_id AND entry.user_id = analysis.user_id
+    WHERE analysis.user_id = job.user_id
+      AND analysis.eligibility <> 'accepted'
+      AND analysis.source_version <= job.source_version::bigint
+      AND entry.entry_date BETWEEN (basis ->> 'basis_start')::date
+                               AND (basis ->> 'basis_end')::date;
+
+    SELECT COALESCE(pg_catalog.max(snapshot.version), 0) + 1
+    INTO next_version
+    FROM public.reflection_snapshots AS snapshot
+    WHERE snapshot.user_id = job.user_id;
+
+    SELECT COALESCE(
+        pg_catalog.jsonb_object_agg(
+            review.pattern_candidate_id::text,
+            'partly'
+        ),
+        '{}'::jsonb
+    )
+    INTO qualifications
+    FROM public.review_items AS review
+    WHERE review.user_id = job.user_id
+      AND review.scope = 'pattern'
+      AND review.reflection_eligible
+      AND review.user_feedback ->> 'verdict' = 'partly_true';
+
+    RETURN basis || pg_catalog.jsonb_build_object(
+        'excluded_entry_count', excluded_count,
+        'next_snapshot_version', next_version,
+        'feedback_qualifications', qualifications
+    );
+END
+$function$;
+
+CREATE OR REPLACE FUNCTION public.is_reflection_recalculation_eligible(
+    p_user_id uuid,
+    p_now timestamptz
+)
+RETURNS boolean
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    state public.reflection_user_state%ROWTYPE;
+    pending_valid_entries integer;
+    pending_reflective_words bigint;
+    oldest_pending_valid_entry_at timestamptz;
+    has_pending_signal boolean;
+    current_end date;
+    current_start date;
+    basis_valid_entries integer;
+    basis_distinct_dates integer;
+    basis_reflective_words bigint;
+BEGIN
+    IF p_user_id IS NULL OR p_now IS NULL THEN
+        RETURN false;
+    END IF;
+
+    SELECT * INTO state
+    FROM public.reflection_user_state
+    WHERE user_id = p_user_id;
+    IF NOT FOUND
+       OR state.latest_accepted_source_version <= state.last_snapshot_source_version
+    THEN
+        RETURN false;
+    END IF;
+
+    SELECT pg_catalog.count(*)::integer,
+           COALESCE(pg_catalog.sum(analysis.reflective_word_count), 0)::bigint,
+           pg_catalog.min(entry.created_at)
+    INTO pending_valid_entries, pending_reflective_words,
+         oldest_pending_valid_entry_at
+    FROM public.entry_analyses AS analysis
+    JOIN public.entries AS entry
+      ON entry.id = analysis.entry_id AND entry.user_id = analysis.user_id
+    WHERE analysis.user_id = p_user_id
+      AND analysis.eligibility = 'accepted'
+      AND analysis.source_version > state.last_snapshot_source_version
+      AND EXISTS (
+          SELECT 1
+          FROM public.entry_signals AS signal
+          JOIN public.review_items AS review
+            ON review.entry_signal_id = signal.id
+           AND review.user_id = signal.user_id
+          WHERE signal.analysis_id = analysis.id
+            AND signal.user_id = analysis.user_id
+            AND review.scope = 'entry_insight'
+            AND review.reflection_eligible
+            AND review.evidence_weight > 0
+      );
+
+    IF pending_valid_entries = 0 THEN
+        RETURN false;
+    END IF;
+
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.entry_signals AS signal
+        JOIN public.entry_analyses AS analysis
+          ON analysis.id = signal.analysis_id
+         AND analysis.user_id = signal.user_id
+        JOIN public.review_items AS review
+          ON review.entry_signal_id = signal.id
+         AND review.user_id = signal.user_id
+        WHERE analysis.user_id = p_user_id
+          AND analysis.eligibility = 'accepted'
+          AND analysis.source_version > state.last_snapshot_source_version
+          AND review.scope = 'entry_insight'
+          AND review.reflection_eligible
+          AND review.evidence_weight > 0
+    ) INTO has_pending_signal;
+    IF NOT has_pending_signal THEN
+        RETURN false;
+    END IF;
+
+    IF state.last_successful_snapshot_id IS NULL
+       OR state.last_snapshot_source_version = 0
+    THEN
+        SELECT pg_catalog.max(entry.entry_date)
+        INTO current_end
+        FROM public.entry_analyses AS analysis
+        JOIN public.entries AS entry
+          ON entry.id = analysis.entry_id AND entry.user_id = analysis.user_id
+        WHERE analysis.user_id = p_user_id
+          AND analysis.eligibility = 'accepted'
+          AND EXISTS (
+              SELECT 1
+              FROM public.entry_signals AS signal
+              JOIN public.review_items AS review
+                ON review.entry_signal_id = signal.id
+               AND review.user_id = signal.user_id
+              WHERE signal.analysis_id = analysis.id
+                AND signal.user_id = analysis.user_id
+                AND review.scope = 'entry_insight'
+                AND review.reflection_eligible
+                AND review.evidence_weight > 0
+          );
+        IF current_end IS NULL THEN
+            RETURN false;
+        END IF;
+        current_start := current_end - 89;
+        SELECT pg_catalog.count(*)::integer,
+               pg_catalog.count(DISTINCT entry.entry_date)::integer,
+               COALESCE(pg_catalog.sum(analysis.reflective_word_count), 0)::bigint
+        INTO basis_valid_entries, basis_distinct_dates, basis_reflective_words
+        FROM public.entry_analyses AS analysis
+        JOIN public.entries AS entry
+          ON entry.id = analysis.entry_id AND entry.user_id = analysis.user_id
+        WHERE analysis.user_id = p_user_id
+          AND analysis.eligibility = 'accepted'
+          AND entry.entry_date BETWEEN current_start AND current_end
+          AND EXISTS (
+              SELECT 1
+              FROM public.entry_signals AS signal
+              JOIN public.review_items AS review
+                ON review.entry_signal_id = signal.id
+               AND review.user_id = signal.user_id
+              WHERE signal.analysis_id = analysis.id
+                AND signal.user_id = analysis.user_id
+                AND review.scope = 'entry_insight'
+                AND review.reflection_eligible
+                AND review.evidence_weight > 0
+          );
+        RETURN basis_valid_entries >= 3
+           AND basis_distinct_dates >= 2
+           AND basis_reflective_words >= 150;
+    END IF;
+
+    RETURN pending_valid_entries >= 3
+       OR pending_reflective_words >= 500
+       OR (
+           pending_valid_entries >= 1
+           AND oldest_pending_valid_entry_at <= p_now - INTERVAL '3 days'
+       );
+END
+$function$;
+
+CREATE FUNCTION public.apply_weighted_deterministic_reflection_candidates(
+    p_user_id uuid,
+    p_source_version bigint,
+    p_candidates jsonb,
+    p_candidate_evidence jsonb
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+BEGIN
+    IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'orion_worker'
+       OR pg_catalog.jsonb_typeof(p_candidate_evidence) <> 'array'
+       OR EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(p_candidate_evidence) AS evidence(value)
+           JOIN public.entry_signals AS signal
+             ON signal.id = (evidence.value ->> 'signal_id')::uuid
+            AND signal.user_id = p_user_id
+           LEFT JOIN public.review_items AS entry_review
+             ON entry_review.entry_signal_id = signal.id
+            AND entry_review.user_id = signal.user_id
+            AND entry_review.scope = 'entry_insight'
+           LEFT JOIN public.review_items AS pattern_review
+             ON pattern_review.pattern_candidate_id =
+                    (evidence.value ->> 'candidate_id')::uuid
+            AND pattern_review.user_id = p_user_id
+            AND pattern_review.scope = 'pattern'
+           WHERE entry_review.id IS NULL
+              OR entry_review.reflection_eligible IS NOT TRUE
+              OR entry_review.evidence_weight <= 0
+              OR pg_catalog.abs(
+                    (evidence.value ->> 'evidence_weight')::numeric
+                    - signal.confidence * entry_review.evidence_weight
+                      * CASE
+                          WHEN pattern_review.id IS NULL THEN 1.0
+                          WHEN pattern_review.reflection_eligible
+                              THEN pattern_review.evidence_weight
+                          ELSE 0.0
+                        END
+                 ) > 0.00001
+       )
+       OR EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(p_candidate_evidence) AS evidence(value)
+           WHERE NOT EXISTS (
+               SELECT 1
+               FROM public.entry_signals AS signal
+               WHERE signal.id = (evidence.value ->> 'signal_id')::uuid
+                 AND signal.user_id = p_user_id
+           )
+       )
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'invalid weighted candidate evidence';
+    END IF;
+
+    RETURN public.apply_deterministic_reflection_candidates(
+        p_user_id,
+        p_source_version,
+        p_candidates,
+        p_candidate_evidence
+    );
+END
+$function$;
+
+CREATE FUNCTION public.apply_weighted_reflection_snapshot(
+    p_job_id uuid,
+    p_worker_id text,
+    p_claim_token uuid,
+    p_snapshot jsonb,
+    p_candidates jsonb,
+    p_candidate_evidence jsonb,
+    p_insights jsonb,
+    p_snapshot_evidence jsonb,
+    p_pattern_review_items jsonb
+)
+RETURNS uuid
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    job public.processing_jobs%ROWTYPE;
+    snapshot_id uuid;
+    item jsonb;
+    expected_entry_ids uuid[];
+    expected_dates date[];
+    persisted_review_count integer;
+BEGIN
+    IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'orion_worker'
+       OR pg_catalog.jsonb_typeof(p_snapshot) <> 'object'
+       OR pg_catalog.jsonb_typeof(p_candidates) <> 'array'
+       OR pg_catalog.jsonb_typeof(p_candidate_evidence) <> 'array'
+       OR pg_catalog.jsonb_typeof(p_insights) <> 'array'
+       OR pg_catalog.jsonb_typeof(p_snapshot_evidence) <> 'array'
+       OR pg_catalog.jsonb_typeof(p_pattern_review_items) <> 'array'
+       OR p_snapshot ->> 'model_name' IS NULL
+       OR pg_catalog.btrim(p_snapshot ->> 'model_name') = ''
+       OR p_snapshot ->> 'prompt_version' IS NULL
+       OR pg_catalog.btrim(p_snapshot ->> 'prompt_version') = ''
+       OR p_snapshot ->> 'generated_at' IS NULL
+       OR EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(p_pattern_review_items) AS review(value)
+           WHERE pg_catalog.jsonb_typeof(review.value) <> 'object'
+              OR NOT review.value ?& ARRAY[
+                    'id', 'pattern_candidate_id', 'item_type', 'category',
+                    'statement_envelope', 'source_entry_ids', 'source_dates',
+                    'inference_level', 'model_confidence', 'metadata'
+              ]
+              OR review.value - ARRAY[
+                    'id', 'pattern_candidate_id', 'item_type', 'category',
+                    'statement_envelope', 'source_entry_ids', 'source_dates',
+                    'inference_level', 'model_confidence', 'metadata'
+              ] <> '{}'::jsonb
+              OR review.value ->> 'item_type'
+                    NOT IN ('hidden_driver', 'recurring_loop', 'inner_tension')
+              OR review.value ->> 'category'
+                    IS DISTINCT FROM review.value ->> 'item_type'
+              OR review.value ->> 'inference_level'
+                    IS DISTINCT FROM 'synthesized'
+              OR public.is_valid_encrypted_envelope_v1(
+                    review.value -> 'statement_envelope'
+                 ) IS NOT TRUE
+              OR (review.value ->> 'model_confidence')::numeric NOT BETWEEN 0 AND 1
+              OR pg_catalog.jsonb_typeof(review.value -> 'source_entry_ids') <> 'array'
+              OR pg_catalog.jsonb_typeof(review.value -> 'source_dates') <> 'array'
+              OR pg_catalog.jsonb_typeof(review.value -> 'metadata') <> 'object'
+              OR pg_catalog.jsonb_array_length(
+                    review.value -> 'source_entry_ids'
+                 ) NOT BETWEEN 1 AND 100
+              OR pg_catalog.jsonb_array_length(
+                    review.value -> 'source_dates'
+                 ) NOT BETWEEN 1 AND 100
+              OR NOT (review.value -> 'metadata') ?& ARRAY[
+                    'model_id', 'prompt_version', 'source',
+                    'source_version', 'candidate_version'
+              ]
+              OR (review.value -> 'metadata') - ARRAY[
+                    'model_id', 'prompt_version', 'source',
+                    'source_version', 'candidate_version'
+              ] <> '{}'::jsonb
+              OR review.value #>> '{metadata,model_id}'
+                    IS DISTINCT FROM p_snapshot ->> 'model_name'
+              OR review.value #>> '{metadata,prompt_version}'
+                    IS DISTINCT FROM p_snapshot ->> 'prompt_version'
+              OR review.value #>> '{metadata,source}'
+                    IS DISTINCT FROM 'reflection_synthesis'
+              OR review.value #>> '{metadata,source_version}'
+                    IS DISTINCT FROM p_snapshot ->> 'source_version'
+              OR NOT EXISTS (
+                  SELECT 1
+                  FROM pg_catalog.jsonb_array_elements(p_candidates)
+                       AS candidate(value)
+                  WHERE candidate.value ->> 'id'
+                            = review.value ->> 'pattern_candidate_id'
+                    AND candidate.value ->> 'pattern_type'
+                            = review.value ->> 'item_type'
+                    AND candidate.value ->> 'version'
+                            = review.value #>> '{metadata,candidate_version}'
+                    AND (candidate.value ->> 'score')::numeric
+                            = (review.value ->> 'model_confidence')::numeric
+              )
+       )
+       OR EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(p_pattern_review_items) AS review(value)
+           GROUP BY review.value ->> 'id'
+           HAVING pg_catalog.count(*) > 1
+       )
+       OR EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(p_pattern_review_items) AS review(value)
+           GROUP BY review.value ->> 'pattern_candidate_id'
+           HAVING pg_catalog.count(*) > 1
+       )
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'invalid weighted snapshot payload';
+    END IF;
+
+    SELECT * INTO job
+    FROM public.processing_jobs
+    WHERE id = p_job_id;
+    IF NOT FOUND OR job.user_id IS NULL THEN
+        RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'stale processing claim';
+    END IF;
+    IF job.status = 'completed'
+       AND job.job_type = 'reflection_synthesis'
+       AND job.claim_token IS NOT DISTINCT FROM p_claim_token
+    THEN
+        SELECT snapshot.id INTO snapshot_id
+        FROM public.reflection_snapshots AS snapshot
+        WHERE snapshot.user_id = job.user_id
+          AND snapshot.source_version = job.source_version::bigint;
+        IF snapshot_id IS NULL THEN
+            RAISE EXCEPTION USING
+                ERRCODE = 'P0001', MESSAGE = 'stale processing claim';
+        END IF;
+        RETURN snapshot_id;
+    END IF;
+
+    IF (
+        SELECT pg_catalog.count(*)
+        FROM pg_catalog.jsonb_array_elements(p_insights) AS insight(value)
+        WHERE insight.value ->> 'status' = 'available'
+    ) <> pg_catalog.jsonb_array_length(p_pattern_review_items)
+       OR EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(p_insights) AS insight(value)
+           WHERE insight.value ->> 'status' = 'available'
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM pg_catalog.jsonb_array_elements(
+                     p_pattern_review_items
+                 ) AS review(value)
+                 WHERE review.value ->> 'pattern_candidate_id'
+                        = insight.value ->> 'candidate_id'
+                   AND review.value ->> 'item_type'
+                        = insight.value ->> 'pattern_type'
+             )
+       )
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'pattern review mapping is incomplete';
+    END IF;
+
+    PERFORM public.apply_weighted_deterministic_reflection_candidates(
+        job.user_id,
+        (p_snapshot ->> 'source_version')::bigint,
+        p_candidates,
+        p_candidate_evidence
+    );
+
+    FOR item IN
+        SELECT value
+        FROM pg_catalog.jsonb_array_elements(p_pattern_review_items)
+    LOOP
+        SELECT pg_catalog.array_agg(source.entry_id ORDER BY source.entry_id),
+               pg_catalog.array_agg(
+                   DISTINCT source.entry_date ORDER BY source.entry_date
+               )
+        INTO expected_entry_ids, expected_dates
+        FROM (
+            SELECT DISTINCT signal.entry_id, entry.entry_date
+            FROM pg_catalog.jsonb_array_elements(
+                p_candidate_evidence
+            ) AS evidence(value)
+            JOIN public.entry_signals AS signal
+              ON signal.id = (evidence.value ->> 'signal_id')::uuid
+             AND signal.user_id = job.user_id
+            JOIN public.entries AS entry
+              ON entry.id = signal.entry_id
+             AND entry.user_id = signal.user_id
+            WHERE evidence.value ->> 'candidate_id'
+                    = item ->> 'pattern_candidate_id'
+              AND evidence.value ->> 'evidence_role' = 'supporting'
+            ORDER BY entry.entry_date, signal.entry_id
+            LIMIT 100
+        ) AS source;
+
+        IF expected_entry_ids IS NULL
+           OR expected_dates IS NULL
+           OR expected_entry_ids <> ARRAY(
+                SELECT value::uuid
+                FROM pg_catalog.jsonb_array_elements_text(
+                    item -> 'source_entry_ids'
+                ) AS source(value)
+                ORDER BY value::uuid
+           )
+           OR expected_dates <> ARRAY(
+                SELECT value::date
+                FROM pg_catalog.jsonb_array_elements_text(
+                    item -> 'source_dates'
+                ) AS source(value)
+                ORDER BY value::date
+           )
+        THEN
+            RAISE EXCEPTION USING
+                ERRCODE = '22023', MESSAGE = 'pattern review evidence is invalid';
+        END IF;
+    END LOOP;
+
+    snapshot_id := public.apply_reflection_snapshot(
+        p_job_id,
+        p_worker_id,
+        p_claim_token,
+        p_snapshot,
+        p_candidates,
+        p_candidate_evidence,
+        p_insights,
+        p_snapshot_evidence
+    );
+
+    UPDATE public.reflection_snapshots
+    SET model_name = p_snapshot ->> 'model_name',
+        prompt_version = p_snapshot ->> 'prompt_version',
+        generated_at = (p_snapshot ->> 'generated_at')::timestamptz
+    WHERE id = snapshot_id AND user_id = job.user_id;
+
+    INSERT INTO public.review_items (
+        id, user_id, pattern_candidate_id, scope, item_type, category,
+        statement_envelope, source_entry_ids, source_dates, inference_level,
+        model_confidence, review_status, evidence_weight,
+        reflection_eligible, metadata
+    )
+    SELECT (review.value ->> 'id')::uuid,
+           job.user_id,
+           (review.value ->> 'pattern_candidate_id')::uuid,
+           'pattern',
+           review.value ->> 'item_type',
+           review.value ->> 'category',
+           review.value -> 'statement_envelope',
+           ARRAY(
+               SELECT value::uuid
+               FROM pg_catalog.jsonb_array_elements_text(
+                   review.value -> 'source_entry_ids'
+               ) AS source(value)
+           ),
+           ARRAY(
+               SELECT value::date
+               FROM pg_catalog.jsonb_array_elements_text(
+                   review.value -> 'source_dates'
+               ) AS source(value)
+           ),
+           'synthesized',
+           (review.value ->> 'model_confidence')::numeric,
+           'pending',
+           1.0,
+           true,
+           review.value -> 'metadata'
+    FROM pg_catalog.jsonb_array_elements(p_pattern_review_items) AS review(value)
+    ON CONFLICT (pattern_candidate_id)
+        WHERE pattern_candidate_id IS NOT NULL
+    DO UPDATE SET
+        item_type = CASE
+            WHEN public.review_items.user_feedback IS NULL
+                THEN EXCLUDED.item_type
+            ELSE public.review_items.item_type
+        END,
+        category = CASE
+            WHEN public.review_items.user_feedback IS NULL
+                THEN EXCLUDED.category
+            ELSE public.review_items.category
+        END,
+        statement_envelope = CASE
+            WHEN public.review_items.user_feedback IS NULL
+                THEN EXCLUDED.statement_envelope
+            ELSE public.review_items.statement_envelope
+        END,
+        source_entry_ids = CASE
+            WHEN public.review_items.user_feedback IS NULL
+                THEN EXCLUDED.source_entry_ids
+            ELSE public.review_items.source_entry_ids
+        END,
+        source_dates = CASE
+            WHEN public.review_items.user_feedback IS NULL
+                THEN EXCLUDED.source_dates
+            ELSE public.review_items.source_dates
+        END,
+        inference_level = CASE
+            WHEN public.review_items.user_feedback IS NULL
+                THEN EXCLUDED.inference_level
+            ELSE public.review_items.inference_level
+        END,
+        model_confidence = CASE
+            WHEN public.review_items.user_feedback IS NULL
+                THEN EXCLUDED.model_confidence
+            ELSE public.review_items.model_confidence
+        END,
+        reflection_eligible = true,
+        metadata = CASE
+            WHEN public.review_items.user_feedback IS NULL
+                THEN public.review_items.metadata || EXCLUDED.metadata
+            ELSE public.review_items.metadata
+        END
+    WHERE public.review_items.id = EXCLUDED.id;
+    GET DIAGNOSTICS persisted_review_count = ROW_COUNT;
+    IF persisted_review_count <> pg_catalog.jsonb_array_length(
+        p_pattern_review_items
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'pattern review identity mismatch';
+    END IF;
+
+    UPDATE public.pattern_candidates AS candidate
+    SET status = CASE
+            WHEN review.evidence_weight = 0.5 THEN 'weakened'
+            WHEN review.evidence_weight = 0.0 THEN 'rejected'
+            ELSE candidate.status
+        END
+    FROM public.review_items AS review
+    WHERE review.pattern_candidate_id = candidate.id
+      AND review.user_id = candidate.user_id
+      AND candidate.user_id = job.user_id
+      AND candidate.id IN (
+          SELECT (value ->> 'id')::uuid
+          FROM pg_catalog.jsonb_array_elements(p_candidates)
+      );
+
+    RETURN snapshot_id;
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.apply_weighted_deterministic_reflection_candidates(
+    uuid, bigint, jsonb, jsonb
+) FROM PUBLIC, anon, authenticated, orion_app, orion_worker;
+REVOKE ALL ON FUNCTION public.apply_weighted_reflection_snapshot(
+    uuid, text, uuid, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
+) FROM PUBLIC, anon, authenticated, orion_app, orion_worker;
+GRANT EXECUTE ON FUNCTION public.apply_weighted_deterministic_reflection_candidates(
+    uuid, bigint, jsonb, jsonb
+) TO orion_worker;
+GRANT EXECUTE ON FUNCTION public.apply_weighted_reflection_snapshot(
+    uuid, text, uuid, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
+) TO orion_worker;
+REVOKE ALL ON FUNCTION public.apply_deterministic_reflection_candidates(
+    uuid, bigint, jsonb, jsonb
+) FROM PUBLIC, anon, authenticated, orion_app, orion_worker;
+REVOKE ALL ON FUNCTION public.apply_reflection_snapshot(
+    uuid, text, uuid, jsonb, jsonb, jsonb, jsonb, jsonb
+) FROM PUBLIC, anon, authenticated, orion_app, orion_worker;
+
+COMMENT ON FUNCTION public.apply_weighted_reflection_snapshot(
+    uuid, text, uuid, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb
+) IS
+    'Atomically persists a review-weighted snapshot and idempotent encrypted Pattern Review rows without replacing prior feedback.';
+
+-- Owner-scoped, durable, idempotent Reflection recalculation request.
+-- The HTTP request only queues work; synthesis remains worker-only.
+
+CREATE FUNCTION public.get_reflection_recalculation_basis_for_owner(
+    p_user_id uuid,
+    p_now timestamptz DEFAULT pg_catalog.now()
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    owner_timezone text;
+    target_source bigint := 0;
+    current_end date;
+    current_start date;
+    basis_valid integer := 0;
+    basis_excluded integer := 0;
+    basis_dates integer := 0;
+    basis_words integer := 0;
+    excluded_reasons jsonb := '{}'::jsonb;
+BEGIN
+    IF auth.uid() IS DISTINCT FROM p_user_id
+       OR p_user_id IS NULL
+       OR p_now IS NULL
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '42501',
+            MESSAGE = 'operation not permitted';
+    END IF;
+
+    SELECT profile.timezone
+    INTO owner_timezone
+    FROM public.user_profiles AS profile
+    WHERE profile.user_id = p_user_id;
+    IF owner_timezone IS NULL THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0002',
+            MESSAGE = 'profile not found';
+    END IF;
+
+    SELECT state.latest_accepted_source_version
+    INTO target_source
+    FROM public.reflection_user_state AS state
+    WHERE state.user_id = p_user_id;
+    target_source := COALESCE(target_source, 0);
+
+    SELECT pg_catalog.max(entry.entry_date)
+    INTO current_end
+    FROM public.entry_analyses AS analysis
+    JOIN public.entries AS entry
+      ON entry.id = analysis.entry_id
+     AND entry.user_id = analysis.user_id
+    WHERE analysis.user_id = p_user_id
+      AND analysis.eligibility = 'accepted'
+      AND analysis.source_version <= target_source
+      AND EXISTS (
+          SELECT 1
+          FROM public.entry_signals AS signal
+          JOIN public.review_items AS review
+            ON review.entry_signal_id = signal.id
+           AND review.user_id = signal.user_id
+          WHERE signal.analysis_id = analysis.id
+            AND signal.user_id = analysis.user_id
+            AND review.scope = 'entry_insight'
+            AND review.reflection_eligible
+            AND review.evidence_weight > 0
+      );
+
+    IF current_end IS NULL THEN
+        SELECT pg_catalog.max(entry.entry_date)
+        INTO current_end
+        FROM public.entry_analyses AS analysis
+        JOIN public.entries AS entry
+          ON entry.id = analysis.entry_id
+         AND entry.user_id = analysis.user_id
+        WHERE analysis.user_id = p_user_id
+          AND analysis.source_version <= target_source;
+    END IF;
+    current_end := COALESCE(
+        current_end,
+        (p_now AT TIME ZONE owner_timezone)::date
+    );
+    current_start := current_end - 89;
+
+    WITH basis_rows AS (
+        SELECT
+            analysis.eligibility,
+            analysis.entry_kind,
+            analysis.reflective_word_count,
+            entry.entry_date,
+            (
+                analysis.eligibility = 'accepted'
+                AND EXISTS (
+                    SELECT 1
+                    FROM public.entry_signals AS signal
+                    JOIN public.review_items AS review
+                      ON review.entry_signal_id = signal.id
+                     AND review.user_id = signal.user_id
+                    WHERE signal.analysis_id = analysis.id
+                      AND signal.user_id = analysis.user_id
+                      AND review.scope = 'entry_insight'
+                      AND review.reflection_eligible
+                      AND review.evidence_weight > 0
+                )
+            ) AS included
+        FROM public.entry_analyses AS analysis
+        JOIN public.entries AS entry
+          ON entry.id = analysis.entry_id
+         AND entry.user_id = analysis.user_id
+        WHERE analysis.user_id = p_user_id
+          AND analysis.source_version <= target_source
+          AND entry.entry_date BETWEEN current_start AND current_end
+    )
+    SELECT
+        pg_catalog.count(*) FILTER (WHERE included)::integer,
+        pg_catalog.count(*) FILTER (
+            WHERE eligibility <> 'accepted'
+        )::integer,
+        pg_catalog.count(DISTINCT entry_date) FILTER (
+            WHERE included
+        )::integer,
+        COALESCE(
+            pg_catalog.sum(reflective_word_count) FILTER (WHERE included),
+            0
+        )::integer
+    INTO basis_valid, basis_excluded, basis_dates, basis_words
+    FROM basis_rows;
+
+    SELECT COALESCE(
+        pg_catalog.jsonb_object_agg(summary.entry_kind, summary.total),
+        '{}'::jsonb
+    )
+    INTO excluded_reasons
+    FROM (
+        SELECT analysis.entry_kind,
+               pg_catalog.count(*)::integer AS total
+        FROM public.entry_analyses AS analysis
+        JOIN public.entries AS entry
+          ON entry.id = analysis.entry_id
+         AND entry.user_id = analysis.user_id
+        WHERE analysis.user_id = p_user_id
+          AND analysis.source_version <= target_source
+          AND analysis.eligibility <> 'accepted'
+          AND entry.entry_date BETWEEN current_start AND current_end
+        GROUP BY analysis.entry_kind
+        ORDER BY analysis.entry_kind
+    ) AS summary;
+
+    RETURN pg_catalog.jsonb_build_object(
+        'basis_start', current_start,
+        'basis_end', current_end,
+        'valid_entry_count', basis_valid,
+        'excluded_entry_count', basis_excluded,
+        'distinct_entry_dates', basis_dates,
+        'reflective_word_count', basis_words,
+        'excluded_reasons', excluded_reasons
+    );
+END
+$function$;
+
+CREATE FUNCTION public.request_reflection_recalculation_for_owner(
+    p_user_id uuid,
+    p_now timestamptz DEFAULT pg_catalog.now()
+)
+RETURNS TABLE (
+    request_outcome text,
+    requested_job_id uuid,
+    requested_source_version bigint,
+    valid_entry_count integer,
+    distinct_entry_dates integer,
+    reflective_word_count integer
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    state public.reflection_user_state%ROWTYPE;
+    existing_job public.processing_jobs%ROWTYPE;
+    target_source bigint := 0;
+    basis_payload jsonb;
+    basis_valid integer := 0;
+    basis_dates integer := 0;
+    basis_words integer := 0;
+    snapshot_stale boolean := false;
+    result_job_id uuid;
+BEGIN
+    IF auth.uid() IS DISTINCT FROM p_user_id
+       OR p_user_id IS NULL
+       OR p_now IS NULL
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '42501',
+            MESSAGE = 'operation not permitted';
+    END IF;
+
+    PERFORM pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtextextended(
+            'orion-reflection:' || p_user_id::text,
+            0
+        )
+    );
+
+    SELECT *
+    INTO state
+    FROM public.reflection_user_state
+    WHERE user_id = p_user_id
+    FOR UPDATE;
+
+    IF FOUND THEN
+        target_source := state.latest_accepted_source_version;
+        SELECT snapshot.status = 'stale'
+        INTO snapshot_stale
+        FROM public.reflection_snapshots AS snapshot
+        WHERE snapshot.id = state.last_successful_snapshot_id
+          AND snapshot.user_id = p_user_id;
+        snapshot_stale := COALESCE(snapshot_stale, false);
+    END IF;
+
+    basis_payload := public.get_reflection_recalculation_basis_for_owner(
+        p_user_id,
+        p_now
+    );
+    basis_valid := (basis_payload ->> 'valid_entry_count')::integer;
+    basis_dates := (basis_payload ->> 'distinct_entry_dates')::integer;
+    basis_words := (basis_payload ->> 'reflective_word_count')::integer;
+
+    IF state.user_id IS NULL OR target_source <= 0 THEN
+        RETURN QUERY
+        SELECT 'not_eligible'::text, NULL::uuid, target_source,
+               basis_valid, basis_dates, basis_words;
+        RETURN;
+    END IF;
+
+    SELECT *
+    INTO existing_job
+    FROM public.processing_jobs
+    WHERE user_id = p_user_id
+      AND job_type = 'reflection_synthesis'
+      AND source_version = target_source::text
+    ORDER BY created_at DESC, id DESC
+    LIMIT 1
+    FOR UPDATE;
+
+    IF FOUND AND existing_job.status = 'pending' THEN
+        UPDATE public.processing_jobs
+        SET execution_mode = 'publish',
+            priority = 80,
+            run_after = LEAST(run_after, p_now),
+            updated_at = p_now
+        WHERE id = existing_job.id;
+        UPDATE public.reflection_user_state
+        SET last_processing_error_code = NULL,
+            updated_at = p_now
+        WHERE user_id = p_user_id;
+        RETURN QUERY
+        SELECT 'accepted'::text, existing_job.id, target_source,
+               basis_valid, basis_dates, basis_words;
+        RETURN;
+    END IF;
+
+    IF FOUND
+       AND existing_job.status = 'running'
+       AND existing_job.execution_mode = 'publish'
+    THEN
+        UPDATE public.reflection_user_state
+        SET last_processing_error_code = NULL,
+            updated_at = p_now
+        WHERE user_id = p_user_id;
+        RETURN QUERY
+        SELECT 'accepted'::text, existing_job.id, target_source,
+               basis_valid, basis_dates, basis_words;
+        RETURN;
+    END IF;
+
+    IF NOT snapshot_stale
+       AND state.last_successful_snapshot_id IS NOT NULL
+       AND state.last_snapshot_source_version >= target_source
+    THEN
+        RETURN QUERY
+        SELECT 'already_current'::text,
+               CASE WHEN FOUND THEN existing_job.id ELSE NULL::uuid END,
+               target_source, basis_valid, basis_dates, basis_words;
+        RETURN;
+    END IF;
+
+    IF FOUND
+       AND (
+           existing_job.status = 'failed'
+           OR (
+               existing_job.status = 'completed'
+               AND existing_job.execution_mode = 'shadow'
+           )
+       )
+    THEN
+        UPDATE public.processing_jobs
+        SET status = 'pending',
+            execution_mode = 'publish',
+            priority = 80,
+            run_after = p_now,
+            attempts = 0,
+            worker_id = NULL,
+            claim_token = NULL,
+            heartbeat_at = NULL,
+            last_error_code = NULL,
+            completed_at = NULL,
+            updated_at = p_now
+        WHERE id = existing_job.id;
+        UPDATE public.reflection_user_state
+        SET last_processing_error_code = NULL,
+            updated_at = p_now
+        WHERE user_id = p_user_id;
+        RETURN QUERY
+        SELECT 'accepted'::text, existing_job.id, target_source,
+               basis_valid, basis_dates, basis_words;
+        RETURN;
+    END IF;
+
+    IF FOUND THEN
+        RETURN QUERY
+        SELECT 'unavailable'::text, existing_job.id, target_source,
+               basis_valid, basis_dates, basis_words;
+        RETURN;
+    END IF;
+
+    IF NOT snapshot_stale
+       AND (
+           basis_valid < 3
+           OR basis_dates < 2
+           OR basis_words < 150
+       )
+    THEN
+        RETURN QUERY
+        SELECT 'not_eligible'::text, NULL::uuid, target_source,
+               basis_valid, basis_dates, basis_words;
+        RETURN;
+    END IF;
+
+    INSERT INTO public.processing_jobs (
+        user_id,
+        entry_id,
+        job_type,
+        execution_mode,
+        priority,
+        source_version,
+        status,
+        run_after
+    )
+    VALUES (
+        p_user_id,
+        NULL,
+        'reflection_synthesis',
+        'publish',
+        80,
+        target_source::text,
+        'pending',
+        p_now
+    )
+    RETURNING id INTO result_job_id;
+
+    UPDATE public.reflection_user_state
+    SET last_processing_error_code = NULL,
+        updated_at = p_now
+    WHERE user_id = p_user_id;
+
+    RETURN QUERY
+    SELECT 'accepted'::text, result_job_id, target_source,
+           basis_valid, basis_dates, basis_words;
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.get_reflection_recalculation_basis_for_owner(
+    uuid,
+    timestamptz
+) FROM PUBLIC, anon, orion_app, orion_worker;
+REVOKE ALL ON FUNCTION public.request_reflection_recalculation_for_owner(
+    uuid,
+    timestamptz
+) FROM PUBLIC, anon, orion_app, orion_worker;
+GRANT EXECUTE ON FUNCTION public.get_reflection_recalculation_basis_for_owner(
+    uuid,
+    timestamptz
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.request_reflection_recalculation_for_owner(
+    uuid,
+    timestamptz
+) TO authenticated;
+
+COMMENT ON FUNCTION public.get_reflection_recalculation_basis_for_owner(
+    uuid,
+    timestamptz
+) IS
+'Owner-only, Review-weighted 90-day basis used by cached Reflection reads and recalculation requests.';
+COMMENT ON FUNCTION public.request_reflection_recalculation_for_owner(
+    uuid,
+    timestamptz
+) IS
+'Owner-only durable recalculation request. Reuses a current pending/running publish job and never performs synthesis inline.';
+
+-- Entry deletion is a new reflection source event. Review feedback introduced
+-- synthetic source versions that can be newer than every surviving analysis,
+-- so deriving state from max(entry_analyses.source_version) can move a user's
+-- source state backwards and make stale work appear current.
+CREATE OR REPLACE FUNCTION public.delete_entry_with_reflection_for_owner(
+    p_user_id uuid, p_entry_id uuid
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    affected_candidates uuid[];
+    accepted boolean;
+    next_source bigint;
+BEGIN
+    IF auth.uid() IS DISTINCT FROM p_user_id THEN
+        RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'operation not permitted';
+    END IF;
+    PERFORM pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtextextended('orion-reflection:' || p_user_id::text, 0)
+    );
+    SELECT analysis.eligibility = 'accepted' INTO accepted
+    FROM public.entry_analyses AS analysis
+    WHERE analysis.entry_id = p_entry_id AND analysis.user_id = p_user_id;
+    SELECT pg_catalog.array_agg(DISTINCT evidence.candidate_id)
+    INTO affected_candidates
+    FROM public.pattern_candidate_evidence AS evidence
+    JOIN public.entry_signals AS signal
+      ON signal.id = evidence.signal_id AND signal.user_id = evidence.user_id
+    WHERE signal.entry_id = p_entry_id AND signal.user_id = p_user_id;
+    DELETE FROM public.entries WHERE id = p_entry_id AND user_id = p_user_id;
+    IF NOT FOUND THEN
+        RETURN false;
+    END IF;
+    IF pg_catalog.cardinality(affected_candidates) > 0 THEN
+        UPDATE public.pattern_candidates
+        SET status = 'weakened', version = version + 1
+        WHERE user_id = p_user_id
+          AND id = ANY(affected_candidates)
+          AND status <> 'rejected';
+    END IF;
+    IF accepted IS TRUE THEN
+        next_source := pg_catalog.nextval(
+            'public.entry_analyses_source_version_seq'::pg_catalog.regclass
+        );
+        UPDATE public.reflection_snapshots
+        SET status = 'stale'
+        WHERE id = (
+            SELECT last_successful_snapshot_id FROM public.reflection_user_state
+            WHERE user_id = p_user_id
+        );
+        UPDATE public.reflection_user_state
+        SET latest_accepted_source_version = next_source,
+            last_schedule_local_date = NULL,
+            new_valid_entries = (
+                SELECT pg_catalog.count(*)::integer
+                FROM public.entry_analyses
+                WHERE user_id = p_user_id
+                  AND eligibility = 'accepted'
+                  AND source_version >
+                      public.reflection_user_state.last_snapshot_source_version
+            ),
+            new_accepted_signals = (
+                SELECT pg_catalog.count(*)::integer
+                FROM public.entry_signals AS signal
+                JOIN public.entry_analyses AS analysis
+                  ON analysis.id = signal.analysis_id
+                 AND analysis.user_id = signal.user_id
+                WHERE signal.user_id = p_user_id
+                  AND analysis.eligibility = 'accepted'
+                  AND analysis.source_version >
+                      public.reflection_user_state.last_snapshot_source_version
+            ),
+            pending_local_dates = COALESCE((
+                SELECT pg_catalog.array_agg(
+                    DISTINCT entry.entry_date ORDER BY entry.entry_date
+                )
+                FROM public.entry_analyses AS analysis
+                JOIN public.entries AS entry
+                  ON entry.id = analysis.entry_id
+                 AND entry.user_id = analysis.user_id
+                WHERE analysis.user_id = p_user_id
+                  AND analysis.eligibility = 'accepted'
+                  AND analysis.source_version >
+                      public.reflection_user_state.last_snapshot_source_version
+            ), '{}'::date[])
+        WHERE user_id = p_user_id;
+    END IF;
+    RETURN true;
+END
+$function$;
+
+COMMENT ON FUNCTION public.delete_entry_with_reflection_for_owner(uuid, uuid) IS
+'Owner-only entry deletion that cascades Review evidence and advances reflection source state monotonically.';
+
+-- A source can be deleted after synthesis loads its encrypted basis but before
+-- persistence. Take the same owner lock as deletion and reject a stale source
+-- version before validating evidence that may already have cascaded away.
+CREATE OR REPLACE FUNCTION public.apply_weighted_deterministic_reflection_candidates(
+    p_user_id uuid,
+    p_source_version bigint,
+    p_candidates jsonb,
+    p_candidate_evidence jsonb
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $function$
+DECLARE
+    current_source_version bigint;
+BEGIN
+    IF pg_catalog.current_setting('role', true) IS DISTINCT FROM 'orion_worker' THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '42501', MESSAGE = 'operation not permitted';
+    END IF;
+    IF p_user_id IS NULL
+       OR p_source_version IS NULL
+       OR p_source_version < 0
+       OR p_candidates IS NULL
+       OR p_candidate_evidence IS NULL
+       OR pg_catalog.jsonb_typeof(p_candidates) <> 'array'
+       OR pg_catalog.jsonb_typeof(p_candidate_evidence) <> 'array'
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'invalid weighted candidate input';
+    END IF;
+
+    PERFORM pg_catalog.pg_advisory_xact_lock(
+        pg_catalog.hashtextextended(
+            'orion-reflection:' || p_user_id::text,
+            0
+        )
+    );
+    SELECT state.latest_accepted_source_version
+    INTO current_source_version
+    FROM public.reflection_user_state AS state
+    WHERE state.user_id = p_user_id
+    FOR UPDATE;
+    IF current_source_version IS DISTINCT FROM p_source_version THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'P0001', MESSAGE = 'stale candidate basis';
+    END IF;
+
+    IF EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(
+               p_candidate_evidence
+           ) AS evidence(value)
+           JOIN public.entry_signals AS signal
+             ON signal.id = (evidence.value ->> 'signal_id')::uuid
+            AND signal.user_id = p_user_id
+           LEFT JOIN public.review_items AS entry_review
+             ON entry_review.entry_signal_id = signal.id
+            AND entry_review.user_id = signal.user_id
+            AND entry_review.scope = 'entry_insight'
+           LEFT JOIN public.review_items AS pattern_review
+             ON pattern_review.pattern_candidate_id =
+                    (evidence.value ->> 'candidate_id')::uuid
+            AND pattern_review.user_id = p_user_id
+            AND pattern_review.scope = 'pattern'
+           WHERE entry_review.id IS NULL
+              OR entry_review.reflection_eligible IS NOT TRUE
+              OR entry_review.evidence_weight <= 0
+              OR pg_catalog.abs(
+                    (evidence.value ->> 'evidence_weight')::numeric
+                    - signal.confidence * entry_review.evidence_weight
+                      * CASE
+                          WHEN pattern_review.id IS NULL THEN 1.0
+                          WHEN pattern_review.reflection_eligible
+                              THEN pattern_review.evidence_weight
+                          ELSE 0.0
+                        END
+                 ) > 0.00001
+       )
+       OR EXISTS (
+           SELECT 1
+           FROM pg_catalog.jsonb_array_elements(
+               p_candidate_evidence
+           ) AS evidence(value)
+           WHERE NOT EXISTS (
+               SELECT 1
+               FROM public.entry_signals AS signal
+               WHERE signal.id = (evidence.value ->> 'signal_id')::uuid
+                 AND signal.user_id = p_user_id
+           )
+       )
+    THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '22023', MESSAGE = 'invalid weighted candidate evidence';
+    END IF;
+
+    RETURN public.apply_deterministic_reflection_candidates(
+        p_user_id,
+        p_source_version,
+        p_candidates,
+        p_candidate_evidence
+    );
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.apply_weighted_deterministic_reflection_candidates(
+    uuid, bigint, jsonb, jsonb
+) FROM PUBLIC, anon, authenticated, orion_app, orion_worker;
+GRANT EXECUTE ON FUNCTION public.apply_weighted_deterministic_reflection_candidates(
+    uuid, bigint, jsonb, jsonb
+) TO orion_worker;
+
+COMMENT ON FUNCTION public.apply_weighted_deterministic_reflection_candidates(
+    uuid, bigint, jsonb, jsonb
+) IS
+    'Applies weighted candidates only while the locked owner source version remains current.';

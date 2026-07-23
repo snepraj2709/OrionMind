@@ -1,8 +1,7 @@
-import { AppButton, Typography } from '@/components/design-system';
+import { AppButton } from '@/components/design-system';
 import type { DataViewStatus as DataViewStatusValue } from '@/lib/query-state';
 
-import { SkeletonList } from './loaders';
-import { InlineError, PageErrorState } from './states';
+import { PageErrorState, PageLoadingState } from './states';
 
 interface DataViewErrorCopy {
   description: string;
@@ -14,23 +13,17 @@ export interface DataViewStatusProps {
   initialError: DataViewErrorCopy;
   onRetry: () => void;
   refreshError: string;
-  refreshingAriaLabel?: string;
-  refreshingLabel: string;
   retryDisabled?: boolean;
-  skeletonCount?: number;
 }
 
 export function DataViewStatus({
   initialError,
   onRetry,
   refreshError,
-  refreshingAriaLabel,
-  refreshingLabel,
   retryDisabled = false,
-  skeletonCount = 3,
   status,
 }: DataViewStatusProps) {
-  if (status === 'loading') return <SkeletonList count={skeletonCount} />;
+  if (status === 'loading') return <PageLoadingState />;
 
   if (status === 'initial-error') {
     return (
@@ -52,34 +45,28 @@ export function DataViewStatus({
 
   if (status === 'refresh-error') {
     return (
-      <InlineError
+      <PageErrorState
         action={
           <AppButton
             disabled={retryDisabled}
             onClick={onRetry}
-            size="compact"
-            variant="ghost"
+            variant="secondary"
           >
             Retry
           </AppButton>
         }
-      >
-        {refreshError}
-      </InlineError>
+        description={refreshError}
+        title="Refresh failed"
+      />
     );
   }
 
   if (status === 'refreshing') {
     return (
-      <Typography
-        aria-label={refreshingAriaLabel ?? refreshingLabel}
-        aria-live="polite"
-        className="text-muted-foreground"
-        role="status"
-        variant="bodySmall"
-      >
-        {refreshingLabel}
-      </Typography>
+      <PageLoadingState
+        description="Orion is checking for updates. Your current view will stay in place."
+        title="Refreshing"
+      />
     );
   }
 

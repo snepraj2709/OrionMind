@@ -90,9 +90,8 @@ describe('JourneyScreen', () => {
   it('shows a calm loading state while the longitudinal view is assembled', () => {
     renderScreen(unlockedRepository(journeyEntryFixtures, 50));
 
-    expect(
-      screen.getByRole('status', { name: 'Loading items' }),
-    ).toBeInTheDocument();
+    const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
+    expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
   });
 
   it('shows the theme river, chapters, and chapter analysis when enabled', async () => {
@@ -287,7 +286,7 @@ describe('JourneyScreen', () => {
 
     await user.click(screen.getByRole('button', { name: 'Refresh journey' }));
     expect(
-      screen.getByRole('status', { name: 'Refreshing journey' }),
+      screen.getByRole('heading', { name: 'Refreshing' }),
     ).toBeInTheDocument();
     rejectRefresh?.(new Error('Refresh unavailable'));
 

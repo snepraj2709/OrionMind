@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -23,7 +22,10 @@ SignalType = Literal[
     "emotion",
     "energy_gain",
     "energy_loss",
+    "self_knowledge",
     "desire",
+    "explicit_preference",
+    "need",
     "avoidance",
     "belief",
     "self_statement",
@@ -32,6 +34,7 @@ SignalType = Literal[
     "conflict",
     "protective_strategy",
     "realization",
+    "causal_relationship",
 ]
 NeedTag = Literal[
     "autonomy",
@@ -217,8 +220,8 @@ class ModelAtomicSignal(StrictExtractionModel):
     themes: list[ThemeKey] = Field(max_length=3)
     need_tags: list[NeedTag] = Field(max_length=4)
     loop_role: LoopRole | None
+    inference_level: Literal["direct", "inferred"]
     confidence: float = Field(ge=0, le=1, allow_inf_nan=False)
-    occurred_on: date
 
     @model_validator(mode="after")
     def validate_signal_shape(self) -> Self:

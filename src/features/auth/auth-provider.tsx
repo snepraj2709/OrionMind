@@ -122,9 +122,7 @@ export function AuthProvider({
     () => resolveSupabaseBrowserClient(suppliedClient),
     [suppliedClient],
   );
-  const [status, setStatus] = useState<AuthStatus>(() =>
-    client ? 'resolving' : 'unconfigured',
-  );
+  const [status, setStatus] = useState<AuthStatus>('resolving');
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [flow, setFlow] = useState<AuthFlow>(() =>
@@ -184,9 +182,17 @@ export function AuthProvider({
   );
 
   useEffect(() => {
-    if (!client) return;
-
     let active = true;
+
+    if (!client) {
+      void Promise.resolve().then(() => {
+        if (active) setStatus('unconfigured');
+      });
+      return () => {
+        active = false;
+      };
+    }
+
     let authEventVersion = 0;
     let eventSession: Session | null | undefined;
     let confirmationFinalized = false;

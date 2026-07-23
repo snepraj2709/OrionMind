@@ -10,6 +10,7 @@ import { AppButton, Typography } from '@/components/design-system';
 import {
   FormError,
   FormField,
+  PasswordInput,
   SubmitButton,
   TextInput,
 } from '@/components/forms';
@@ -98,11 +99,10 @@ function PasswordUpdateForm() {
         label="New password"
         required
       >
-        <TextInput
+        <PasswordInput
           autoComplete="new-password"
           minLength={8}
           required
-          type="password"
           {...form.register('password')}
         />
       </FormField>
@@ -112,11 +112,10 @@ function PasswordUpdateForm() {
         label="Confirm new password"
         required
       >
-        <TextInput
+        <PasswordInput
           autoComplete="new-password"
           minLength={8}
           required
-          type="password"
           {...form.register('confirmation')}
         />
       </FormField>

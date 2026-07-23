@@ -62,7 +62,8 @@ describe('SavedItemsScreen', () => {
       listSavedItems: () => new Promise(() => undefined),
     });
 
-    expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
+    const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
+    expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
   });
 
   it('renders saved items and distinguishes an empty search', async () => {
@@ -124,7 +125,7 @@ describe('SavedItemsScreen', () => {
     await screen.findByText(item.content);
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
 
-    expect(screen.getByText('Refreshing ideas…')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Refreshing' })).toBeVisible();
     expect(screen.getByText(item.content)).toBeVisible();
     await act(async () => resolveRefresh?.(result([item])));
   });

@@ -24,17 +24,24 @@ import type { EvidenceItem as DrawerEvidenceItem } from '@/types/evidence';
 import type {
   EvidenceItem,
   InsufficientInsight,
+  ProcessingInsight,
   ReflectionFeedbackResponse,
   ReflectionRange,
+  UnavailableInsight,
 } from './api-schema';
 import { HiddenDriverCard } from './hidden-driver-card';
 import { InnerTensionCard } from './inner-tension-card';
 import type { ReflectionView } from './model';
-import { useReflectionFeedbackMutation, useReflectionQuery } from './queries';
+import {
+  useReflectionFeedbackMutation,
+  useReflectionQuery,
+  useReflectionRecalculationMutation,
+} from './queries';
 import { RecurringLoop } from './recurring-loop';
 import { ReflectionTabs } from './reflection-tabs';
 import {
   reflectionsRepository,
+  ReflectionRequestError,
   type ReflectionsRepository,
 } from './repository';
 
@@ -76,6 +83,64 @@ function InsufficientSection({ insight }: { insight: InsufficientInsight }) {
   );
 }
 
+function ProcessingSection({ insight }: { insight: ProcessingInsight }) {
+  return (
+    <ProcessingState
+      description={insight.message}
+      title="Recalculating this reflection"
+    />
+  );
+}
+
+function UnavailableSection({
+  insight,
+  onRetry,
+  retryDisabled,
+}: {
+  insight: UnavailableInsight;
+  onRetry: () => void;
+  retryDisabled: boolean;
+}) {
+  return (
+    <InlineError
+      action={
+        insight.retryable ? (
+          <AppButton
+            disabled={retryDisabled}
+            onClick={onRetry}
+            size="compact"
+            variant="ghost"
+          >
+            Retry
+          </AppButton>
+        ) : undefined
+      }
+    >
+      {insight.message}
+    </InlineError>
+  );
+}
+
+function recalculationErrorMessage(error: Error | null) {
+  if (error instanceof ReflectionRequestError) {
+    if (error.errorCode === 'REFLECTION_ALREADY_CURRENT') {
+      return 'These reflections are already up to date.';
+    }
+    if (error.errorCode === 'REFLECTION_NOT_ELIGIBLE') {
+      return 'There is not enough reflective evidence to recalculate these reflections yet.';
+    }
+  }
+  return 'Orion could not start recalculating your reflections. Your last available view is still shown.';
+}
+
+function canRetryRecalculation(error: Error | null) {
+  return !(
+    error instanceof ReflectionRequestError &&
+    (error.errorCode === 'REFLECTION_ALREADY_CURRENT' ||
+      error.errorCode === 'REFLECTION_NOT_ELIGIBLE')
+  );
+}
+
 function NoEvidenceSection({ range }: { range: ReflectionRange }) {
   return (
     <NoResultsState
@@ -105,15 +170,24 @@ export function ReflectionsScreen({
   const isOnline = useOnlineStatus();
   const activeUserId = user?.id;
 
-  const { query: reflectionQuery, viewStatus } = useReflectionQuery(
+  const {
+    pollingExhausted,
+    query: reflectionQuery,
+    resetPolling,
+    retryPolling,
+    viewStatus,
+  } = useReflectionQuery(activeUserId, { range }, repository);
+  const recalculation = useReflectionRecalculationMutation(
     activeUserId,
-    { range },
+    range,
+    resetPolling,
     repository,
   );
   const feedbackMutation = useReflectionFeedbackMutation(
     activeUserId,
     range,
     repository,
+    resetPolling,
   );
 
   function openEvidence(items: EvidenceItem[]) {
@@ -137,14 +211,39 @@ export function ReflectionsScreen({
 
   const response = reflectionQuery.data;
   const basis = response?.analysisBasis;
+  const isProcessing =
+    response?.processingState === 'pending' ||
+    response?.data.hiddenDriver.status === 'processing' ||
+    response?.data.recurringLoop.status === 'processing' ||
+    response?.data.innerTensions.status === 'processing';
+  const recalculationBusy = recalculation.isPending || isProcessing;
+  const suppressBackgroundRefresh =
+    viewStatus === 'refreshing' && (recalculation.isPending || isProcessing);
+  // Polling is transport-only once Reflections has data. Keep the current
+  // domain state mounted instead of promoting every GET to a page loader.
+  const pageViewStatus = suppressBackgroundRefresh ? 'ready' : viewStatus;
+
+  function requestRecalculation() {
+    if (!isOnline || recalculationBusy) return;
+    recalculation.mutate();
+  }
 
   let activePanel: ReactNode = null;
+  let activeProcessingInsight: ProcessingInsight | undefined;
 
   if (response && activeView === 'hidden-drivers') {
     const insight = response.data.hiddenDriver;
+    if (insight.status === 'processing') activeProcessingInsight = insight;
     activePanel =
-      insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? null : insight.status ===
+        'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : insight.status === 'unavailable' ? (
+        <UnavailableSection
+          insight={insight}
+          onRetry={requestRecalculation}
+          retryDisabled={!isOnline || recalculationBusy}
+        />
       ) : insight.evidence.length === 0 ? (
         <NoEvidenceSection range={range} />
       ) : (
@@ -163,9 +262,17 @@ export function ReflectionsScreen({
 
   if (response && activeView === 'recurring-loops') {
     const insight = response.data.recurringLoop;
+    if (insight.status === 'processing') activeProcessingInsight = insight;
     activePanel =
-      insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? null : insight.status ===
+        'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : insight.status === 'unavailable' ? (
+        <UnavailableSection
+          insight={insight}
+          onRetry={requestRecalculation}
+          retryDisabled={!isOnline || recalculationBusy}
+        />
       ) : insight.evidence.length === 0 ? (
         <NoEvidenceSection range={range} />
       ) : (
@@ -190,13 +297,21 @@ export function ReflectionsScreen({
 
   if (response && activeView === 'inner-tensions') {
     const insight = response.data.innerTensions;
+    if (insight.status === 'processing') activeProcessingInsight = insight;
     const tensionsWithEvidence =
       insight.status === 'available'
         ? insight.tensions.filter((tension) => tension.evidence.length > 0)
         : [];
     activePanel =
-      insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? null : insight.status ===
+        'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : insight.status === 'unavailable' ? (
+        <UnavailableSection
+          insight={insight}
+          onRetry={requestRecalculation}
+          retryDisabled={!isOnline || recalculationBusy}
+        />
       ) : tensionsWithEvidence.length === 0 ? (
         <NoEvidenceSection range={range} />
       ) : (
@@ -234,9 +349,20 @@ export function ReflectionsScreen({
   }
 
   const showTabs =
-    viewStatus === 'loading' ||
-    (response !== undefined &&
-      response.reflectionState !== 'insufficient_reflective_content');
+    response?.reflectionState !== 'insufficient_reflective_content';
+  let processingState: ReactNode = null;
+  if (pageViewStatus === 'ready') {
+    if (response?.reflectionState === 'first_reflection_pending') {
+      processingState = (
+        <ProcessingState
+          description="Orion is looking across your reflective entries. You can keep journaling while this finishes."
+          title="Your first reflection is taking shape"
+        />
+      );
+    } else if (activeProcessingInsight) {
+      processingState = <ProcessingSection insight={activeProcessingInsight} />;
+    }
+  }
 
   return (
     <PageShell className="space-y-8">
@@ -258,27 +384,16 @@ export function ReflectionsScreen({
             />
             <RefreshButton
               aria-label="Refresh reflections"
-              disabled={!isOnline}
-              loading={reflectionQuery.isFetching}
-              loadingLabel="Refreshing reflections"
-              onClick={() => void reflectionQuery.refetch()}
+              disabled={
+                !isOnline || recalculationBusy || reflectionQuery.isFetching
+              }
+              onClick={requestRecalculation}
               variant="icon"
             />
           </>
         }
         description={subtitle}
         title={routes.reflections.label}
-      />
-
-      <DataViewStatus
-        initialError={dataViewMessages.reflections.initial}
-        onRetry={() => void reflectionQuery.refetch()}
-        refreshError={dataViewMessages.reflections.refresh}
-        refreshingAriaLabel="Refreshing reflections"
-        refreshingLabel="Refreshing reflections… Your current view will stay in place."
-        retryDisabled={!isOnline}
-        skeletonCount={1}
-        status={viewStatus}
       />
 
       {!isOnline && response ? (
@@ -288,19 +403,41 @@ export function ReflectionsScreen({
         </InlineError>
       ) : null}
 
-      {response?.reflectionState === 'first_reflection_pending' ? (
-        <ProcessingState
-          description="Orion is looking across your reflective entries. You can keep journaling while this finishes."
-          title="Your first reflection is taking shape"
-        />
+      {recalculation.isError ? (
+        <InlineError
+          action={
+            canRetryRecalculation(recalculation.error) ? (
+              <AppButton
+                disabled={!isOnline || recalculation.isPending}
+                onClick={requestRecalculation}
+                size="compact"
+                variant="ghost"
+              >
+                Retry
+              </AppButton>
+            ) : undefined
+          }
+        >
+          {recalculationErrorMessage(recalculation.error)}
+        </InlineError>
       ) : null}
 
-      {response?.reflectionState === 'stale' &&
-      response.processingState === 'pending' ? (
-        <ProcessingState
-          description="Your last reflection remains available while Orion considers newer entries."
-          title="Updating your reflections"
-        />
+      {pollingExhausted && !reflectionQuery.isError ? (
+        <InlineError
+          action={
+            <AppButton
+              disabled={!isOnline || reflectionQuery.isFetching}
+              onClick={() => void retryPolling()}
+              size="compact"
+              variant="ghost"
+            >
+              Check again
+            </AppButton>
+          }
+        >
+          This update is taking longer than expected. Check again without
+          starting another recalculation.
+        </InlineError>
       ) : null}
 
       {response?.reflectionState === 'stale' &&
@@ -309,7 +446,7 @@ export function ReflectionsScreen({
           action={
             <AppButton
               disabled={!isOnline}
-              onClick={() => void reflectionQuery.refetch()}
+              onClick={requestRecalculation}
               size="compact"
               variant="ghost"
             >
@@ -344,7 +481,19 @@ export function ReflectionsScreen({
             setActiveView(nextView);
             setDrawerOpen(false);
           }}
-          panel={activePanel}
+          panel={
+            <div className="space-y-8">
+              <DataViewStatus
+                initialError={dataViewMessages.reflections.initial}
+                onRetry={() => void retryPolling()}
+                refreshError={dataViewMessages.reflections.refresh}
+                retryDisabled={!isOnline}
+                status={pageViewStatus}
+              />
+              {processingState}
+              {activePanel}
+            </div>
+          }
           value={activeView}
         />
       ) : null}

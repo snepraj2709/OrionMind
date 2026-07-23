@@ -4,8 +4,8 @@ import json
 from collections.abc import Mapping, Sequence
 
 
-REFLECTION_SYNTHESIS_PROMPT_VERSION = "reflection-synthesis-v1"
-REFLECTION_CRITIC_PROMPT_VERSION = "reflection-critic-v1"
+REFLECTION_SYNTHESIS_PROMPT_VERSION = "reflection-synthesis-v2"
+REFLECTION_CRITIC_PROMPT_VERSION = "reflection-critic-v2"
 
 REFLECTION_SYNTHESIS_DEVELOPER_PROMPT = """Generate cautious candidate hypotheses from accepted atomic signals and the
 provided deterministic aggregates. Every supplied candidate has already passed

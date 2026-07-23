@@ -83,6 +83,13 @@
   line-height: 20px;
 }
 
+@utility type-tag {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+}
+
 @utility type-eyebrow {
   font-family: var(--font-sans);
   font-size: 12px;

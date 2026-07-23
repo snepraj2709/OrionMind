@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "dimension": "garbage_leakage",
+      "eligibility_result": "accepted",
+      "proposed_review_item_count": 2,
+      "expected_review_item_count": 2
+    },
+    {
+      "dimension": "garbage_leakage",
+      "eligibility_result": "excluded",
+      "proposed_review_item_count": 2,
+      "expected_review_item_count": 0
+    },
+    {
+      "dimension": "garbage_leakage",
+      "eligibility_result": "uncertain",
+      "proposed_review_item_count": 2,
+      "expected_review_item_count": 0
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "exact",
+      "expected_reason_codes": []
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "missing",
+      "expected_reason_codes": ["EVIDENCE_SIGNAL_MISSING"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "signal_owner_mismatch",
+      "expected_reason_codes": ["EVIDENCE_OWNER_MISMATCH"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "entry_owner_mismatch",
+      "expected_reason_codes": ["EVIDENCE_OWNER_MISMATCH"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "analysis_owner_mismatch",
+      "expected_reason_codes": ["EVIDENCE_OWNER_MISMATCH"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "entry_mismatch",
+      "expected_reason_codes": ["EVIDENCE_ENTRY_MISMATCH"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "analysis_uncertain",
+      "expected_reason_codes": ["EVIDENCE_ANALYSIS_NOT_ACCEPTED"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "analysis_excluded",
+      "expected_reason_codes": ["EVIDENCE_ANALYSIS_NOT_ACCEPTED"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "outside_basis",
+      "expected_reason_codes": ["EVIDENCE_OUTSIDE_BASIS"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "basis_unavailable",
+      "expected_reason_codes": ["EVIDENCE_OUTSIDE_BASIS"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "offset_out_of_bounds",
+      "expected_reason_codes": ["EVIDENCE_OFFSET_OUT_OF_BOUNDS"]
+    },
+    {
+      "dimension": "evidence_attribution",
+      "scenario": "offset_mismatch",
+      "expected_reason_codes": ["EVIDENCE_OFFSET_MISMATCH"]
+    },
+    {
+      "dimension": "abstention",
+      "pattern_type": "hidden_driver",
+      "selected_pattern_types": [],
+      "expected_status": "insufficient_evidence"
+    },
+    {
+      "dimension": "abstention",
+      "pattern_type": "hidden_driver",
+      "selected_pattern_types": ["hidden_driver"],
+      "expected_status": "available"
+    },
+    {
+      "dimension": "abstention",
+      "pattern_type": "recurring_loop",
+      "selected_pattern_types": ["hidden_driver"],
+      "expected_status": "insufficient_evidence"
+    },
+    {
+      "dimension": "abstention",
+      "pattern_type": "recurring_loop",
+      "selected_pattern_types": ["recurring_loop"],
+      "expected_status": "available"
+    },
+    {
+      "dimension": "abstention",
+      "pattern_type": "inner_tension",
+      "selected_pattern_types": ["hidden_driver", "recurring_loop"],
+      "expected_status": "insufficient_evidence"
+    },
+    {
+      "dimension": "abstention",
+      "pattern_type": "inner_tension",
+      "selected_pattern_types": ["inner_tension"],
+      "expected_status": "available"
+    },
+    {
+      "dimension": "feedback_sensitivity",
+      "evidence_weight": 1.0,
+      "model_confidence": 0.8,
+      "expected_effective_confidence": 0.8
+    },
+    {
+      "dimension": "feedback_sensitivity",
+      "evidence_weight": 0.5,
+      "model_confidence": 0.8,
+      "expected_effective_confidence": 0.4
+    },
+    {
+      "dimension": "feedback_sensitivity",
+      "evidence_weight": 0.0,
+      "model_confidence": 0.8,
+      "expected_effective_confidence": 0.0
+    }
+  ]
+}

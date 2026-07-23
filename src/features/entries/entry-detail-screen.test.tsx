@@ -32,7 +32,14 @@ const completedEntry: EntryDetail = {
       status: 'approved',
     },
   ],
-  reflections: [],
+  reflections: [
+    {
+      id: 'r1',
+      content: 'Legacy reflection that should not be shown.',
+      kind: 'reflection',
+      status: 'pending_approval',
+    },
+  ],
 };
 
 function createRepository(
@@ -78,7 +85,8 @@ describe('EntryDetailScreen', () => {
       }),
     );
 
-    expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
+    const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
+    expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
   });
 
   it('renders a completed entry with read-only extracted items', async () => {
@@ -87,19 +95,70 @@ describe('EntryDetailScreen', () => {
     expect(
       await screen.findByRole('heading', { name: 'July 10, 2025' }),
     ).toBeVisible();
+    const backLink = screen.getByRole('link', { name: 'Back to entries' });
+    const breadcrumbs = screen.getByRole('navigation', {
+      name: 'breadcrumb',
+    });
+    const topUtilityRow = backLink.parentElement;
+
+    expect(topUtilityRow).toBe(breadcrumbs.parentElement);
+    expect(topUtilityRow?.firstElementChild).toBe(backLink);
+    expect(topUtilityRow).toHaveClass('flex', 'flex-col', 'items-start');
+    expect(
+      screen.getByRole('button', { name: 'Refresh' }).parentElement,
+    ).not.toBe(topUtilityRow);
+    expect(screen.getByText('Text', { selector: 'p' })).toBeVisible();
+    expect(screen.queryByText('Text entry')).not.toBeInTheDocument();
     expect(screen.getByText('Personal Growth')).toBeVisible();
     expect(screen.getByText('Health')).toBeVisible();
 
     expect(
       screen.getByText('Protect slow, screen-free time in the morning.'),
     ).toBeVisible();
-    expect(screen.getByText('Needs review')).toBeVisible();
+    const ideaTag = screen.getByText('Idea', {
+      selector: '[data-slot="badge"]',
+    });
+    const memoryTag = screen.getByText('Memory', {
+      selector: '[data-slot="badge"]',
+    });
+
+    expect(ideaTag).toHaveClass('type-tag');
+    expect(memoryTag).toHaveClass('type-tag');
+    expect(ideaTag.querySelector('svg')).not.toBeInTheDocument();
+    expect(memoryTag.querySelector('svg')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Idea' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Memory' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Extracted', { exact: true }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Approved', { exact: true })).toBeVisible();
+    expect(screen.queryByText('Needs review')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Legacy reflection that should not be shown.'),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Approve' }),
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Reject' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('uses the compact Audio label for voice entries', async () => {
+    renderEntryDetail(
+      createRepository({
+        getEntry: vi
+          .fn()
+          .mockResolvedValue({ ...completedEntry, inputType: 'voice' }),
+      }),
+    );
+
+    expect(await screen.findByText('Audio', { selector: 'p' })).toBeVisible();
+    expect(screen.queryByText('Voice transcript')).not.toBeInTheDocument();
   });
 
   it('keeps queued entry content visible until manual refresh', async () => {
@@ -124,9 +183,7 @@ describe('EntryDetailScreen', () => {
       }),
     );
 
-    expect(
-      await screen.findByText('Orion is reflecting on this entry'),
-    ).toBeVisible();
+    expect(await screen.findByText('Orion is reflecting')).toBeVisible();
     expect(screen.getByText(completedEntry.content)).toBeVisible();
   });
 
@@ -151,9 +208,7 @@ describe('EntryDetailScreen', () => {
     expect(screen.getByText(completedEntry.content)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Retry reflection' }));
 
-    expect(
-      await screen.findByText('Orion is reflecting on this entry'),
-    ).toBeVisible();
+    expect(await screen.findByText('Orion is reflecting')).toBeVisible();
     expect(retryEntry).toHaveBeenCalledWith('e1');
   });
 
@@ -237,7 +292,7 @@ describe('EntryDetailScreen', () => {
     await screen.findByText(completedEntry.content);
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
 
-    expect(screen.getByText('Refreshing entry…')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Refreshing' })).toBeVisible();
     expect(screen.getByText(completedEntry.content)).toBeVisible();
     await act(async () => resolveRefresh?.(completedEntry));
   });

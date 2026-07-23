@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { getDataViewStatus } from '@/lib/query-state';
@@ -22,22 +22,79 @@ export const reflectionKeys = {
     ['reflections', userId, range] as const,
 };
 
+export const reflectionPolling = {
+  intervalMs: 2_000,
+  maxAttempts: 6,
+} as const;
+
+function isReflectionProcessing(response: ReflectionApiResponse | undefined) {
+  return (
+    response?.processingState === 'pending' ||
+    response?.data.hiddenDriver.status === 'processing' ||
+    response?.data.recurringLoop.status === 'processing' ||
+    response?.data.innerTensions.status === 'processing'
+  );
+}
+
 export function useReflectionQuery(
   userId: string | undefined,
   input: ReflectionRequest,
   repository: ReflectionsRepository = reflectionsRepository,
 ) {
+  const scope = `${userId ?? 'unauthenticated'}:${input.range}`;
+  const [polling, setPolling] = useState(() => ({ scope, attempts: 0 }));
+  const pollingAttempts = polling.scope === scope ? polling.attempts : 0;
+
   const query = useQuery({
     enabled: userId !== undefined,
     queryKey: reflectionKeys.range(userId ?? 'unauthenticated', input.range),
-    queryFn: () => {
+    queryFn: ({ signal }) => {
       if (!userId) throw new Error('An authenticated user is required.');
-      return repository.getReflection(input);
+      return repository.getReflection(input, signal);
     },
   });
+  const refetch = query.refetch;
+  const isProcessing = isReflectionProcessing(query.data);
+  const pollingExhausted =
+    isProcessing && pollingAttempts >= reflectionPolling.maxAttempts;
+
+  useEffect(() => {
+    if (!userId || !isProcessing || pollingExhausted) return;
+
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void refetch({ throwOnError: false }).then((result) => {
+        if (!active) return;
+        setPolling((current) => {
+          const attempts = current.scope === scope ? current.attempts : 0;
+          return {
+            scope,
+            attempts: isReflectionProcessing(result.data) ? attempts + 1 : 0,
+          };
+        });
+      });
+    }, reflectionPolling.intervalMs);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [isProcessing, pollingAttempts, pollingExhausted, refetch, scope, userId]);
+
+  const resetPolling = useCallback(() => {
+    setPolling({ scope, attempts: 0 });
+  }, [scope]);
+
+  const retryPolling = useCallback(async () => {
+    await refetch({ throwOnError: false });
+    setPolling({ scope, attempts: 0 });
+  }, [refetch, scope]);
 
   return {
+    pollingExhausted,
     query,
+    resetPolling,
+    retryPolling,
     viewStatus: getDataViewStatus({
       hasData: query.data !== undefined,
       isError: query.isError,
@@ -45,6 +102,47 @@ export function useReflectionQuery(
       isPending: query.isPending,
     }),
   };
+}
+
+export function useReflectionRecalculationMutation(
+  userId: string | undefined,
+  range: ReflectionRange,
+  resetPolling: () => void,
+  repository: ReflectionsRepository = reflectionsRepository,
+) {
+  const queryClient = useQueryClient();
+  const controllerRef = useRef<AbortController | null>(null);
+  const queryKey = reflectionKeys.range(userId ?? 'unauthenticated', range);
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (!userId) throw new Error('An authenticated user is required.');
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      try {
+        return await repository.recalculate(controller.signal);
+      } finally {
+        if (controllerRef.current === controller) {
+          controllerRef.current = null;
+        }
+      }
+    },
+    onSuccess: async () => {
+      resetPolling();
+      await queryClient.invalidateQueries({ queryKey, exact: true });
+    },
+  });
+  const resetMutation = mutation.reset;
+
+  useEffect(() => {
+    resetMutation();
+    return () => {
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+    };
+  }, [range, resetMutation, userId]);
+
+  return mutation;
 }
 
 function withInsightFeedback(
@@ -102,6 +200,7 @@ export function useReflectionFeedbackMutation(
   userId: string | undefined,
   range: ReflectionRange,
   repository: ReflectionsRepository = reflectionsRepository,
+  onRecalculationRequested?: () => void,
 ) {
   const queryClient = useQueryClient();
   const pendingRef = useRef(new Set<string>());
@@ -175,6 +274,7 @@ export function useReflectionFeedbackMutation(
         delete next[errorKey(result.insightId, input.scope)];
         return next;
       });
+      onRecalculationRequested?.();
       void queryClient.invalidateQueries({
         queryKey: input.queryKey,
         exact: true,

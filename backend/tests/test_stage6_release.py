@@ -97,7 +97,10 @@ def test_packaged_openapi_is_exact_runtime_contract_with_no_dangling_references(
         "/api/v1/entries/voice",
         "/api/v1/entries/{entry_id}",
         "/api/v1/entries/{entry_id}/retry",
+        "/api/v1/review/items",
+        "/api/v1/review/items/{review_item_id}/feedback",
         "/api/v1/reflections",
+        "/api/v1/reflections/recalculate",
         "/api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback",
     }
     references = tuple(all_references(artifact))
@@ -114,6 +117,18 @@ def test_packaged_openapi_is_exact_runtime_contract_with_no_dangling_references(
     assert response.status_code == 200
     assert response.json() == artifact
     assert app.openapi() == artifact
+
+
+def test_review_feedback_contract_allows_blank_optional_text_normalization() -> None:
+    artifact = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
+    properties = artifact["components"]["schemas"]["ReviewFeedbackRequest"][
+        "properties"
+    ]
+    for field in ("correctedStatement", "note"):
+        assert properties[field] == {
+            "type": ["string", "null"],
+            "maxLength": 1000,
+        }
 
 
 def test_route_drift_assertion_rejects_any_unreviewed_public_operation() -> None:
@@ -160,7 +175,18 @@ def test_every_endpoint_class_has_integer_retry_after_at_its_limit(rule: str) ->
         ("POST", "/api/v1/entries/voice", "voice_create"),
         ("GET", "/api/v1/entries/entry-id", "read"),
         ("POST", "/api/v1/entries/entry-id/retry", "entry_retry"),
+        ("GET", "/api/v1/review/items", "read"),
+        (
+            "POST",
+            "/api/v1/review/items/review-id/feedback",
+            "review_write",
+        ),
         ("GET", "/api/v1/reflections", "read"),
+        (
+            "POST",
+            "/api/v1/reflections/recalculate",
+            "reflection_write",
+        ),
         (
             "PUT",
             "/api/v1/reflections/snapshot-id/insights/insight-id/feedback",
@@ -351,6 +377,7 @@ def test_json_yaml_and_runtime_reflection_contracts_are_equivalent() -> None:
     }
     assert set(reflection_paths) == {
         "/api/v1/reflections",
+        "/api/v1/reflections/recalculate",
         "/api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback",
     }
     assert reflection_paths["/api/v1/reflections"]["get"]["parameters"][0][

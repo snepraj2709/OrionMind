@@ -29,10 +29,17 @@ export const reflectionConfidenceSchema = z.enum([
 ]);
 export const reflectionReasonCodeSchema = z.enum([
   'NOT_ENOUGH_REFLECTIVE_CONTENT',
+  'MINIMUM_BASIS_NOT_MET',
   'DRIVER_NOT_REPEATED',
   'LOOP_NOT_REPEATED',
   'BOTH_SIDES_NOT_SUPPORTED',
   'INSUFFICIENT_EVIDENCE',
+]);
+export const reflectionSectionStatusSchema = z.enum([
+  'available',
+  'processing',
+  'insufficient_evidence',
+  'unavailable',
 ]);
 
 const themeKeySchema = z.enum([
@@ -97,6 +104,22 @@ export const insufficientInsightSchema = z
   })
   .strict();
 
+export const processingInsightSchema = z
+  .object({
+    status: z.literal('processing'),
+    message: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export const unavailableInsightSchema = z
+  .object({
+    status: z.literal('unavailable'),
+    reasonCode: z.literal('TECHNICAL_FAILURE'),
+    message: z.string().trim().min(1).max(500),
+    retryable: z.boolean(),
+  })
+  .strict();
+
 const availableInsightFields = {
   status: z.literal('available'),
   id: z.uuid(),
@@ -118,7 +141,9 @@ export const availableHiddenDriverSchema = z
 
 export const hiddenDriverSectionSchema = z.discriminatedUnion('status', [
   availableHiddenDriverSchema,
+  processingInsightSchema,
   insufficientInsightSchema,
+  unavailableInsightSchema,
 ]);
 
 export const recurringLoopStepSchema = z
@@ -142,7 +167,9 @@ export const availableRecurringLoopSchema = z
 
 export const recurringLoopSectionSchema = z.discriminatedUnion('status', [
   availableRecurringLoopSchema,
+  processingInsightSchema,
   insufficientInsightSchema,
+  unavailableInsightSchema,
 ]);
 
 export const innerTensionSchema = z
@@ -171,7 +198,9 @@ export const availableInnerTensionsSchema = z
 
 export const innerTensionsSectionSchema = z.discriminatedUnion('status', [
   availableInnerTensionsSchema,
+  processingInsightSchema,
   insufficientInsightSchema,
+  unavailableInsightSchema,
 ]);
 
 export const reflectionSnapshotSchema = z
@@ -229,8 +258,20 @@ export const reflectionFeedbackResultSchema = z
   })
   .strict();
 
+export const reflectionRecalculationResultSchema = z
+  .object({
+    status: z.literal('accepted'),
+    jobId: z.uuid(),
+  })
+  .strict();
+
 export type ReflectionRange = z.infer<typeof reflectionRangeSchema>;
 export type ReflectionRequest = z.infer<typeof reflectionRequestSchema>;
+export type ReflectionSectionStatus = z.infer<
+  typeof reflectionSectionStatusSchema
+>;
+export type ProcessingInsight = z.infer<typeof processingInsightSchema>;
+export type UnavailableInsight = z.infer<typeof unavailableInsightSchema>;
 export type ReflectionFeedbackResponse = z.infer<
   typeof reflectionFeedbackResponseSchema
 >;
@@ -248,4 +289,7 @@ export type InnerTensionsSection = z.infer<typeof innerTensionsSectionSchema>;
 export type ReflectionApiResponse = z.infer<typeof reflectionApiResponseSchema>;
 export type ReflectionFeedbackResult = z.infer<
   typeof reflectionFeedbackResultSchema
+>;
+export type ReflectionRecalculationResult = z.infer<
+  typeof reflectionRecalculationResultSchema
 >;

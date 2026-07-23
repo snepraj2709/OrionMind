@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createFakeSupabase, makeSession } from '@/test/fake-supabase';
 
 import { AuthProvider } from './auth-provider';
+import { AuthRouteGuard } from './auth-route-guard';
 import { useAuth } from './use-auth';
 
 const navigationMocks = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -92,15 +93,71 @@ function renderProvider(
   };
 }
 
+interface HydrationAuthRouteProps {
+  client: NonNullable<Parameters<typeof AuthProvider>[0]['client']>;
+  queryClient: QueryClient;
+}
+
+function HydrationAuthRoute({ client, queryClient }: HydrationAuthRouteProps) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider client={typeof window === 'undefined' ? null : client}>
+        <AuthRouteGuard>
+          <main>Login form</main>
+        </AuthRouteGuard>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+
 afterEach(() => {
   window.history.replaceState({}, '', '/');
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
 describe('AuthProvider session ownership', () => {
-  it('fails safely when public Supabase configuration is missing', () => {
+  it('hydrates configured auth routes with the same initial session state', async () => {
+    const fake = createFakeSupabase(null);
+    const browserWindow = window;
+    vi.stubGlobal('window', undefined);
+    const serverMarkup = renderToString(
+      <HydrationAuthRoute
+        client={fake.client}
+        queryClient={new QueryClient()}
+      />,
+    );
+    vi.stubGlobal('window', browserWindow);
+
+    const container = document.createElement('div');
+    container.innerHTML = serverMarkup;
+    document.body.append(container);
+    const onRecoverableError = vi.fn();
+
+    const root = hydrateRoot(
+      container,
+      <HydrationAuthRoute
+        client={fake.client}
+        queryClient={new QueryClient()}
+      />,
+      { onRecoverableError },
+    );
+
+    await act(async () => undefined);
+
+    expect(onRecoverableError).not.toHaveBeenCalled();
+    expect(fake.getSession).toHaveBeenCalledOnce();
+    expect(container).toHaveTextContent('Login form');
+
+    root.unmount();
+    container.remove();
+  });
+
+  it('fails safely when public Supabase configuration is missing', async () => {
     renderProvider(null);
-    expect(screen.getByTestId('status')).toHaveTextContent('unconfigured');
+    await waitFor(() =>
+      expect(screen.getByTestId('status')).toHaveTextContent('unconfigured'),
+    );
     expect(screen.getByTestId('user-name')).toHaveTextContent('none');
   });
 

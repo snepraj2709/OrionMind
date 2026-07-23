@@ -34,7 +34,7 @@ function repositoryWithList(
 
 function renderEntries(
   repository: EntriesListRepository,
-  pendingReviewCount = 0,
+  pendingReviewCount?: number | null,
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -56,7 +56,9 @@ describe('EntriesScreen', () => {
 
     renderEntries(repository);
 
-    expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
+    const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
+    expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
+    expect(screen.getByText('Loading review count')).toBeVisible();
   });
 
   it('renders successful, queued, processing, and failed entries', async () => {
@@ -117,6 +119,18 @@ describe('EntriesScreen', () => {
     expect(
       screen.queryByRole('combobox', { name: 'Rows per page' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('does not present an unavailable Review count as zero', async () => {
+    renderEntries(
+      repositoryWithList(vi.fn().mockResolvedValue(result([completedEntry]))),
+      null,
+    );
+
+    expect(
+      await screen.findByLabelText('1 entry, Review count unavailable'),
+    ).toBeVisible();
+    expect(screen.queryByText('0 awaiting review')).not.toBeInTheDocument();
   });
 
   it('does not show unsupported search or status filters', async () => {
@@ -249,7 +263,9 @@ describe('EntriesScreen', () => {
     await screen.findByText(completedEntry.content);
     void queryClient.invalidateQueries({ queryKey: entryKeys.lists });
 
-    expect(await screen.findByText('Refreshing entries…')).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { name: 'Refreshing' }),
+    ).toBeVisible();
     expect(screen.getByText(completedEntry.content)).toBeVisible();
 
     resolveRefresh?.(result([completedEntry]));

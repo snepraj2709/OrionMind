@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
 
+import { installPendingReviewCountApi } from './helpers/api';
 import { logIn } from './helpers/auth';
+
+test.beforeEach(async ({ page }) => installPendingReviewCountApi(page));
 
 test('matches the protected desktop shell', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });

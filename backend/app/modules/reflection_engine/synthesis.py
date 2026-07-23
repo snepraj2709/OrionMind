@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Collection, Mapping, Sequence
+from typing import Literal, TypeAlias
 from uuid import UUID
 
 from app.modules.reflection_engine.ordering import signal_order
@@ -8,6 +9,7 @@ from app.modules.reflection_engine.schemas import (
     CandidateSignal,
     ConstructedCandidate,
     InnerTensionStructure,
+    PatternType,
     RecurringLoopStructure,
     ReflectionCriticOutput,
     SynthesisEvidenceReference,
@@ -19,6 +21,24 @@ PUBLICATION_THRESHOLDS = {
     "recurring_loop": 0.72,
     "inner_tension": 0.70,
 }
+
+
+SynthesisSectionStatus: TypeAlias = Literal[
+    "available",
+    "insufficient_evidence",
+]
+
+
+def synthesis_section_status(
+    *,
+    pattern_type: PatternType,
+    selected_pattern_types: Collection[PatternType],
+) -> SynthesisSectionStatus:
+    return (
+        "available"
+        if pattern_type in selected_pattern_types
+        else "insufficient_evidence"
+    )
 
 
 def critic_required(candidate: ConstructedCandidate) -> bool:

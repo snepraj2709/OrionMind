@@ -30,13 +30,7 @@ export function AuthShell({
 
   return (
     <PublicShell contained={contained}>
-      <div
-        className={cn(
-          'w-full',
-          isProminent ? 'lg:w-1/2' : 'max-w-md',
-          className,
-        )}
-      >
+      <div className={cn('w-full max-w-md', className)}>
         <div className={cn('space-y-8', isProminent && 'lg:space-y-16')}>
           {brand ? <div>{brand}</div> : null}
           <div className={cn('space-y-6', isProminent && 'lg:space-y-8')}>

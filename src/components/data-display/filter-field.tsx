@@ -10,8 +10,13 @@ export interface FilterFieldProps {
   onValueChange: (value: string) => void;
   placeholder?: string;
   hideLabel?: boolean;
+  disabled?: boolean;
 }
 
 export function FilterField(props: FilterFieldProps) {
-  return <SelectField {...props} />;
+  return (
+    <div className="w-fit">
+      <SelectField {...props} />
+    </div>
+  );
 }

@@ -84,7 +84,8 @@ is reached. Commands and logs expose counts, state, budgets, and opaque IDs only
 print raw journal content.
 
 Reflection observability is OTLP-only and exposes no HTTP metrics route. When `OTEL_ENABLED=true`,
-the API and worker export the nine contract metrics plus queue-age and scheduler-user instruments.
+the API and worker export the contract metrics, including queue age, scheduler
+outcomes, Review weight buckets, synthesis abstentions, and retry outcomes.
 Reflection events use a strict field allowlist; model attempts record only configured model role/ID,
 prompt version, duration, available token counts, controlled outcome, and retry class. Journal or
 redacted text, prompts, evidence, provider responses, mappings, envelopes, and exception strings are

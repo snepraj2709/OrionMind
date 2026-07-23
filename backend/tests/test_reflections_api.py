@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import AbstractContextManager
 from datetime import datetime, timezone
-from types import TracebackType
+from types import SimpleNamespace, TracebackType
 from uuid import UUID, uuid4
 
 import pytest
@@ -10,16 +10,19 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from app.main import create_app
-from app.modules.reflections.repository import ReflectionResourceNotFoundError
+from app.modules.reflections.repository import (
+    ReflectionResourceNotFoundError,
+    ReflectionsRepository as SqlReflectionsRepository,
+)
 from app.modules.reflections.schemas import (
     AvailableHiddenDriver,
     FeedbackRequest,
     InsufficientInsight,
 )
 from app.modules.reflections.service import ReflectionsService
-from app.modules.reflections.types import SavedFeedback, SynthesisRequest
 from app.shared.config import Settings
 from app.shared.database.session import DatabaseSessions
+from app.shared.exceptions.domain import DomainError
 from app.shared.security.encryption import AesGcmContentCipher
 
 
@@ -73,29 +76,37 @@ class Session:
         return None
 
 
+class ScalarSession:
+    def __init__(self, *results: dict[str, object]) -> None:
+        self.results = list(results)
+        self.statements: list[str] = []
+
+    def scalar(self, statement, _parameters):
+        self.statements.append(str(statement))
+        return self.results.pop(0)
+
+
 class Repository:
     def __init__(self, raw: dict[str, object]) -> None:
         self.raw = raw
         self.read_users: list[UUID] = []
         self.feedback_calls: list[dict[str, object]] = []
-        self.synthesis_requests: list[dict[str, object]] = []
-        self.synthesis_eligible = False
+        self.legacy_feedback_calls: list[dict[str, object]] = []
+        self.review_mapping_missing = False
         self.not_found = False
 
     def load_aggregate(self, _session, *, user_id: UUID) -> dict[str, object]:
         self.read_users.append(user_id)
         return self.raw
 
-    def put_feedback(self, _session, **kwargs) -> SavedFeedback:
+    def save_legacy_feedback(self, **kwargs):
         if self.not_found:
-            raise ReflectionResourceNotFoundError
+            raise DomainError(
+                404,
+                "NOT_FOUND",
+                "The requested resource was not found.",
+            )
         self.feedback_calls.append(kwargs)
-        result = SavedFeedback(
-            snapshot_id=kwargs["snapshot_id"],
-            insight_id=kwargs["insight_id"],
-            response=kwargs["response"],
-            updated_at=datetime(2026, 7, 21, 12, 42, tzinfo=timezone.utc),
-        )
         feedback = self.raw.setdefault("feedback", [])
         assert isinstance(feedback, list)
         feedback[:] = [
@@ -106,25 +117,36 @@ class Repository:
         feedback.append(
             {"insight_id": str(kwargs["insight_id"]), "response": kwargs["response"]}
         )
-        return result
+        return SimpleNamespace(
+            feedback=SimpleNamespace(
+                updated_at=datetime(2026, 7, 21, 12, 42, tzinfo=timezone.utc)
+            )
+        )
 
-    def request_synthesis_if_eligible(
-        self, _session, **kwargs
-    ) -> SynthesisRequest | None:
-        if not self.synthesis_eligible:
-            return None
-        source_version = int(
-            self.raw.get("state", {}).get("latest_accepted_source_version", 0)  # type: ignore[union-attr]
+    def put_feedback(self, _session, **kwargs):
+        if self.not_found:
+            raise ReflectionResourceNotFoundError
+        self.legacy_feedback_calls.append(kwargs)
+        return SimpleNamespace(
+            snapshot_id=kwargs["snapshot_id"],
+            insight_id=kwargs["insight_id"],
+            response=kwargs["response"],
+            updated_at=datetime(2026, 7, 21, 12, 42, tzinfo=timezone.utc),
         )
-        self.synthesis_requests.append(kwargs)
-        self.raw["job"] = {
-            "status": "pending",
-            "source_version": str(source_version),
-        }
-        return SynthesisRequest(
-            job_id=UUID("85555555-5555-4555-8555-555555555555"),
-            source_version=source_version,
-        )
+
+
+class ReviewAdapter:
+    def __init__(self, repository: Repository) -> None:
+        self._repository = repository
+
+    def save_legacy_pattern_feedback(self, **kwargs):
+        if self._repository.review_mapping_missing:
+            raise DomainError(
+                404,
+                "NOT_FOUND",
+                "The requested resource was not found.",
+            )
+        return self._repository.save_legacy_feedback(**kwargs)
 
 
 def cipher() -> AesGcmContentCipher:
@@ -395,8 +417,10 @@ def build_app(
     )
     app.state.reflections_service = ReflectionsService(
         repository=repository,  # type: ignore[arg-type]
+        review_service=ReviewAdapter(repository),  # type: ignore[arg-type]
         cipher=content_cipher,
         enabled=reflections_enabled,
+        recalculation_enabled=reflections_enabled,
         allowed_user_ids={USER_ID} if allowed_user_ids is None else allowed_user_ids,
     )
     return app, repository, provider, content_cipher
@@ -406,6 +430,7 @@ def build_app(
     ("method", "path", "payload"),
     [
         ("GET", "/api/v1/reflections?range=all", None),
+        ("POST", "/api/v1/reflections/recalculate", None),
         (
             "PUT",
             f"/api/v1/reflections/{SNAPSHOT_ID}/insights/{uuid4()}/feedback",
@@ -449,7 +474,11 @@ def test_out_of_cohort_reflection_operations_match_disabled_behavior() -> None:
             headers=HEADERS,
             json={"response": "resonates"},
         )
-    for response in (read, feedback):
+        recalculation = client.post(
+            "/api/v1/reflections/recalculate",
+            headers=HEADERS,
+        )
+    for response in (read, feedback, recalculation):
         assert response.status_code == 503
         assert response.headers["cache-control"] == "private, no-store"
         assert response.json()["error_code"] == "SERVICE_UNAVAILABLE"
@@ -511,23 +540,50 @@ def test_aggregate_read_is_authenticated_owner_scoped_bounded_and_llm_free(
     assert "Completing something may reinforce" not in caplog.text
 
 
-def test_aggregate_read_requests_one_immediate_synthesis_job_without_inline_llm() -> None:
+def test_aggregate_read_is_pure_and_does_not_request_synthesis() -> None:
     raw = raw_without_snapshot(valid=3)
     app, repository, provider, _content_cipher = build_app(raw)
-    repository.synthesis_eligible = True
 
     with TestClient(app) as client:
         first = client.get("/api/v1/reflections?range=all", headers=HEADERS)
         second = client.get("/api/v1/reflections?range=all", headers=HEADERS)
 
     assert first.status_code == 200
-    assert first.json()["reflectionState"] == "first_reflection_pending"
+    assert first.json()["reflectionState"] == "insufficient_reflective_content"
     assert second.status_code == 200
-    assert repository.synthesis_requests == [
-        {"user_id": USER_ID},
-        {"user_id": USER_ID},
-    ]
+    assert repository.read_users == [USER_ID, USER_ID]
     assert provider.calls == []
+
+
+def test_repository_cached_read_replaces_legacy_basis_with_weighted_basis() -> None:
+    legacy_basis = {
+        "valid_entry_count": 3,
+        "distinct_entry_dates": 3,
+        "reflective_word_count": 300,
+    }
+    weighted_basis = {
+        "basis_start": "2026-04-23",
+        "basis_end": "2026-07-21",
+        "valid_entry_count": 2,
+        "excluded_entry_count": 0,
+        "distinct_entry_dates": 2,
+        "reflective_word_count": 200,
+        "excluded_reasons": {},
+    }
+    session = ScalarSession(
+        {"snapshot": None, "current_basis": legacy_basis},
+        weighted_basis,
+    )
+
+    result = SqlReflectionsRepository().load_aggregate(  # type: ignore[arg-type]
+        session,
+        user_id=USER_ID,
+    )
+
+    assert result["current_basis"] == weighted_basis
+    assert session.results == []
+    assert len(session.statements) == 2
+    assert all(statement.lstrip().startswith("SELECT") for statement in session.statements)
 
 
 def test_stale_snapshot_with_one_recent_entry_does_not_request_synthesis() -> None:
@@ -541,7 +597,6 @@ def test_stale_snapshot_with_one_recent_entry_does_not_request_synthesis() -> No
 
     assert response.status_code == 200
     assert response.json()["reflectionState"] == "stale"
-    assert repository.synthesis_requests == []
     assert provider.calls == []
 
 
@@ -556,8 +611,7 @@ def test_aggregate_read_does_not_repeat_current_synthesis_job(status: str) -> No
     with TestClient(app) as client:
         response = client.get("/api/v1/reflections?range=all", headers=HEADERS)
 
-    assert response.status_code == (503 if status == "failed" else 200)
-    assert repository.synthesis_requests == []
+    assert response.status_code == 200
     assert provider.calls == []
 
 
@@ -583,6 +637,7 @@ def test_read_rejects_missing_invalid_and_client_owned_query_fields(url: str) ->
 def test_first_pending_garbage_only_and_terminal_failure_states() -> None:
     pending_raw = raw_without_snapshot(valid=2)
     pending_raw["job"] = {"status": "running"}
+    pending_raw["state"]["last_processing_error_code"] = "OLD_FAILURE"  # type: ignore[index]
     pending_app, _, _, _ = build_app(pending_raw)
     garbage_app, _, _, _ = build_app(raw_without_snapshot(excluded=10))
     failed_raw = raw_without_snapshot(valid=3)
@@ -602,7 +657,7 @@ def test_first_pending_garbage_only_and_terminal_failure_states() -> None:
     )
     assert pending.json()["snapshot"] is None
     assert all(
-        value["status"] == "insufficient_evidence"
+        value["status"] == "processing"
         for value in pending.json()["data"].values()
     )
     assert garbage.status_code == 200
@@ -610,11 +665,18 @@ def test_first_pending_garbage_only_and_terminal_failure_states() -> None:
     assert garbage.json()["analysisBasis"]["excludedReasons"] == {
         "test_or_noise": 10
     }
-    assert failed.status_code == 503
-    assert failed.json()["details"] == {
-        "reflectionState": "technical_failure",
-        "processingState": "failed",
-    }
+    assert failed.status_code == 200
+    assert failed.json()["reflectionState"] == "technical_failure"
+    assert failed.json()["processingState"] == "failed"
+    assert all(
+        value == {
+            "status": "unavailable",
+            "reasonCode": "TECHNICAL_FAILURE",
+            "message": "This section is temporarily unavailable.",
+            "retryable": True,
+        }
+        for value in failed.json()["data"].values()
+    )
     assert "PROVIDER_UNAVAILABLE" not in failed.text
 
 
@@ -692,6 +754,38 @@ def test_feedback_create_repeat_replace_restore_and_opaque_not_found_are_llm_fre
     assert missing.json()["error_code"] == "NOT_FOUND"
     assert len(repository.feedback_calls) == 3
     assert all(item["user_id"] == USER_ID for item in repository.feedback_calls)
+    assert provider.calls == []
+
+
+def test_feedback_for_valid_pre_review_snapshot_uses_legacy_persistence() -> None:
+    raw = raw_with_snapshot()
+    app, repository, provider, _content_cipher = build_app(raw)
+    snapshot_id = UUID("231626b9-8fb2-5b11-8443-78fd06b2bcf5")
+    insight_id = UUID("a12e47b1-8cb9-58a7-a144-52542787a412")
+    repository.review_mapping_missing = True
+
+    with TestClient(app) as client:
+        response = client.put(
+            f"/api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback",
+            headers=HEADERS,
+            json={"response": "partly"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "snapshotId": str(snapshot_id),
+        "insightId": str(insight_id),
+        "response": "partly",
+        "updatedAt": "2026-07-21T12:42:00Z",
+    }
+    assert repository.legacy_feedback_calls == [
+        {
+            "user_id": USER_ID,
+            "snapshot_id": snapshot_id,
+            "insight_id": insight_id,
+            "response": "partly",
+        }
+    ]
     assert provider.calls == []
 
 

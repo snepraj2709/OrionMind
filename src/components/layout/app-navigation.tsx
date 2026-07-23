@@ -23,7 +23,7 @@ export function AppNavigation({
       {sidebarRoutes.map(({ icon: Icon, key, label, path }) => (
         <NavItem
           badge={
-            key === 'approvals' && reviewCount > 0 ? (
+            key === 'review' && reviewCount > 0 ? (
               <span
                 aria-label={`${reviewCount} items to review`}
                 className="type-metadata radius-pill bg-status-warning/10 text-foreground px-2 py-1"

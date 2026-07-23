@@ -349,8 +349,8 @@ def test_combined_schema_rejects_unknown_enums_and_extra_fields(signal_changes) 
         "themes": ["career"],
         "need_tags": ["competence"],
         "loop_role": "interpretation",
+        "inference_level": "direct",
         "confidence": 0.9,
-        "occurred_on": "2026-07-21",
         **signal_changes,
     }
     with pytest.raises(ValidationError):

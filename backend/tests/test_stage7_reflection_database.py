@@ -11,7 +11,16 @@ from uuid import UUID, uuid4
 import psycopg
 import pytest
 from psycopg import sql
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
+from app.modules.review.repository import (
+    ReviewItemNotFoundError,
+    ReviewItemStaleError,
+    ReviewRepository,
+    ReviewRepositoryDataError,
+)
+from app.shared.security.encryption import AesGcmContentCipher
 from scripts.migrate import apply_migrations, load_migrations
 
 
@@ -41,6 +50,12 @@ ENVELOPE_V1 = {
     "ciphertext": "YQ==",
     "tag": "AAAAAAAAAAAAAAAAAAAAAA==",
 }
+TEST_CIPHER = AesGcmContentCipher(
+    encryption_keys={"test-key": b"e" * 32},
+    active_encryption_key_id="test-key",
+    fingerprint_keys={"test-fingerprint": b"f" * 32},
+    active_fingerprint_key_id="test-fingerprint",
+)
 NEW_TABLES = (
     "entry_analyses",
     "entry_signals",
@@ -56,6 +71,7 @@ NEW_TABLES = (
     "reflection_shadow_runs",
     "processing_backfill_runs",
     "processing_backfill_users",
+    "review_items",
 )
 USER_OWNED_NEW_TABLES = tuple(
     table for table in NEW_TABLES if table != "processing_backfill_runs"
@@ -63,6 +79,8 @@ USER_OWNED_NEW_TABLES = tuple(
 NEW_FUNCTIONS = (
     "apply_combined_entry_processing_job",
     "apply_deterministic_reflection_candidates",
+    "apply_weighted_deterministic_reflection_candidates",
+    "apply_weighted_reflection_snapshot",
     "apply_entry_analysis",
     "apply_reflection_snapshot",
     "claim_processing_job",
@@ -80,12 +98,15 @@ NEW_FUNCTIONS = (
     "get_entry_quality_history",
     "get_signal_embedding_backfill_status",
     "get_reflection_candidate_basis",
+    "get_reflection_recalculation_basis_for_owner",
     "get_reflection_synthesis_basis",
     "get_reflections_for_owner",
     "is_reflection_recalculation_eligible",
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
+    "materialize_entry_review_items",
     "put_reflection_feedback_for_owner",
+    "put_review_feedback_for_owner",
     "plan_entry_processing_backfill",
     "claim_signal_embedding_backfill_batch",
     "recover_stale_processing_jobs",
@@ -93,6 +114,7 @@ NEW_FUNCTIONS = (
     "renew_processing_job",
     "release_signal_embedding_backfill_batch",
     "request_reflection_synthesis_if_eligible",
+    "request_reflection_recalculation_for_owner",
     "run_entry_processing_backfill_batch",
     "save_user_pii_vault",
     "schedule_reflection_jobs",
@@ -104,6 +126,10 @@ NEW_FUNCTIONS = (
 RETIRED_ENTRY_APPLY_SIGNATURE = (
     "public.apply_legacy_entry_processing_job("
     "uuid,text,uuid,uuid,text,jsonb,jsonb,jsonb,jsonb)"
+)
+RETIRED_WEIGHT_BYPASS_SIGNATURES = (
+    "public.apply_deterministic_reflection_candidates(uuid,bigint,jsonb,jsonb)",
+    "public.apply_reflection_snapshot(uuid,text,uuid,jsonb,jsonb,jsonb,jsonb,jsonb)",
 )
 
 
@@ -156,6 +182,21 @@ def worker(connection: psycopg.Connection) -> None:
     connection.execute("SET LOCAL ROLE orion_worker")
 
 
+def grant_retired_weight_bypasses_for_behavior_test(
+    connection: psycopg.Connection,
+) -> None:
+    connection.execute(
+        "GRANT EXECUTE ON FUNCTION "
+        "public.apply_deterministic_reflection_candidates(uuid,bigint,jsonb,jsonb) "
+        "TO orion_worker"
+    )
+    connection.execute(
+        "GRANT EXECUTE ON FUNCTION "
+        "public.apply_reflection_snapshot("
+        "uuid,text,uuid,jsonb,jsonb,jsonb,jsonb,jsonb) TO orion_worker"
+    )
+
+
 def schedule_reflections(
     connection: psycopg.Connection,
     moment: str,
@@ -196,9 +237,10 @@ def insert_analysis_signal(
     user_id: UUID,
     entry_id: UUID,
     *,
-    signal_type: str = "self_statement",
-    loop_role: str | None = "interpretation",
+    signal_type: str = "need",
+    loop_role: str | None = None,
     need_tag: str = "competence",
+    materialize_review: bool = True,
 ) -> tuple[UUID, UUID, int]:
     analysis_id = uuid4()
     source_version = connection.execute(
@@ -238,6 +280,31 @@ def insert_analysis_signal(
             loop_role,
         ),
     )
+    if materialize_review and signal_type in {
+        "energy_gain",
+        "energy_loss",
+        "self_knowledge",
+        "realization",
+        "explicit_preference",
+        "need",
+        "belief",
+        "avoidance",
+        "protective_strategy",
+        "conflict",
+        "causal_relationship",
+    }:
+        entry_date = connection.execute(
+            "SELECT entry_date FROM public.entries WHERE id = %s AND user_id = %s",
+            (entry_id, user_id),
+        ).fetchone()[0]
+        insert_review_for_signal(
+            connection,
+            user_id,
+            entry_id,
+            signal_id,
+            entry_date=entry_date.isoformat(),
+            item_type=signal_type,
+        )
     return analysis_id, signal_id, source_version
 
 
@@ -249,15 +316,91 @@ def insert_accepted_basis(
     latest_source = 0
     for entry_date in entry_dates:
         entry_id = insert_entry(connection, user_id, entry_date=entry_date)
-        analysis_id, _, latest_source = insert_analysis_signal(
-            connection, user_id, entry_id
+        analysis_id, signal_id, latest_source = insert_analysis_signal(
+            connection,
+            user_id,
+            entry_id,
+            signal_type="need",
+            loop_role=None,
+            materialize_review=False,
         )
         connection.execute(
             "UPDATE public.entry_analyses SET reflective_word_count = 100 "
             "WHERE id = %s",
             (analysis_id,),
         )
+        insert_review_for_signal(
+            connection,
+            user_id,
+            entry_id,
+            signal_id,
+            entry_date=entry_date,
+        )
     return latest_source
+
+
+def insert_review_for_signal(
+    connection: psycopg.Connection,
+    user_id: UUID,
+    entry_id: UUID,
+    signal_id: UUID,
+    *,
+    entry_date: str = "2026-07-20",
+    evidence_weight: float = 1.0,
+    item_type: str = "need",
+) -> UUID:
+    review_item_id = uuid4()
+    category = (
+        "energy"
+        if item_type in {"energy_gain", "energy_loss"}
+        else (
+            "self_knowledge"
+            if item_type
+            in {"self_knowledge", "realization", "explicit_preference"}
+            else "needs_beliefs"
+        )
+    )
+    review_status = {
+        1.0: "pending",
+        0.5: "partially_confirmed",
+        0.0: "rejected",
+    }[evidence_weight]
+    verdict = {
+        1.0: None,
+        0.5: "partly_accurate",
+        0.0: "not_accurate",
+    }[evidence_weight]
+    feedback = (
+        None
+        if verdict is None
+        else json.dumps({"verdict": verdict, "updated_at": "2026-07-20T00:00:00Z"})
+    )
+    connection.execute(
+        "INSERT INTO public.review_items "
+        "(id, user_id, entry_id, entry_signal_id, scope, item_type, category, "
+        "statement_envelope, source_quote_envelope, source_entry_ids, "
+        "source_dates, inference_level, model_confidence, review_status, "
+        "user_feedback, evidence_weight, reflection_eligible, metadata) "
+        "VALUES (%s, %s, %s, %s, 'entry_insight', %s, %s, "
+        "%s::jsonb, %s::jsonb, ARRAY[%s], ARRAY[%s::date], 'inferred', "
+        "0.9, %s, %s::jsonb, %s, true, '{}'::jsonb)",
+        (
+            review_item_id,
+            user_id,
+            entry_id,
+            signal_id,
+            item_type,
+            category,
+            json.dumps(ENVELOPE_V1),
+            json.dumps(ENVELOPE_V1),
+            entry_id,
+            entry_date,
+            review_status,
+            feedback,
+            evidence_weight,
+        ),
+    )
+    return review_item_id
 
 
 def candidate_payload(
@@ -294,6 +437,143 @@ def evidence_payload(candidate_id: UUID, signal_id: UUID) -> dict[str, object]:
         "evidence_role": "supporting",
         "evidence_weight": 0.9,
     }
+
+
+def insert_pattern_candidate(
+    connection: psycopg.Connection,
+    user_id: UUID,
+    *,
+    pattern_type: str = "hidden_driver",
+) -> UUID:
+    candidate_id = uuid4()
+    connection.execute(
+        "INSERT INTO public.pattern_candidates "
+        "(id, user_id, pattern_type, canonical_key, status, score, "
+        "score_components, payload_envelope, first_seen_at, last_seen_at) "
+        "VALUES (%s, %s, %s, %s, 'published', 0.8, %s::jsonb, %s::jsonb, "
+        "'2026-07-01T00:00:00Z', '2026-07-20T00:00:00Z')",
+        (
+            candidate_id,
+            user_id,
+            pattern_type,
+            candidate_id.hex * 2,
+            json.dumps({"recurrence": 0.8}),
+            json.dumps(ENVELOPE_V1),
+        ),
+    )
+    return candidate_id
+
+
+def insert_review_item(
+    connection: psycopg.Connection,
+    *,
+    user_id: UUID,
+    entry_id: UUID | None = None,
+    entry_signal_id: UUID | None = None,
+    pattern_candidate_id: UUID | None = None,
+    scope: str = "entry_insight",
+    item_type: str = "realization",
+    category: str = "self_knowledge",
+    inference_level: str = "direct",
+    source_entry_ids: list[UUID] | None = None,
+    source_dates: list[str] | None = None,
+    review_status: str = "pending",
+    user_feedback: dict[str, object] | None = None,
+    evidence_weight: float = 1.0,
+    reflection_eligible: bool = True,
+    item_id: UUID | None = None,
+    statement: str = "You value focused work.",
+    source_quote: str | None = "I value focused work.",
+    corrected_statement: str | None = None,
+    feedback_note: str | None = None,
+    statement_envelope: dict[str, object] | None = None,
+    created_at: str = "2026-07-20T12:00:00Z",
+) -> UUID:
+    item_id = item_id or uuid4()
+    if source_entry_ids is None:
+        source_entry_ids = [entry_id] if entry_id is not None else [uuid4()]
+    if source_dates is None:
+        source_dates = ["2026-07-20"]
+    encrypted_statement = (
+        statement_envelope
+        if statement_envelope is not None
+        else TEST_CIPHER.encrypt_json(
+            statement,
+            user_id=user_id,
+            record_id=item_id,
+            purpose="review_item_statement",
+        )
+    )
+    encrypted_quote = (
+        TEST_CIPHER.encrypt_json(
+            source_quote,
+            user_id=user_id,
+            record_id=item_id,
+            purpose="review_item_source_quote",
+        )
+        if source_quote is not None
+        else None
+    )
+    encrypted_correction = (
+        TEST_CIPHER.encrypt_json(
+            corrected_statement,
+            user_id=user_id,
+            record_id=item_id,
+            purpose="review_item_corrected_statement",
+        )
+        if corrected_statement is not None
+        else None
+    )
+    encrypted_note = (
+        TEST_CIPHER.encrypt_json(
+            feedback_note,
+            user_id=user_id,
+            record_id=item_id,
+            purpose="review_item_feedback_note",
+        )
+        if feedback_note is not None
+        else None
+    )
+    connection.execute(
+        "INSERT INTO public.review_items "
+        "(id, user_id, entry_id, entry_signal_id, pattern_candidate_id, scope, "
+        "item_type, category, statement_envelope, source_quote_envelope, "
+        "source_entry_ids, source_dates, inference_level, model_confidence, "
+        "review_status, user_feedback, corrected_statement_envelope, "
+        "feedback_note_envelope, evidence_weight, reflection_eligible, metadata, "
+        "created_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, "
+        "%s::uuid[], %s::date[], %s, 0.9, %s, %s::jsonb, %s::jsonb, %s::jsonb, "
+        "%s, %s, %s::jsonb, %s)",
+        (
+            item_id,
+            user_id,
+            entry_id,
+            entry_signal_id,
+            pattern_candidate_id,
+            scope,
+            item_type,
+            category,
+            json.dumps(encrypted_statement),
+            json.dumps(encrypted_quote) if encrypted_quote is not None else None,
+            source_entry_ids,
+            source_dates,
+            inference_level,
+            review_status,
+            json.dumps(user_feedback) if user_feedback is not None else None,
+            (
+                json.dumps(encrypted_correction)
+                if encrypted_correction is not None
+                else None
+            ),
+            json.dumps(encrypted_note) if encrypted_note is not None else None,
+            evidence_weight,
+            reflection_eligible,
+            json.dumps({"prompt_version": "test-v1"}),
+            created_at,
+        ),
+    )
+    return item_id
 
 
 def vector_value(first: float, second: float = 0.0) -> str:
@@ -376,6 +656,13 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0016_signal_embeddings.sql",
         "0017_reflection_recalculation_eligibility.sql",
         "0018_semantic_signal_retrieval.sql",
+        "0019_review_items.sql",
+        "0020_review_item_materialization.sql",
+        "0021_review_feedback.sql",
+        "0022_review_weighted_reflections.sql",
+        "0023_reflection_recalculation.sql",
+        "0024_reflection_deletion_source_version.sql",
+        "0025_reflection_deletion_race_guard.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -417,6 +704,12 @@ def test_schema_constraints_owner_rls_and_account_cascades() -> None:
             ("orion_app", False),
             ("orion_worker", True),
         ]
+        for signature in RETIRED_WEIGHT_BYPASS_SIGNATURES:
+            assert connection.execute(
+                "SELECT pg_catalog.has_function_privilege("
+                "'orion_worker', %s, 'EXECUTE')",
+                (signature,),
+            ).fetchone() == (False,)
         for signature in (
             "public.find_signal_semantic_neighbors(uuid,uuid[],bigint,text,integer,numeric)",
             "public.get_signal_embedding_backfill_status(text)",
@@ -448,7 +741,12 @@ def test_schema_constraints_owner_rls_and_account_cascades() -> None:
         entry_one = insert_entry(connection, USER_ONE)
         entry_two = insert_entry(connection, USER_TWO)
         analysis_id, signal_id, source_version = insert_analysis_signal(
-            connection, USER_ONE, entry_one
+            connection,
+            USER_ONE,
+            entry_one,
+            signal_type="self_statement",
+            loop_role="interpretation",
+            materialize_review=False,
         )
         assert connection.execute(
             "SELECT signal_type FROM public.entry_signals WHERE id = %s", (signal_id,)
@@ -884,8 +1182,22 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
         ]
         admin(connection)
         entry_two_refresh = insert_entry(connection, USER_TWO, entry_date="2026-07-21")
-        analysis_two_refresh, _, source_two_refresh = insert_analysis_signal(
-            connection, USER_TWO, entry_two_refresh
+        analysis_two_refresh, signal_two_refresh, source_two_refresh = (
+            insert_analysis_signal(
+                connection,
+                USER_TWO,
+                entry_two_refresh,
+                signal_type="need",
+                loop_role=None,
+                materialize_review=False,
+            )
+        )
+        insert_review_for_signal(
+            connection,
+            USER_TWO,
+            entry_two_refresh,
+            signal_two_refresh,
+            entry_date="2026-07-21",
         )
         connection.execute(
             "UPDATE public.entry_analyses SET reflective_word_count = 100 WHERE id = %s",
@@ -921,15 +1233,10 @@ def test_scheduler_local_six_pm_rules_and_source_version_idempotency() -> None:
             "UPDATE public.user_profiles SET timezone = 'America/New_York' WHERE user_id = %s",
             (USER_THREE,),
         )
-        entry_three_refresh = insert_entry(
-            connection, USER_THREE, entry_date="2026-07-22"
-        )
-        analysis_three_refresh, _, source_three_refresh = insert_analysis_signal(
-            connection, USER_THREE, entry_three_refresh
-        )
-        connection.execute(
-            "UPDATE public.entry_analyses SET reflective_word_count = 100 WHERE id = %s",
-            (analysis_three_refresh,),
+        source_three_refresh = insert_accepted_basis(
+            connection,
+            USER_THREE,
+            ("2026-07-21", "2026-07-22", "2026-07-22"),
         )
         connection.execute(
             "UPDATE public.reflection_user_state SET latest_accepted_source_version = %s, "
@@ -1136,6 +1443,7 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
     value = database_url()
     bootstrap(value, USER_ONE, USER_TWO)
     with psycopg.connect(value) as connection:
+        grant_retired_weight_bypasses_for_behavior_test(connection)
         entry_one = insert_entry(connection, USER_ONE, entry_date="2026-07-19")
         entry_two = insert_entry(connection, USER_ONE, entry_date="2026-07-20")
         entry_three = insert_entry(connection, USER_ONE, entry_date="2026-07-18")
@@ -1341,6 +1649,12 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
                 )
 
         admin(connection)
+        source_before_delete = connection.execute(
+            "SELECT latest_accepted_source_version "
+            "FROM public.reflection_user_state WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone()[0]
+        connection.commit()
         with connection.transaction():
             owner(connection, USER_ONE)
             assert connection.execute(
@@ -1365,6 +1679,11 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
             "WHERE user_id = %s",
             (USER_ONE,),
         ).fetchone() == (None,)
+        assert connection.execute(
+            "SELECT latest_accepted_source_version > %s "
+            "FROM public.reflection_user_state WHERE user_id = %s",
+            (source_before_delete, USER_ONE),
+        ).fetchone() == (True,)
 
 
 def test_snapshot_versions_reject_stale_claims_and_preserve_concurrent_counters() -> None:
@@ -1404,6 +1723,7 @@ def test_snapshot_versions_reject_stale_claims_and_preserve_concurrent_counters(
         ]
 
     with psycopg.connect(value) as connection:
+        grant_retired_weight_bypasses_for_behavior_test(connection)
         sources: list[int] = []
         for entry_date in ("2026-05-01", "2026-05-10", "2026-06-01"):
             entry_id = insert_entry(connection, USER_ONE, entry_date=entry_date)
@@ -1556,6 +1876,7 @@ def test_candidate_basis_and_atomic_apply_are_worker_only_owner_safe_and_idempot
     value = database_url()
     bootstrap(value, USER_ONE, USER_TWO)
     with psycopg.connect(value) as connection:
+        grant_retired_weight_bypasses_for_behavior_test(connection)
         entry_one = insert_entry(connection, USER_ONE, entry_date="2026-07-01")
         _, signal_one, source_one = insert_analysis_signal(
             connection, USER_ONE, entry_one
@@ -1738,6 +2059,7 @@ def test_database_rejected_candidate_reentry_requires_three_new_entries_on_two_d
     value = database_url()
     bootstrap(value, USER_ONE)
     with psycopg.connect(value) as connection:
+        grant_retired_weight_bypasses_for_behavior_test(connection)
         old_entry = insert_entry(connection, USER_ONE, entry_date="2026-07-01")
         _, _, rejected_source = insert_analysis_signal(
             connection, USER_ONE, old_entry
@@ -2449,8 +2771,8 @@ def test_recalculation_eligibility_boundaries_and_atomic_request() -> None:
             "UPDATE public.entry_analyses SET reflective_word_count = %s WHERE id = %s",
             [
                 (100, initial_analysis_ids[0]),
-                (50, initial_analysis_ids[1]),
-                (50, initial_analysis_ids[2]),
+                (25, initial_analysis_ids[1]),
+                (25, initial_analysis_ids[2]),
             ],
         )
         connection.execute(
@@ -2471,7 +2793,7 @@ def test_recalculation_eligibility_boundaries_and_atomic_request() -> None:
 
         admin(connection)
         connection.execute(
-            "UPDATE public.entry_analyses SET reflective_word_count = 49 WHERE id = %s",
+            "UPDATE public.entry_analyses SET reflective_word_count = 24 WHERE id = %s",
             (initial_analysis_ids[2],),
         )
         connection.commit()
@@ -2498,3 +2820,1375 @@ def test_recalculation_eligibility_boundaries_and_atomic_request() -> None:
                 "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
                 (USER_TWO, check_at),
             ).fetchone() == (False,)
+
+
+def test_owner_recalculation_request_is_concurrent_idempotent_and_current_aware() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    with psycopg.connect(value) as connection:
+        latest_source = insert_accepted_basis(
+            connection,
+            USER_ONE,
+            ("2026-07-20", "2026-07-21", "2026-07-22"),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) "
+            "VALUES (%s, %s, 3, 3, "
+            "ARRAY['2026-07-20'::date, '2026-07-21'::date, "
+            "'2026-07-22'::date])",
+            (USER_ONE, latest_source),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            owner(connection, USER_TWO)
+            ineligible = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_TWO, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+            assert ineligible == ("not_eligible", None, 0, 0, 0, 0)
+
+        with connection.transaction():
+            owner(connection, USER_TWO)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    "SELECT * FROM "
+                    "public.request_reflection_recalculation_for_owner(%s, %s)",
+                    (USER_ONE, "2026-07-23 12:00:00+00"),
+                )
+
+    def request_once() -> tuple:
+        with psycopg.connect(value) as connection:
+            with connection.transaction():
+                owner(connection, USER_ONE)
+                return connection.execute(
+                    "SELECT * FROM "
+                    "public.request_reflection_recalculation_for_owner(%s, %s)",
+                    (USER_ONE, "2026-07-23 12:00:00+00"),
+                ).fetchone()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first, second = executor.map(lambda _index: request_once(), range(2))
+
+    assert first == second
+    assert first[0] == "accepted"
+    assert first[1] is not None
+    assert first[2:] == (latest_source, 3, 3, 300)
+
+    with psycopg.connect(value) as connection:
+        assert connection.execute(
+            "SELECT count(*), min(execution_mode), min(priority) "
+            "FROM public.processing_jobs "
+            "WHERE user_id = %s AND job_type = 'reflection_synthesis'",
+            (USER_ONE,),
+        ).fetchone() == (1, "publish", 80)
+        running_claim = uuid4()
+        connection.execute(
+            "UPDATE public.processing_jobs "
+            "SET status = 'running', attempts = 1, worker_id = 'test-worker', "
+            "claim_token = %s, heartbeat_at = pg_catalog.now() "
+            "WHERE id = %s",
+            (running_claim, first[1]),
+        )
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            running = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert running == first
+        admin(connection)
+        connection.execute(
+            "UPDATE public.processing_jobs "
+            "SET status = 'failed', worker_id = NULL, heartbeat_at = NULL, "
+            "last_error_code = 'PROVIDER_UNAVAILABLE', "
+            "completed_at = pg_catalog.now() WHERE id = %s",
+            (first[1],),
+        )
+        connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET last_processing_error_code = 'PROVIDER_UNAVAILABLE' "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        )
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            retried = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert retried == first
+        admin(connection)
+        assert connection.execute(
+            "SELECT status, execution_mode, priority, attempts, worker_id, "
+            "claim_token, heartbeat_at, last_error_code, completed_at "
+            "FROM public.processing_jobs WHERE id = %s",
+            (first[1],),
+        ).fetchone() == (
+            "pending",
+            "publish",
+            80,
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        assert connection.execute(
+            "SELECT last_processing_error_code "
+            "FROM public.reflection_user_state WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone() == (None,)
+        shadow_claim = uuid4()
+        connection.execute(
+            "UPDATE public.processing_jobs "
+            "SET status = 'completed', execution_mode = 'shadow', priority = 60, "
+            "attempts = 1, claim_token = %s, completed_at = pg_catalog.now() "
+            "WHERE id = %s",
+            (shadow_claim, first[1]),
+        )
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            promoted_shadow = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert promoted_shadow == first
+        admin(connection)
+        assert connection.execute(
+            "SELECT status, execution_mode, priority, attempts, claim_token, "
+            "completed_at FROM public.processing_jobs WHERE id = %s",
+            (first[1],),
+        ).fetchone() == ("pending", "publish", 80, 0, None, None)
+        connection.execute(
+            "DELETE FROM public.processing_jobs "
+            "WHERE user_id = %s AND job_type = 'reflection_synthesis'",
+            (USER_ONE,),
+        )
+        snapshot_id = uuid4()
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count, status) "
+            "VALUES (%s, %s, 1, %s, '2026-04-24', '2026-07-22', "
+            "3, 0, 3, 300, 'available')",
+            (snapshot_id, USER_ONE, latest_source),
+        )
+        connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET last_snapshot_source_version = %s, "
+            "last_successful_snapshot_id = %s "
+            "WHERE user_id = %s",
+            (latest_source, snapshot_id, USER_ONE),
+        )
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            current = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert current == (
+            "already_current",
+            None,
+            latest_source,
+            3,
+            3,
+            300,
+        )
+        admin(connection)
+        connection.execute(
+            "UPDATE public.reflection_snapshots SET status = 'stale' "
+            "WHERE id = %s AND user_id = %s",
+            (snapshot_id, USER_ONE),
+        )
+        feedback_source = connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET latest_accepted_source_version = pg_catalog.nextval("
+            "'public.entry_analyses_source_version_seq'::pg_catalog.regclass) "
+            "WHERE user_id = %s RETURNING latest_accepted_source_version",
+            (USER_ONE,),
+        ).fetchone()[0]
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            feedback_refresh = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert feedback_refresh[0] == "accepted"
+        assert feedback_refresh[1] is not None
+        assert feedback_refresh[2:] == (feedback_source, 3, 3, 300)
+
+
+def test_owner_recalculation_uses_global_basis_after_a_current_snapshot() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        snapshot_source = insert_accepted_basis(
+            connection,
+            USER_ONE,
+            ("2026-07-20", "2026-07-21", "2026-07-22"),
+        )
+        snapshot_id = uuid4()
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count, status) "
+            "VALUES (%s, %s, 1, %s, '2026-04-24', '2026-07-22', "
+            "3, 0, 3, 300, 'available')",
+            (snapshot_id, USER_ONE, snapshot_source),
+        )
+        entry_id = insert_entry(connection, USER_ONE, entry_date="2026-07-23")
+        analysis_id, _, latest_source = insert_analysis_signal(
+            connection,
+            USER_ONE,
+            entry_id,
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 100 "
+            "WHERE id = %s",
+            (analysis_id,),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, "
+            "last_snapshot_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates, "
+            "last_successful_snapshot_id) "
+            "VALUES (%s, %s, %s, 1, 1, ARRAY['2026-07-23'::date], %s)",
+            (USER_ONE, latest_source, snapshot_source, snapshot_id),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone() == (False,)
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            request = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+
+        assert request[0] == "accepted"
+        assert request[1] is not None
+        assert request[2:] == (latest_source, 4, 4, 400)
+
+
+def test_owner_recalculation_basis_excludes_zero_weight_evidence() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        latest_source = insert_accepted_basis(
+            connection,
+            USER_ONE,
+            ("2026-07-20", "2026-07-21", "2026-07-22"),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) "
+            "VALUES (%s, %s, 3, 3, "
+            "ARRAY['2026-07-20'::date, '2026-07-21'::date, "
+            "'2026-07-22'::date])",
+            (USER_ONE, latest_source),
+        )
+        connection.execute(
+            "UPDATE public.review_items AS review "
+            "SET review_status = 'rejected', "
+            "user_feedback = pg_catalog.jsonb_build_object("
+            "'verdict', 'not_accurate', "
+            "'updated_at', '2026-07-23T12:00:00Z'), "
+            "evidence_weight = 0 "
+            "FROM public.entries AS entry "
+            "WHERE entry.id = review.entry_id "
+            "AND review.user_id = %s "
+            "AND entry.entry_date = '2026-07-22'",
+            (USER_ONE,),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            basis = connection.execute(
+                "SELECT public.get_reflection_recalculation_basis_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()[0]
+            request = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+
+        assert basis == {
+            "basis_end": "2026-07-21",
+            "basis_start": "2026-04-23",
+            "valid_entry_count": 2,
+            "excluded_entry_count": 0,
+            "distinct_entry_dates": 2,
+            "reflective_word_count": 200,
+            "excluded_reasons": {},
+        }
+        assert request == (
+            "not_eligible",
+            None,
+            latest_source,
+            2,
+            2,
+            200,
+        )
+
+
+def test_review_items_constraints_rls_privileges_cascades_and_indexes() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    with psycopg.connect(value) as connection:
+        entry_one = insert_entry(connection, USER_ONE)
+        _, signal_one, _ = insert_analysis_signal(
+            connection, USER_ONE, entry_one, materialize_review=False
+        )
+        entry_two = insert_entry(connection, USER_TWO)
+        _, signal_two, _ = insert_analysis_signal(
+            connection, USER_TWO, entry_two, materialize_review=False
+        )
+        item_one = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            entry_id=entry_one,
+            entry_signal_id=signal_one,
+        )
+        candidate_one = insert_pattern_candidate(connection, USER_ONE)
+        pattern_item = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            pattern_candidate_id=candidate_one,
+            scope="pattern",
+            item_type="hidden_driver",
+            category="hidden_driver",
+            inference_level="synthesized",
+            source_entry_ids=[entry_one],
+            source_quote=None,
+        )
+        connection.commit()
+
+        privilege_rows = connection.execute(
+            "SELECT role_name, "
+            "pg_catalog.has_table_privilege(role_name, 'public.review_items', 'SELECT'), "
+            "pg_catalog.has_table_privilege(role_name, 'public.review_items', 'INSERT'), "
+            "pg_catalog.has_table_privilege(role_name, 'public.review_items', 'UPDATE'), "
+            "pg_catalog.has_table_privilege(role_name, 'public.review_items', 'DELETE') "
+            "FROM pg_catalog.unnest("
+            "ARRAY['anon', 'authenticated', 'orion_app', 'orion_worker']) AS role_name "
+            "ORDER BY role_name"
+        ).fetchall()
+        assert privilege_rows == [
+            ("anon", False, False, False, False),
+            ("authenticated", True, False, False, False),
+            ("orion_app", False, False, False, False),
+            ("orion_worker", False, False, False, False),
+        ]
+        materializer_privileges = connection.execute(
+            "SELECT role_name, pg_catalog.has_function_privilege("
+            "role_name, 'public.materialize_entry_review_items(uuid,uuid,jsonb)', "
+            "'EXECUTE') FROM pg_catalog.unnest("
+            "ARRAY['anon', 'authenticated', 'orion_app', 'orion_worker']) "
+            "AS role_name ORDER BY role_name"
+        ).fetchall()
+        assert materializer_privileges == [
+            ("anon", False),
+            ("authenticated", False),
+            ("orion_app", False),
+            ("orion_worker", True),
+        ]
+        feedback_privileges = connection.execute(
+            "SELECT role_name, pg_catalog.has_function_privilege("
+            "role_name, 'public.put_review_feedback_for_owner("
+            "uuid,uuid,text,jsonb,text,text[],jsonb,text,text[])', 'EXECUTE') "
+            "FROM pg_catalog.unnest("
+            "ARRAY['anon', 'authenticated', 'orion_app', 'orion_worker']) "
+            "AS role_name ORDER BY role_name"
+        ).fetchall()
+        assert feedback_privileges == [
+            ("anon", False),
+            ("authenticated", True),
+            ("orion_app", False),
+            ("orion_worker", False),
+        ]
+
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            with connection.transaction():
+                insert_review_item(
+                    connection,
+                    user_id=USER_ONE,
+                    entry_id=entry_one,
+                    entry_signal_id=signal_one,
+                )
+
+        invalid_cases = (
+            {"item_type": "hidden_driver", "category": "hidden_driver"},
+            {"category": "energy"},
+            {"inference_level": "synthesized"},
+            {
+                "review_status": "confirmed",
+                "user_feedback": {
+                    "verdict": "accurate",
+                    "updated_at": "2026-07-20T12:00:00Z",
+                },
+                "evidence_weight": 0.5,
+            },
+            {"source_entry_ids": []},
+            {"statement_envelope": {}},
+        )
+        for overrides in invalid_cases:
+            invalid_entry = insert_entry(connection, USER_ONE)
+            _, invalid_signal, _ = insert_analysis_signal(
+                connection, USER_ONE, invalid_entry, materialize_review=False
+            )
+            with pytest.raises(psycopg.errors.CheckViolation):
+                with connection.transaction():
+                    insert_review_item(
+                        connection,
+                        user_id=USER_ONE,
+                        entry_id=invalid_entry,
+                        entry_signal_id=invalid_signal,
+                        **overrides,
+                    )
+        connection.rollback()
+
+        cross_owner_entry = insert_entry(connection, USER_ONE)
+        _, cross_owner_signal, _ = insert_analysis_signal(
+            connection, USER_ONE, cross_owner_entry, materialize_review=False
+        )
+        connection.commit()
+        with pytest.raises(psycopg.errors.ForeignKeyViolation):
+            with connection.transaction():
+                insert_review_item(
+                    connection,
+                    user_id=USER_TWO,
+                    entry_id=cross_owner_entry,
+                    entry_signal_id=cross_owner_signal,
+                    source_entry_ids=[cross_owner_entry],
+                )
+
+        with pytest.raises(psycopg.errors.CheckViolation):
+            with connection.transaction():
+                insert_review_item(
+                    connection,
+                    user_id=USER_ONE,
+                    pattern_candidate_id=candidate_one,
+                    scope="pattern",
+                    item_type="hidden_driver",
+                    category="hidden_driver",
+                    inference_level="synthesized",
+                    source_entry_ids=[entry_one],
+                    source_quote="Patterns cannot store a direct source quote.",
+                )
+
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            assert connection.execute(
+                "SELECT id FROM public.review_items ORDER BY id"
+            ).fetchall() == sorted([(item_one,), (pattern_item,)])
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                insert_review_item(
+                    connection,
+                    user_id=USER_ONE,
+                    entry_id=entry_one,
+                    entry_signal_id=signal_one,
+                )
+
+        with connection.transaction():
+            owner(connection, USER_TWO)
+            assert connection.execute(
+                "SELECT id FROM public.review_items"
+            ).fetchall() == []
+
+        with connection.transaction():
+            worker(connection)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                insert_review_item(
+                    connection,
+                    user_id=USER_TWO,
+                    entry_id=entry_two,
+                    entry_signal_id=signal_two,
+                )
+
+        with connection.transaction():
+            worker(connection)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute("SELECT id FROM public.review_items")
+
+        admin(connection)
+        index_names = {
+            row[0]
+            for row in connection.execute(
+                "SELECT indexname FROM pg_catalog.pg_indexes "
+                "WHERE schemaname = 'public' AND tablename = 'review_items'"
+            ).fetchall()
+        }
+        assert {
+            "review_items_owner_list_idx",
+            "review_items_owner_status_updated_idx",
+            "review_items_entry_signal_unique_idx",
+            "review_items_pattern_candidate_unique_idx",
+        } <= index_names
+        connection.execute("SET LOCAL enable_seqscan = off")
+        plan = "\n".join(
+            row[0]
+            for row in connection.execute(
+                "EXPLAIN SELECT id FROM public.review_items "
+                "WHERE user_id = %s AND scope = 'entry_insight' "
+                "AND category = 'self_knowledge' AND review_status = 'pending' "
+                "ORDER BY created_at DESC, id DESC LIMIT 20",
+                (USER_ONE,),
+            ).fetchall()
+        )
+        assert "review_items_owner_list_idx" in plan
+        encrypted_at_rest = connection.execute(
+            "SELECT statement_envelope::text, source_quote_envelope::text "
+            "FROM public.review_items WHERE id = %s",
+            (item_one,),
+        ).fetchone()
+        assert "You value focused work." not in encrypted_at_rest[0]
+        assert "I value focused work." not in encrypted_at_rest[1]
+
+        connection.execute("DELETE FROM public.entries WHERE id = %s", (entry_one,))
+        assert connection.execute(
+            "SELECT count(*) FROM public.review_items WHERE id = %s", (item_one,)
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM public.review_items WHERE id = %s", (pattern_item,)
+        ).fetchone() == (1,)
+        connection.execute("DELETE FROM public.pattern_candidates WHERE id = %s", (candidate_one,))
+        assert connection.execute(
+            "SELECT count(*) FROM public.review_items WHERE id = %s", (pattern_item,)
+        ).fetchone() == (0,)
+        connection.execute("DELETE FROM auth.users WHERE id = %s", (USER_TWO,))
+        assert connection.execute(
+            "SELECT count(*) FROM public.review_items WHERE user_id = %s", (USER_TWO,)
+        ).fetchone() == (0,)
+
+
+def test_review_repository_owner_filters_stable_pagination_and_corrupt_ciphertext() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    ordered_ids: list[UUID] = []
+    with psycopg.connect(value) as connection:
+        for index in range(4):
+            entry_id = insert_entry(connection, USER_ONE)
+            _, signal_id, _ = insert_analysis_signal(
+                connection, USER_ONE, entry_id, materialize_review=False
+            )
+            item_id = insert_review_item(
+                connection,
+                user_id=USER_ONE,
+                entry_id=entry_id,
+                entry_signal_id=signal_id,
+                statement=f"Review statement {index}",
+                created_at=f"2026-07-2{index + 1}T12:00:00Z",
+            )
+            ordered_ids.insert(0, item_id)
+        feedback_entry = insert_entry(connection, USER_ONE)
+        _, feedback_signal, _ = insert_analysis_signal(
+            connection, USER_ONE, feedback_entry, materialize_review=False
+        )
+        feedback_item = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            entry_id=feedback_entry,
+            entry_signal_id=feedback_signal,
+            review_status="partially_confirmed",
+            user_feedback={
+                "verdict": "partly_accurate",
+                "updated_at": "2026-07-24T12:00:00Z",
+            },
+            evidence_weight=0.5,
+            corrected_statement="I value calm, focused work.",
+            feedback_note="This is more precise.",
+            created_at="2026-07-24T12:00:00Z",
+        )
+        candidate_id = insert_pattern_candidate(connection, USER_ONE)
+        pattern_item = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            pattern_candidate_id=candidate_id,
+            scope="pattern",
+            item_type="hidden_driver",
+            category="hidden_driver",
+            inference_level="synthesized",
+            source_entry_ids=[feedback_entry],
+            source_quote=None,
+            statement="Perfectionism may be delaying completion.",
+            created_at="2026-07-24T13:00:00Z",
+        )
+        other_entry = insert_entry(connection, USER_TWO)
+        _, other_signal, _ = insert_analysis_signal(
+            connection, USER_TWO, other_entry, materialize_review=False
+        )
+        other_item = insert_review_item(
+            connection,
+            user_id=USER_TWO,
+            entry_id=other_entry,
+            entry_signal_id=other_signal,
+        )
+        corrupt_entry = insert_entry(connection, USER_ONE)
+        _, corrupt_signal, _ = insert_analysis_signal(
+            connection, USER_ONE, corrupt_entry, materialize_review=False
+        )
+        corrupt_item = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            entry_id=corrupt_entry,
+            entry_signal_id=corrupt_signal,
+            statement_envelope=ENVELOPE_V1,
+            created_at="2026-07-01T12:00:00Z",
+        )
+        connection.commit()
+
+    engine = create_engine(value.replace("postgresql://", "postgresql+psycopg://", 1))
+    repository = ReviewRepository(cipher=TEST_CIPHER)
+    try:
+        with Session(engine) as session, session.begin():
+            session.execute(text("SET LOCAL ROLE authenticated"))
+            session.execute(
+                text(
+                    "SELECT pg_catalog.set_config("
+                    "'request.jwt.claims', :claims, true)"
+                ),
+                {
+                    "claims": json.dumps(
+                        {"sub": str(USER_ONE), "role": "authenticated"}
+                    )
+                },
+            )
+            assert repository.count_items(
+                session,
+                user_id=USER_ONE,
+                scope="entry_insight",
+                category="all",
+                status="pending",
+            ) == 5
+            first_page = repository.list_items(
+                session,
+                user_id=USER_ONE,
+                scope="entry_insight",
+                category="self_knowledge",
+                status="pending",
+                page=1,
+                page_size=2,
+            )
+            second_page = repository.list_items(
+                session,
+                user_id=USER_ONE,
+                scope="entry_insight",
+                category="self_knowledge",
+                status="pending",
+                page=2,
+                page_size=2,
+            )
+            assert [item.id for item in first_page] == ordered_ids[:2]
+            assert [item.id for item in second_page] == ordered_ids[2:4]
+            assert [item.statement for item in first_page] == [
+                "Review statement 3",
+                "Review statement 2",
+            ]
+            assert repository.get_by_owner(
+                session,
+                user_id=USER_ONE,
+                item_id=other_item,
+            ) is None
+            saved_feedback = repository.get_by_owner(
+                session,
+                user_id=USER_ONE,
+                item_id=feedback_item,
+            )
+            assert saved_feedback is not None
+            assert saved_feedback.feedback is not None
+            assert saved_feedback.feedback.corrected_statement == (
+                "I value calm, focused work."
+            )
+            assert saved_feedback.feedback.note == "This is more precise."
+            saved_pattern = repository.get_by_owner(
+                session,
+                user_id=USER_ONE,
+                item_id=pattern_item,
+            )
+            assert saved_pattern is not None
+            assert saved_pattern.scope == "pattern"
+            assert saved_pattern.source_quote is None
+            assert saved_pattern.statement == (
+                "Perfectionism may be delaying completion."
+            )
+            with pytest.raises(
+                ReviewRepositoryDataError,
+                match="review item data is unavailable",
+            ):
+                repository.get_by_owner(
+                    session,
+                    user_id=USER_ONE,
+                    item_id=corrupt_item,
+                )
+            with pytest.raises(ValueError, match="category is not valid"):
+                repository.count_items(
+                    session,
+                    user_id=USER_ONE,
+                    scope="entry_insight",
+                    category="hidden_driver",
+                    status="pending",
+                )
+            with pytest.raises(ValueError, match="invalid review pagination"):
+                repository.list_items(
+                    session,
+                    user_id=USER_ONE,
+                    scope="entry_insight",
+                    category="all",
+                    status="pending",
+                    page=0,
+                    page_size=20,
+                )
+    finally:
+        engine.dispose()
+
+
+def test_review_feedback_command_is_encrypted_owner_safe_replaceable_and_idempotent() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    snapshot_id = uuid4()
+    with psycopg.connect(value) as connection:
+        entry_id = insert_entry(connection, USER_ONE)
+        _, signal_id, source_version = insert_analysis_signal(
+            connection, USER_ONE, entry_id, materialize_review=False
+        )
+        item_id = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            entry_id=entry_id,
+            entry_signal_id=signal_id,
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count, status) "
+            "VALUES (%s, %s, 1, %s, '2026-07-20', '2026-07-20', "
+            "1, 0, 1, 150, 'available')",
+            (snapshot_id, USER_ONE, source_version),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, "
+            "last_snapshot_source_version, last_successful_snapshot_id) "
+            "VALUES (%s, %s, %s, %s)",
+            (USER_ONE, source_version, source_version, snapshot_id),
+        )
+        candidate_id = insert_pattern_candidate(connection, USER_ONE)
+        pattern_item_id = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            pattern_candidate_id=candidate_id,
+            scope="pattern",
+            item_type="hidden_driver",
+            category="hidden_driver",
+            inference_level="synthesized",
+            source_entry_ids=[entry_id],
+            source_quote=None,
+        )
+        connection.commit()
+
+    engine = create_engine(value.replace("postgresql://", "postgresql+psycopg://", 1))
+    repository = ReviewRepository(cipher=TEST_CIPHER)
+    rotated_repository = ReviewRepository(
+        cipher=AesGcmContentCipher(
+            encryption_keys={"test-key": b"e" * 32},
+            active_encryption_key_id="test-key",
+            fingerprint_keys={
+                "test-fingerprint": b"f" * 32,
+                "rotated-fingerprint": b"r" * 32,
+            },
+            active_fingerprint_key_id="rotated-fingerprint",
+        )
+    )
+
+    def save(
+        target: UUID,
+        verdict: str,
+        *,
+        corrected: str | None = None,
+        note: str | None = None,
+        user_id: UUID = USER_ONE,
+        target_repository: ReviewRepository = repository,
+    ):
+        with Session(engine) as session, session.begin():
+            session.execute(text("SET LOCAL ROLE authenticated"))
+            session.execute(
+                text(
+                    "SELECT pg_catalog.set_config("
+                    "'request.jwt.claims', :claims, true)"
+                ),
+                {
+                    "claims": json.dumps(
+                        {"sub": str(user_id), "role": "authenticated"}
+                    )
+                },
+            )
+            return target_repository.put_feedback(
+                session,
+                user_id=user_id,
+                item_id=target,
+                verdict=verdict,  # type: ignore[arg-type]
+                corrected_statement=corrected,
+                note=note,
+            )
+
+    private_correction = "I value focused work when the deadline is realistic."
+    private_note = "This wording is more precise."
+    try:
+        first = save(
+            item_id,
+            "accurate",
+            corrected=private_correction,
+            note=private_note,
+        )
+        replay = save(
+            item_id,
+            "accurate",
+            corrected=private_correction,
+            note=private_note,
+            target_repository=rotated_repository,
+        )
+        replacement = save(
+            item_id,
+            "partly_accurate",
+            corrected=private_correction,
+            note=private_note,
+            target_repository=rotated_repository,
+        )
+        assert first.changed is True
+        assert replay.changed is False
+        assert replay.source_version == first.source_version
+        assert replacement.changed is True
+        assert replacement.source_version > first.source_version
+
+        with Session(engine) as session, session.begin():
+            session.execute(text("SET LOCAL ROLE authenticated"))
+            session.execute(
+                text(
+                    "SELECT pg_catalog.set_config("
+                    "'request.jwt.claims', :claims, true)"
+                ),
+                {
+                    "claims": json.dumps(
+                        {"sub": str(USER_ONE), "role": "authenticated"}
+                    )
+                },
+            )
+            saved_item = repository.get_by_owner(
+                session,
+                user_id=USER_ONE,
+                item_id=item_id,
+            )
+        assert saved_item is not None
+        assert saved_item.status == "partially_confirmed"
+        assert saved_item.feedback is not None
+        assert saved_item.feedback.evidence_weight == 0.5
+        assert saved_item.feedback.corrected_statement == private_correction
+        assert saved_item.feedback.note == private_note
+
+        with psycopg.connect(value) as connection:
+            stored = connection.execute(
+                "SELECT review_status, evidence_weight, "
+                "corrected_statement_envelope::text, "
+                "feedback_note_envelope::text, metadata::text "
+                "FROM public.review_items WHERE id = %s",
+                (item_id,),
+            ).fetchone()
+            assert stored[:2] == ("partially_confirmed", 0.5)
+            assert private_correction not in stored[2]
+            assert private_note not in stored[3]
+            assert private_correction not in stored[4]
+            assert private_note not in stored[4]
+            assert connection.execute(
+                "SELECT latest_accepted_source_version "
+                "FROM public.reflection_user_state WHERE user_id = %s",
+                (USER_ONE,),
+            ).fetchone() == (replacement.source_version,)
+            assert connection.execute(
+                "SELECT status FROM public.reflection_snapshots WHERE id = %s",
+                (snapshot_id,),
+            ).fetchone() == ("stale",)
+
+        with pytest.raises(ReviewItemNotFoundError):
+            save(item_id, "accurate", user_id=USER_TWO)
+
+        pattern_version = 1
+        for verdict, expected_review, expected_weight, expected_pattern in (
+            ("resonates", "confirmed", 1.0, "published"),
+            ("partly_true", "partially_confirmed", 0.5, "weakened"),
+            ("not_true", "rejected", 0.0, "rejected"),
+        ):
+            saved = save(pattern_item_id, verdict)
+            assert saved.changed is True
+            pattern_version += 1
+            with psycopg.connect(value) as connection:
+                assert connection.execute(
+                    "SELECT review_status, evidence_weight "
+                    "FROM public.review_items WHERE id = %s",
+                    (pattern_item_id,),
+                ).fetchone() == (expected_review, expected_weight)
+                assert connection.execute(
+                    "SELECT status, version FROM public.pattern_candidates "
+                    "WHERE id = %s",
+                    (candidate_id,),
+                ).fetchone() == (expected_pattern, pattern_version)
+
+        with psycopg.connect(value) as connection:
+            connection.execute(
+                "UPDATE public.review_items SET reflection_eligible = false "
+                "WHERE id = %s",
+                (item_id,),
+            )
+            connection.commit()
+        with pytest.raises(ReviewItemStaleError):
+            save(item_id, "not_accurate")
+    finally:
+        engine.dispose()
+
+
+def test_weighted_snapshot_persists_metadata_and_one_pattern_review_on_replay() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        entry_dates = tuple(
+            ("2026-07-20", "2026-07-21", "2026-07-22")[index % 3]
+            for index in range(101)
+        )
+        source_version = insert_accepted_basis(
+            connection,
+            USER_ONE,
+            entry_dates,
+        )
+        signal_rows = connection.execute(
+            "SELECT signal.id, signal.entry_id, entry.entry_date "
+            "FROM public.entry_signals AS signal "
+            "JOIN public.entries AS entry ON entry.id = signal.entry_id "
+            "AND entry.user_id = signal.user_id "
+            "WHERE signal.user_id = %s ORDER BY entry.entry_date, signal.id",
+            (USER_ONE,),
+        ).fetchall()
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) "
+            "VALUES (%s, %s, 101, 101, "
+            "ARRAY['2026-07-20'::date, '2026-07-21'::date, '2026-07-22'::date])",
+            (USER_ONE, source_version),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            job_id = connection.execute(
+                "SELECT public.enqueue_processing_job("
+                "%s, NULL, 'reflection_synthesis', %s, pg_catalog.now())",
+                (USER_ONE, str(source_version)),
+            ).fetchone()[0]
+            claim_token = connection.execute(
+                "SELECT claim_token FROM public.claim_processing_job('weighted-worker')"
+            ).fetchone()[0]
+
+        snapshot_id = uuid4()
+        candidate_id = uuid4()
+        insight_id = uuid4()
+        review_item_id = uuid4()
+        snapshot = {
+            "id": str(snapshot_id),
+            "version": 1,
+            "source_version": source_version,
+            "basis_start": "2026-04-24",
+            "basis_end": "2026-07-22",
+            "valid_entry_count": 101,
+            "excluded_entry_count": 0,
+            "distinct_entry_dates": 3,
+            "reflective_word_count": 10100,
+            "status": "available",
+            "model_name": "test-synthesis-model",
+            "prompt_version": "reflection-synthesis-v2",
+            "generated_at": "2026-07-23T12:00:00Z",
+        }
+        candidates = [
+            candidate_payload(
+                candidate_id,
+                canonical_key="f" * 64,
+                status="published",
+            )
+        ]
+        candidate_evidence = [
+            evidence_payload(candidate_id, row[0]) for row in signal_rows
+        ]
+        insights = [
+            {
+                "id": str(insight_id),
+                "candidate_id": str(candidate_id),
+                "pattern_type": "hidden_driver",
+                "ordinal": 0,
+                "status": "available",
+                "payload_envelope": ENVELOPE_V1,
+                "confidence_label": "emerging",
+                "score": 0.8,
+            },
+            {
+                "id": str(uuid4()),
+                "pattern_type": "recurring_loop",
+                "ordinal": 0,
+                "status": "insufficient_evidence",
+                "reason_code": "LOOP_NOT_REPEATED",
+            },
+            {
+                "id": str(uuid4()),
+                "pattern_type": "inner_tension",
+                "ordinal": 0,
+                "status": "insufficient_evidence",
+                "reason_code": "BOTH_SIDES_NOT_SUPPORTED",
+            },
+        ]
+        snapshot_evidence = [
+            {
+                "insight_id": str(insight_id),
+                "signal_id": str(row[0]),
+                "entry_id": str(row[1]),
+                "evidence_role": "supporting",
+                "ordinal": index,
+                "source_start": 0,
+                "source_end": 4,
+            }
+            for index, row in enumerate(signal_rows)
+        ]
+        review_source_rows = sorted(
+            signal_rows,
+            key=lambda row: (row[2], str(row[1])),
+        )[:100]
+        pattern_reviews = [
+            {
+                "id": str(review_item_id),
+                "pattern_candidate_id": str(candidate_id),
+                "item_type": "hidden_driver",
+                "category": "hidden_driver",
+                "statement_envelope": ENVELOPE_V1,
+                "source_entry_ids": [str(row[1]) for row in review_source_rows],
+                "source_dates": sorted(
+                    {row[2].isoformat() for row in review_source_rows}
+                ),
+                "inference_level": "synthesized",
+                "model_confidence": 0.8,
+                "metadata": {
+                    "model_id": "test-synthesis-model",
+                    "prompt_version": "reflection-synthesis-v2",
+                    "source": "reflection_synthesis",
+                    "source_version": source_version,
+                    "candidate_version": 1,
+                },
+            }
+        ]
+        arguments = (
+            job_id,
+            claim_token,
+            json.dumps(snapshot),
+            json.dumps(candidates),
+            json.dumps(candidate_evidence),
+            json.dumps(insights),
+            json.dumps(snapshot_evidence),
+            json.dumps(pattern_reviews),
+        )
+        with connection.transaction():
+            worker(connection)
+            first = connection.execute(
+                "SELECT public.apply_weighted_reflection_snapshot("
+                "%s, 'weighted-worker', %s, %s::jsonb, %s::jsonb, %s::jsonb, "
+                "%s::jsonb, %s::jsonb, %s::jsonb)",
+                arguments,
+            ).fetchone()[0]
+            replay = connection.execute(
+                "SELECT public.apply_weighted_reflection_snapshot("
+                "%s, 'weighted-worker', %s, %s::jsonb, %s::jsonb, %s::jsonb, "
+                "%s::jsonb, %s::jsonb, %s::jsonb)",
+                arguments,
+            ).fetchone()[0]
+
+        assert first == replay == snapshot_id
+        admin(connection)
+        connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET latest_accepted_source_version = latest_accepted_source_version + 1 "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        )
+        connection.commit()
+        changed_snapshot = {
+            **snapshot,
+            "generated_at": "2026-07-24T12:00:00Z",
+        }
+        changed_arguments = (
+            job_id,
+            claim_token,
+            json.dumps(changed_snapshot),
+            json.dumps(candidates),
+            json.dumps(candidate_evidence),
+            json.dumps(insights),
+            json.dumps(snapshot_evidence),
+            json.dumps(pattern_reviews),
+        )
+        with connection.transaction():
+            worker(connection)
+            advanced_basis = connection.execute(
+                "SELECT public.get_reflection_candidate_basis(%s, %s, 90)",
+                (USER_ONE, source_version + 1),
+            ).fetchone()[0]
+        assert advanced_basis["candidates"][0]["review_item_id"] == str(
+            review_item_id
+        )
+        with connection.transaction():
+            worker(connection)
+            delayed_replay = connection.execute(
+                "SELECT public.apply_weighted_reflection_snapshot("
+                "%s, 'weighted-worker', %s, %s::jsonb, %s::jsonb, %s::jsonb, "
+                "%s::jsonb, %s::jsonb, %s::jsonb)",
+                changed_arguments,
+            ).fetchone()[0]
+
+        assert delayed_replay == snapshot_id
+        admin(connection)
+        assert connection.execute(
+            "SELECT model_name, prompt_version, generated_at "
+            "FROM public.reflection_snapshots WHERE id = %s",
+            (snapshot_id,),
+        ).fetchone() == (
+            "test-synthesis-model",
+            "reflection-synthesis-v2",
+            datetime(2026, 7, 23, 12, tzinfo=timezone.utc),
+        )
+        assert connection.execute(
+            "SELECT id, review_status, evidence_weight, source_entry_ids, "
+            "source_dates FROM public.review_items "
+            "WHERE pattern_candidate_id = %s",
+            (candidate_id,),
+        ).fetchone() == (
+            review_item_id,
+            "pending",
+            1.0,
+            [row[1] for row in review_source_rows],
+            sorted({row[2] for row in review_source_rows}),
+        )
+
+        feedback = {
+            "verdict": "resonates",
+            "updated_at": "2026-07-23T13:00:00Z",
+        }
+        connection.execute(
+            "UPDATE public.review_items "
+            "SET review_status = 'confirmed', user_feedback = %s::jsonb, "
+            "evidence_weight = 1.0 WHERE id = %s",
+            (json.dumps(feedback), review_item_id),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            next_job_id = connection.execute(
+                "SELECT public.enqueue_processing_job("
+                "%s, NULL, 'reflection_synthesis', %s, pg_catalog.now())",
+                (USER_ONE, str(source_version + 1)),
+            ).fetchone()[0]
+            next_claim_token = connection.execute(
+                "SELECT claim_token "
+                "FROM public.claim_processing_job('weighted-worker')"
+            ).fetchone()[0]
+
+        refreshed_envelope = {
+            **ENVELOPE_V1,
+            "ciphertext": "Yg==",
+        }
+        next_snapshot_id = uuid4()
+        next_insight_id = uuid4()
+        next_snapshot = {
+            **snapshot,
+            "id": str(next_snapshot_id),
+            "version": 2,
+            "source_version": source_version + 1,
+            "generated_at": "2026-07-24T12:00:00Z",
+        }
+        next_candidates = [
+            candidate_payload(
+                candidate_id,
+                canonical_key="f" * 64,
+                status="published",
+                version=2,
+            )
+        ]
+        next_insights = [
+            {
+                **insights[0],
+                "id": str(next_insight_id),
+            },
+            {
+                **insights[1],
+                "id": str(uuid4()),
+            },
+            {
+                **insights[2],
+                "id": str(uuid4()),
+            },
+        ]
+        next_snapshot_evidence = [
+            {
+                **item,
+                "insight_id": str(next_insight_id),
+            }
+            for item in snapshot_evidence
+        ]
+        next_pattern_reviews = [
+            {
+                **pattern_reviews[0],
+                "statement_envelope": refreshed_envelope,
+                "metadata": {
+                    **pattern_reviews[0]["metadata"],
+                    "source_version": source_version + 1,
+                    "candidate_version": 2,
+                },
+            }
+        ]
+        next_arguments = (
+            next_job_id,
+            next_claim_token,
+            json.dumps(next_snapshot),
+            json.dumps(next_candidates),
+            json.dumps(candidate_evidence),
+            json.dumps(next_insights),
+            json.dumps(next_snapshot_evidence),
+            json.dumps(next_pattern_reviews),
+        )
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.apply_weighted_reflection_snapshot("
+                "%s, 'weighted-worker', %s, %s::jsonb, %s::jsonb, %s::jsonb, "
+                "%s::jsonb, %s::jsonb, %s::jsonb)",
+                next_arguments,
+            ).fetchone()[0] == next_snapshot_id
+
+        admin(connection)
+        assert connection.execute(
+            "SELECT statement_envelope, review_status, user_feedback, "
+            "evidence_weight FROM public.review_items WHERE id = %s",
+            (review_item_id,),
+        ).fetchone() == (
+            ENVELOPE_V1,
+            "confirmed",
+            feedback,
+            1.0,
+        )
+
+        unsafe_pattern_reviews = [
+            {
+                **next_pattern_reviews[0],
+                "metadata": {
+                    **next_pattern_reviews[0]["metadata"],
+                    "raw_journal": "private journal content",
+                },
+            }
+        ]
+        unsafe_arguments = (
+            next_job_id,
+            next_claim_token,
+            json.dumps(next_snapshot),
+            json.dumps(next_candidates),
+            json.dumps(candidate_evidence),
+            json.dumps(next_insights),
+            json.dumps(next_snapshot_evidence),
+            json.dumps(unsafe_pattern_reviews),
+        )
+        with pytest.raises(psycopg.errors.InvalidParameterValue):
+            with connection.transaction():
+                worker(connection)
+                connection.execute(
+                    "SELECT public.apply_weighted_reflection_snapshot("
+                    "%s, 'weighted-worker', %s, %s::jsonb, %s::jsonb, %s::jsonb, "
+                    "%s::jsonb, %s::jsonb, %s::jsonb)",
+                    unsafe_arguments,
+                )
+
+
+def test_candidate_basis_applies_full_partial_and_rejected_review_weights() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        source_version = insert_accepted_basis(
+            connection,
+            USER_ONE,
+            ("2026-07-20", "2026-07-21", "2026-07-22"),
+        )
+        reviews = connection.execute(
+            "SELECT review.id, entry.entry_date "
+            "FROM public.review_items AS review "
+            "JOIN public.entries AS entry ON entry.id = review.entry_id "
+            "AND entry.user_id = review.user_id "
+            "WHERE review.user_id = %s ORDER BY entry.entry_date",
+            (USER_ONE,),
+        ).fetchall()
+        connection.execute(
+            "UPDATE public.review_items SET review_status = 'partially_confirmed', "
+            "user_feedback = %s::jsonb, evidence_weight = 0.5 WHERE id = %s",
+            (
+                json.dumps(
+                    {
+                        "verdict": "partly_accurate",
+                        "updated_at": "2026-07-23T12:00:00Z",
+                    }
+                ),
+                reviews[1][0],
+            ),
+        )
+        connection.execute(
+            "UPDATE public.review_items SET review_status = 'rejected', "
+            "user_feedback = %s::jsonb, evidence_weight = 0.0 WHERE id = %s",
+            (
+                json.dumps(
+                    {
+                        "verdict": "not_accurate",
+                        "updated_at": "2026-07-23T12:00:00Z",
+                    }
+                ),
+                reviews[2][0],
+            ),
+        )
+        connection.commit()
+        with connection.transaction():
+            worker(connection)
+            basis = connection.execute(
+                "SELECT public.get_reflection_candidate_basis(%s, %s, 90)",
+                (USER_ONE, source_version),
+            ).fetchone()[0]
+
+        assert basis["valid_entry_count"] == 2
+        assert basis["distinct_entry_dates"] == 2
+        assert basis["reflective_word_count"] == 200
+        assert [row["evidence_weight"] for row in basis["signals"]] == [1.0, 0.5]
+        assert [row["model_confidence"] for row in basis["signals"]] == [0.9, 0.9]
+        assert [row["confidence"] for row in basis["signals"]] == [0.9, 0.45]

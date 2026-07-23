@@ -6,9 +6,18 @@ import {
   reflectionFixtureIds,
 } from '../src/features/reflections/fixtures';
 import { routes } from '../src/config/routes';
-import { logIn } from './helpers/auth';
+import { logInWithSyntheticSession } from './helpers/auth';
 
 test.describe.configure({ mode: 'serial' });
+
+function logIn(page: Page) {
+  return logInWithSyntheticSession(page, {
+    userId: '70000000-0000-4000-8000-000000000001',
+    email: 'reflections-e2e@example.com',
+    fullName: 'Reflections E2E',
+    sessionId: 'reflections-e2e-session',
+  });
+}
 
 function updateFeedback(
   aggregate: ReflectionApiResponse,
@@ -38,9 +47,29 @@ function updateFeedback(
 async function installReflectionApi(
   page: Page,
   initial: ReflectionApiResponse = reflectionApiFixture,
+  recalculationReads: ReflectionApiResponse[] = [],
+  waitForRelease?: Promise<void>,
 ) {
-  const aggregate = structuredClone(initial);
+  let aggregate = structuredClone(initial);
   const requests: string[] = [];
+  let recalculationAccepted = false;
+
+  await page.route('**/api/v1/review/items**', async (route) => {
+    const url = new URL(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'private, no-store' },
+      body: JSON.stringify({
+        items: [],
+        pagination: {
+          page: Number(url.searchParams.get('page') ?? '1'),
+          pageSize: Number(url.searchParams.get('page_size') ?? '1'),
+          total: 0,
+        },
+      }),
+    });
+  });
 
   await page.route('**/api/v1/reflections**', async (route) => {
     const request = route.request();
@@ -70,6 +99,33 @@ async function installReflectionApi(
       return;
     }
 
+    if (
+      request.method() === 'POST' &&
+      url.pathname === '/api/v1/reflections/recalculate'
+    ) {
+      if (request.postData() !== null) {
+        throw new Error('Recalculation must not send a request body');
+      }
+      recalculationAccepted = true;
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        headers: { 'Cache-Control': 'private, no-store' },
+        body: JSON.stringify({
+          status: 'accepted',
+          jobId: '10000000-0000-4000-8000-000000000099',
+        }),
+      });
+      return;
+    }
+
+    if (request.method() !== 'GET') {
+      throw new Error(`Unexpected reflections request: ${request.method()}`);
+    }
+    if (waitForRelease) await waitForRelease;
+    if (recalculationAccepted && recalculationReads.length > 0) {
+      aggregate = structuredClone(recalculationReads.shift()!);
+    }
     const range = url.searchParams.get('range');
     await route.fulfill({
       status: 200,
@@ -88,6 +144,35 @@ async function openReflections(page: Page, response?: ReflectionApiResponse) {
   await page.goto(routes.reflections.path);
   return requests;
 }
+
+test('shows exactly one central loader while Reflections loads', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  let releaseRequest!: () => void;
+  const waitForRelease = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  await installReflectionApi(page, reflectionApiFixture, [], waitForRelease);
+  await logIn(page);
+  await page.goto(routes.reflections.path);
+
+  await expect(page.getByRole('heading', { name: 'Loading' })).toBeVisible();
+  await expect(page.locator('.animate-spin:visible')).toHaveCount(1);
+  const tabsBox = await page
+    .getByRole('radiogroup', { name: 'Reflection views' })
+    .boundingBox();
+  const loaderBox = await page
+    .getByRole('heading', { name: 'Loading' })
+    .locator('xpath=ancestor::*[@data-slot="card"]')
+    .boundingBox();
+  expect(tabsBox).not.toBeNull();
+  expect(loaderBox).not.toBeNull();
+  expect(loaderBox!.y).toBeGreaterThanOrEqual(tabsBox!.y + tabsBox!.height);
+
+  releaseRequest();
+  await expect(page.getByText('Supported by 2 entries')).toBeVisible();
+});
 
 for (const viewport of [
   { key: 'mobile', width: 320, height: 900 },
@@ -123,6 +208,7 @@ for (const viewport of [
     expect(requests.filter((item) => item.startsWith('GET '))).toEqual([
       'GET /api/v1/reflections?range=all',
     ]);
+    expect(requests.filter((item) => item.startsWith('POST '))).toEqual([]);
     expect(requests[0]).not.toContain('userId');
     expect(requests[0]).not.toContain('reflectionTab');
   });
@@ -178,6 +264,65 @@ test('persists feedback through the plural insight endpoint', async ({
     .toEqual([
       `PUT /api/v1/reflections/${reflectionFixtureIds.snapshot}/insights/${reflectionFixtureIds.hiddenDriver}/feedback`,
     ]);
+  expect(requests.filter((item) => item.startsWith('POST '))).toEqual([]);
+});
+
+test('polls after recalculation without showing a page loader', async ({
+  page,
+}) => {
+  const processing = structuredClone(reflectionApiFixture);
+  processing.reflectionState = 'stale';
+  processing.processingState = 'pending';
+  if (processing.snapshot) processing.snapshot.isStale = true;
+  const available = structuredClone(reflectionApiFixture);
+  const requests = await installReflectionApi(page, reflectionApiFixture, [
+    processing,
+    available,
+  ]);
+  await logIn(page);
+  await page.goto(routes.reflections.path);
+  await expect(page.getByText('Supported by 2 entries')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Refresh reflections' }).click();
+  await page.waitForTimeout(2_500);
+  expect(requests).toEqual([
+    'GET /api/v1/reflections?range=all',
+    'POST /api/v1/reflections/recalculate',
+    'GET /api/v1/reflections?range=all',
+    'GET /api/v1/reflections?range=all',
+  ]);
+  await expect(page.getByRole('heading', { name: 'Refreshing' })).toHaveCount(
+    0,
+  );
+  await expect(page.locator('.animate-spin:visible')).toHaveCount(0);
+  await expect(page.getByText('Supported by 2 entries')).toBeVisible();
+});
+
+test('polls an ordinary stale page without showing a page loader', async ({
+  page,
+}) => {
+  const processing = structuredClone(reflectionApiFixture);
+  processing.reflectionState = 'stale';
+  processing.processingState = 'pending';
+  if (processing.snapshot) processing.snapshot.isStale = true;
+  const requests = await openReflections(page, processing);
+
+  await expect(page.getByText('Supported by 2 entries')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Refreshing' })).toHaveCount(
+    0,
+  );
+  await expect(page.locator('.animate-spin:visible')).toHaveCount(0);
+  await page.waitForTimeout(2_500);
+
+  expect(requests).toEqual([
+    'GET /api/v1/reflections?range=all',
+    'GET /api/v1/reflections?range=all',
+  ]);
+  await expect(page.getByRole('heading', { name: 'Refreshing' })).toHaveCount(
+    0,
+  );
+  await expect(page.locator('.animate-spin:visible')).toHaveCount(0);
+  await expect(page.getByText('Supported by 2 entries')).toBeVisible();
 });
 
 test('renders first-pending and insufficient-content states from the API', async ({

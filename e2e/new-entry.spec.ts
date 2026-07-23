@@ -1,7 +1,10 @@
 import { expect, test } from '@playwright/test';
 
 import { routes } from '../src/config/routes';
+import { installPendingReviewCountApi } from './helpers/api';
 import { logIn } from './helpers/auth';
+
+test.beforeEach(async ({ page }) => installPendingReviewCountApi(page));
 
 const createdEntry = {
   id: '8a7cc7df-94e5-41b4-b983-ab6ddda47785',

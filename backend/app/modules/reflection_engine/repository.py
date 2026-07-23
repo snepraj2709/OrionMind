@@ -4,14 +4,19 @@ import json
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.modules.jobs.types import JobClaim
 from app.modules.processing.schemas import Eligibility, LoopRole, NeedTag, SignalType, ThemeKey
-from app.modules.reflection_engine.schemas import CandidateStatus, PatternType, UnitFloat
+from app.modules.reflection_engine.schemas import (
+    CandidateStatus,
+    PatternType,
+    UnitFloat,
+    review_weighted_confidence,
+)
 
 
 class _StrictStoredModel(BaseModel):
@@ -37,12 +42,24 @@ class PersistedCandidateSignal(_StrictStoredModel):
     need_tags: list[NeedTag] = Field(max_length=4)
     loop_role: LoopRole | None
     confidence: UnitFloat
+    model_confidence: UnitFloat
+    evidence_weight: UnitFloat
     source_start: int = Field(ge=0)
     source_end: int = Field(gt=0)
     occurred_on: date
     duplicate_cluster_key: str | None = Field(
         default=None, pattern=r"^[0-9a-f]{64}$"
     )
+
+    @model_validator(mode="after")
+    def validate_effective_confidence(self) -> PersistedCandidateSignal:
+        expected = review_weighted_confidence(
+            model_confidence=self.model_confidence,
+            evidence_weight=self.evidence_weight,
+        )
+        if abs(self.confidence - expected) > 0.00001:
+            raise ValueError("candidate signal confidence is not review-weighted")
+        return self
 
     def domain_values(self) -> dict[str, object]:
         return self.model_dump(
@@ -63,6 +80,8 @@ class PersistedPreviousCandidate(_StrictStoredModel):
     last_source_version: int = Field(ge=0)
     rejected_at: datetime | None
     rejected_source_version: int | None = Field(default=None, ge=0)
+    review_weight: UnitFloat = 1.0
+    review_item_id: UUID | None = None
     payload_envelope: dict[str, object]
 
     def domain_values(self) -> dict[str, object]:
@@ -102,8 +121,9 @@ class ReflectionEngineRepository:
             text(
                 "SELECT anchor_signal_id, neighbor_signal_id, cosine_distance, similarity "
                 "FROM public.find_signal_semantic_neighbors("
-                ":user_id, :anchor_signal_ids, :source_version, :model_id, "
-                ":top_k, :similarity_threshold)"
+                ":user_id, CAST(:anchor_signal_ids AS uuid[]), "
+                "CAST(:source_version AS bigint), CAST(:model_id AS text), "
+                "CAST(:top_k AS integer), CAST(:similarity_threshold AS numeric))"
             ),
             {
                 "user_id": user_id,
@@ -183,7 +203,7 @@ class ReflectionEngineRepository:
             return int(
                 session.scalar(
                     text(
-                        "SELECT public.apply_deterministic_reflection_candidates("
+                        "SELECT public.apply_weighted_deterministic_reflection_candidates("
                         ":user_id, :source_version, CAST(:candidates AS jsonb), "
                         "CAST(:evidence AS jsonb))"
                     ),
@@ -213,15 +233,17 @@ class ReflectionEngineRepository:
         candidate_evidence: list[dict[str, object]],
         insights: list[dict[str, object]],
         snapshot_evidence: list[dict[str, object]],
+        pattern_review_items: list[dict[str, object]],
     ) -> UUID:
         try:
             value = session.scalar(
                 text(
-                    "SELECT public.apply_reflection_snapshot("
+                    "SELECT public.apply_weighted_reflection_snapshot("
                     ":job_id, :worker_id, :claim_token, "
                     "CAST(:snapshot AS jsonb), CAST(:candidates AS jsonb), "
                     "CAST(:candidate_evidence AS jsonb), CAST(:insights AS jsonb), "
-                    "CAST(:snapshot_evidence AS jsonb))"
+                    "CAST(:snapshot_evidence AS jsonb), "
+                    "CAST(:pattern_review_items AS jsonb))"
                 ),
                 {
                     "job_id": claim.job_id,
@@ -232,6 +254,7 @@ class ReflectionEngineRepository:
                     "candidate_evidence": json.dumps(candidate_evidence),
                     "insights": json.dumps(insights),
                     "snapshot_evidence": json.dumps(snapshot_evidence),
+                    "pattern_review_items": json.dumps(pattern_review_items),
                 },
             )
         except DBAPIError as exc:
