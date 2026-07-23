@@ -1,5 +1,4 @@
 import { expect, type Page } from '@playwright/test';
-import { createClient, type Session } from '@supabase/supabase-js';
 
 import { routes } from '../../src/config/routes';
 
@@ -16,14 +15,15 @@ interface SyntheticTestIdentity {
   sessionId: string;
 }
 
+export interface SyntheticTestSession {
+  accessToken: string;
+}
+
 function encodedJson(value: unknown) {
   return Buffer.from(JSON.stringify(value)).toString('base64url');
 }
 
-export async function logInWithSyntheticSession(
-  page: Page,
-  identity: SyntheticTestIdentity,
-) {
+function createSyntheticSession(identity: SyntheticTestIdentity) {
   const supabaseUrl = getRequiredTestEnvironmentVariable(
     'NEXT_PUBLIC_SUPABASE_URL',
   );
@@ -57,6 +57,24 @@ export async function logInWithSyntheticSession(
     updated_at: new Date(now * 1000).toISOString(),
     is_anonymous: false,
   };
+  const session = {
+    access_token: accessToken,
+    refresh_token: 'e2e-refresh-token',
+    expires_in: 3600,
+    expires_at: now + 3600,
+    token_type: 'bearer',
+    user,
+  };
+
+  return { accessToken, session, supabaseUrl };
+}
+
+export async function logInWithSyntheticSession(
+  page: Page,
+  identity: SyntheticTestIdentity,
+) {
+  const { accessToken, session, supabaseUrl } =
+    createSyntheticSession(identity);
 
   await page.route(`${supabaseUrl}/auth/v1/**`, async (route) => {
     const url = new URL(route.request().url());
@@ -64,14 +82,7 @@ export async function logInWithSyntheticSession(
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          access_token: accessToken,
-          refresh_token: 'e2e-refresh-token',
-          expires_in: 3600,
-          expires_at: now + 3600,
-          token_type: 'bearer',
-          user,
-        }),
+        body: JSON.stringify(session),
       });
       return;
     }
@@ -83,44 +94,22 @@ export async function logInWithSyntheticSession(
   await page.getByLabel('Password').fill('e2e-password');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(routes.entries.path);
+  return { accessToken } satisfies SyntheticTestSession;
 }
 
-export const testCredentials = {
+export const liveTestCredentials = {
   get email() {
-    return getRequiredTestEnvironmentVariable('SUPABASE_TEST_EMAIL');
+    return getRequiredTestEnvironmentVariable('SUPABASE_TEST_EMAIL2');
   },
   get password() {
-    return getRequiredTestEnvironmentVariable('SUPABASE_TEST_PASSWORD');
+    return getRequiredTestEnvironmentVariable('SUPABASE_TEST_PASSWORD2');
   },
 };
 
-let testSessionPromise: Promise<Session> | undefined;
-
-function getTestSession() {
-  testSessionPromise ??= (async () => {
-    const client = createClient(
-      getRequiredTestEnvironmentVariable('NEXT_PUBLIC_SUPABASE_URL'),
-      getRequiredTestEnvironmentVariable(
-        'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
-      ),
-      {
-        auth: {
-          autoRefreshToken: false,
-          detectSessionInUrl: false,
-          persistSession: false,
-        },
-      },
-    );
-    const { data, error } =
-      await client.auth.signInWithPassword(testCredentials);
-    if (error || !data.session) {
-      throw new Error('The Supabase test account could not sign in.');
-    }
-    return data.session;
-  })();
-
-  return testSessionPromise;
-}
+export const testCredentials = {
+  email: 'e2e-reader@example.com',
+  password: 'e2e-password',
+} as const;
 
 export async function installMockSupabaseAuth(page: Page) {
   const supabaseUrl = getRequiredTestEnvironmentVariable(
@@ -128,12 +117,26 @@ export async function installMockSupabaseAuth(page: Page) {
   );
   const userId = '00000000-0000-4000-8000-000000000001';
   const timestamp = new Date().toISOString();
+  const { session } = createSyntheticSession({
+    userId,
+    email: testCredentials.email,
+    fullName: 'reader',
+    sessionId: 'mock-e2e-session',
+  });
 
   await page.route(`${supabaseUrl}/auth/v1/**`, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
 
     if (url.pathname.endsWith('/token')) {
+      if (url.searchParams.get('grant_type') === 'refresh_token') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(session),
+        });
+        return;
+      }
       const body = request.postDataJSON() as {
         email?: string;
         password?: string;
@@ -153,11 +156,19 @@ export async function installMockSupabaseAuth(page: Page) {
         return;
       }
 
-      const session = await getTestSession();
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(session),
+      });
+      return;
+    }
+
+    if (url.pathname.endsWith('/user') && request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(session.user),
       });
       return;
     }
@@ -195,7 +206,14 @@ export async function installMockSupabaseAuth(page: Page) {
       return;
     }
 
-    await route.continue();
+    await route.fulfill({
+      status: 501,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 'unexpected_mock_auth_request',
+        message: `Unexpected mocked auth request: ${request.method()} ${url.pathname}`,
+      }),
+    });
   });
 }
 

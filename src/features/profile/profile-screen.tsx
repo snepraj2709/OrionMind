@@ -163,8 +163,8 @@ export function ProfileScreen({
         </form>
       ) : null}
 
-      <Surface className="flex-row items-center justify-between gap-4 p-6">
-        <Typography variant="body">
+      <Surface className="items-stretch justify-between gap-4 p-6 sm:flex-row sm:items-center">
+        <Typography className="min-w-0 break-words" variant="body">
           Signed in as {user?.email ?? 'your account'}.
         </Typography>
         <SignOutButton />

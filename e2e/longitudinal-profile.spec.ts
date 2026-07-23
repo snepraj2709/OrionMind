@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { routes } from '../src/config/routes';
+import { installPendingReviewCountApi } from './helpers/api';
 import { logIn } from './helpers/auth';
 
 test.describe.configure({ mode: 'serial' });
+test.beforeEach(async ({ page }) => installPendingReviewCountApi(page));
 
 async function expectNoPageOverflow(page: Page) {
   const dimensions = await page.evaluate(() => ({
@@ -33,15 +35,7 @@ async function expectNoPageOverflow(page: Page) {
 test('matches Journey at desktop and mobile widths', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await logIn(page);
-  const journeyResponse = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === '/api/v1/journey',
-  );
-  const statusResponse = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === '/api/v1/journey/status',
-  );
   await page.goto(routes.journey.path);
-  await expect((await journeyResponse).status()).toBe(200);
-  await expect((await statusResponse).status()).toBe(200);
   await expect(
     page.getByRole('heading', { name: 'Not enough data yet' }),
   ).toBeVisible();

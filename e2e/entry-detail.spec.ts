@@ -1,9 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { entryDetailPath } from '../src/config/routes';
+import { installPendingReviewCountApi } from './helpers/api';
 import { logIn } from './helpers/auth';
 
 test.describe.configure({ mode: 'serial' });
+test.beforeEach(async ({ page }) => installPendingReviewCountApi(page));
 
 const entryId = '8a7cc7df-94e5-41b4-b983-ab6ddda47785';
 const failedEntryId = '27cf52b5-a015-427e-b7b5-914af00d19ee';

@@ -508,7 +508,7 @@ Each section can abstain independently.
 |     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `completed`   | High       | Blocking                                    |
 |     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `completed`   | High       | Blocking                                    |
 |     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `completed`   | Medium     | Blocking                                    |
-|    10 | Full P0 integration verification                  | P0       | 1–9          | `test(review): verify p0 review reflection flow`          | `not_started` | High       | Blocking                                    |
+|    10 | Full P0 integration verification                  | P0       | 1–9          | `test(review): verify p0 review reflection flow`          | `completed`   | High       | Blocking                                    |
 |    11 | Safety and privacy hardening                      | Post-P0  | 10           | `fix(reflections): harden review privacy boundaries`      | `not_started` | Medium     | Non-blocking for P0; blocked until Stage 10 |
 |    12 | Analytics and evaluation foundation               | Post-P0  | 10, 11       | `chore(reflections): add evaluation telemetry foundation` | `not_started` | Medium     | Non-blocking for P0; blocked until Stage 10 |
 
@@ -1494,7 +1494,84 @@ npm run test:e2e -- e2e/reflections.spec.ts
 
 ### Stage 10 — Full P0 integration verification
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Added `backend/tests/stage10_harness.py`,
+  `e2e/helpers/api.ts`, `e2e/review-reflection-flow.spec.ts`, and
+  `playwright.stage10.config.ts`. Updated `e2e/helpers/auth.ts`, the auth-routing,
+  Entries, entry-detail, Journey/Profile, new-entry, protected-shell, and live-auth
+  browser specs, the affected Entries/entry-detail/protected-shell snapshots,
+  `playwright.config.ts`, `package.json`, `src/features/profile/profile-screen.tsx`,
+  and this handoff.
+- **Migrations added:** None.
+- **Integration behavior:** The dedicated test runs the complete 23-entry
+  fixture through the browser, controlled public API, real durable worker, and
+  isolated `orion_stage2_test` pgvector database. It proves bearer identity and
+  public response casing, interrupted-worker recovery through the
+  application-composed production worker loop, Entry and Pattern feedback plus
+  identical replay, weighted resynthesis, cached/pure Reflection reads,
+  independent section abstention, retained Ideas/Memories entry behavior
+  without Review exposure, cross-user Entry and Pattern non-enumeration,
+  desktop/narrow rendering, and fragment-level plaintext exclusion across
+  backend, worker, and browser-console output.
+- **Regression repairs:** The regular browser suite now uses deterministic
+  synthetic Supabase identities and credentials for mock-backed tests, handles
+  expected session validation/refresh calls locally, fails closed for unknown
+  auth requests, and reserves `SUPABASE_TEST_EMAIL2` and
+  `SUPABASE_TEST_PASSWORD2` for the dedicated live-auth spec.
+  Existing shell-dependent specs intercept the real pending Review-count
+  contract, auth-routing returns deterministic 503 responses for out-of-scope
+  data APIs instead of contacting an unconfigured backend, Entries uses its API
+  fixture, and the obsolete Journey network wait was removed because that page
+  intentionally uses its mock repository. Snapshots were refreshed for the
+  completed Review navigation/Entries contract, and Profile checks now use the
+  deterministic identity. A real 320px overflow found in Profile was fixed by
+  stacking its account footer at narrow widths and allowing the email to wrap;
+  the browser regression asserts no page overflow.
+- **Re-review repairs:** Database inspections now include a SHA-256 digest of
+  every row in every public base table, so feedback replay and cached reads
+  prove database-wide persistence purity rather than count stability. The
+  other-user flow verifies both Review list scopes directly and in the UI. Log
+  checks cover sliding fragments,
+  three-word phrases, generated Review/Reflection text, test identities,
+  bearer tokens, and both browser contexts. Stale recovery uses the worker
+  registered by application bootstrap with valid 60-second stale and 10-second
+  recovery settings; only the disposable job heartbeat is aged by 61 seconds
+  to avoid a wall-clock wait.
+- **Commands and results:**
+  - Dedicated Stage 10 browser/API/worker/database command with
+    `STAGE2_DISPOSABLE_DATABASE_URL` targeting only the local
+    `orion_stage2_test` database: the post-review run passed `1` in `1.1m`.
+  - The original `npm run test:e2e` completion run passed `49`. The post-review
+    user-authorized scope excluded the unrelated Entry Detail file and passed
+    all remaining `45`, including live Supabase auth with credential pair 2.
+    The repaired mobile-navigation auth case also passed three consecutive
+    repetitions.
+  - `npm run typecheck`, `npm run lint` including design-system policy, and
+    `npm run build`: passed. `npm test`: `342 passed` across `48` files.
+  - Backend compileall and full Ruff passed. The explicit mypy gate passed
+    with no issues in `43` source files. The non-live backend run collected
+    `467` tests: `423 passed`, `44` environment-gated skips, and one existing
+    `python_multipart` pending-deprecation warning.
+  - Targeted Prettier, focused Profile/browser verification, visual snapshot
+    review, and staged/unstaged `git diff --check` passed.
+- **Deviations from the original plan:** A backend harness and dedicated
+  Playwright configuration were necessary because the regular browser suite
+  cannot safely reset a database or control/restart a worker. The harness
+  reuses Stage 7 fixtures/providers, rejects every database except the exact
+  local disposable database name, hashes persistence state without emitting
+  sensitive values, and makes no live or paid model call. The
+  previously blocked live-auth gate was restored with the user-specified
+  second credential pair. Integration review also required deterministic
+  updates to older shell/Entries specs and the minimal Profile overflow fix.
+- **Remaining risks:** This proves providers through controlled local fakes,
+  not a paid model or shared environment. The disposable
+  `orion-stage10-postgres` container remains running on localhost for user
+  verification; no shared, staging, or production database was mutated.
+  Stage 11 remains not started. This Stage 10-only commit was created only
+  after explicit user approval and was not pushed.
 
 **Objective:** Prove the complete P0 across browser, API, worker, and disposable database and freeze a clean release gate.
 

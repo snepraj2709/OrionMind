@@ -1,11 +1,28 @@
 import { expect, test } from '@playwright/test';
 
 import { routes } from '../src/config/routes';
+import { installPendingReviewCountApi } from './helpers/api';
 import {
   installMockSupabaseAuth,
   logIn,
   testCredentials,
 } from './helpers/auth';
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/v1/**', (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        error_code: 'SERVICE_UNAVAILABLE',
+        message: 'The deterministic routing test does not provide data APIs.',
+        details: {},
+        request_id: 'e2e-routing-test',
+      }),
+    }),
+  );
+  await installPendingReviewCountApi(page);
+});
 
 test('serves the canonical logo and a valid favicon', async ({ request }) => {
   const logo = await request.get('/images/light-mode-transparent.svg');

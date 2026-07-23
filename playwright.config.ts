@@ -1,13 +1,22 @@
 import { defineConfig, devices } from '@playwright/test';
 import { loadEnvConfig } from '@next/env';
+import path from 'node:path';
 
-loadEnvConfig(process.cwd());
+const backendTestEnvironment = loadEnvConfig(
+  path.join(process.cwd(), 'backend'),
+).combinedEnv;
+const testEmail = backendTestEnvironment.SUPABASE_TEST_EMAIL2;
+const testPassword = backendTestEnvironment.SUPABASE_TEST_PASSWORD2;
+loadEnvConfig(process.cwd(), false, console, true);
+if (testEmail) process.env.SUPABASE_TEST_EMAIL2 = testEmail;
+if (testPassword) process.env.SUPABASE_TEST_PASSWORD2 = testPassword;
 
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:3100';
 const usesExternalServer = Boolean(process.env.PLAYWRIGHT_BASE_URL);
 
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'review-reflection-flow.spec.ts',
   // Mock repositories share one process-local store. Keep route tests isolated
   // until backend persistence scopes records to the authenticated user.
   fullyParallel: false,
@@ -17,8 +26,8 @@ export default defineConfig({
   reporter: process.env.CI ? 'github' : 'list',
   use: {
     baseURL,
-    // Authenticated tests use live test credentials. Never persist their
-    // password, access token, refresh token, or session in trace artifacts.
+    // The dedicated live-auth spec uses real test credentials. Never persist
+    // its password, access token, refresh token, or session in trace artifacts.
     trace: 'off',
   },
   projects: [

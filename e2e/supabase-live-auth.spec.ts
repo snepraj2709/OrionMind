@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 import { routes } from '../src/config/routes';
 import {
   getRequiredTestEnvironmentVariable,
-  testCredentials,
+  liveTestCredentials,
 } from './helpers/auth';
 
 test.use({ trace: 'off' });
@@ -20,8 +20,8 @@ test('uses live Supabase auth and sends its bearer token to the configured API',
   );
 
   await page.goto(routes.login.path);
-  await page.getByLabel('Email').fill(testCredentials.email);
-  await page.getByLabel('Password').fill(testCredentials.password);
+  await page.getByLabel('Email').fill(liveTestCredentials.email);
+  await page.getByLabel('Password').fill(liveTestCredentials.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
 
   await expect(page).toHaveURL(routes.entries.path);
@@ -40,5 +40,5 @@ test('uses live Supabase auth and sends its bearer token to the configured API',
   expect(storageKeys.some((key) => key.startsWith('orion'))).toBe(false);
 
   await page.getByRole('button', { name: 'Log out' }).click();
-  await expect(page).toHaveURL(routes.login.path);
+  await expect(page).toHaveURL(/\/login(?:\?|$)/);
 });
