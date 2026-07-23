@@ -188,6 +188,19 @@ for (const viewport of [
     await expect(page.getByText(entryItem.statement)).toBeVisible();
     await expect(page.getByRole('radio', { name: 'Ideas' })).toHaveCount(0);
     await expect(page.getByRole('searchbox')).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: 'Category' })).toHaveCount(
+      0,
+    );
+    await expect(page.getByRole('combobox', { name: 'Status' })).toHaveCount(0);
+    const entryTag = page.getByText('Energy', { exact: true });
+    await expect(entryTag).toBeVisible();
+    await expect(entryTag).toHaveClass(/type-tag/);
+    await expect(entryTag.locator('xpath=..')).toHaveClass(/float-right/);
+    await expect(
+      page
+        .getByText(entryItem.statement)
+        .locator('xpath=ancestor::*[@data-slot="card"]'),
+    ).toHaveCount(1);
 
     const dimensions = await page.evaluate(() => ({
       content: document.documentElement.scrollWidth,
@@ -199,6 +212,8 @@ for (const viewport of [
         (request) =>
           request.method === 'GET' &&
           request.path.includes('scope=entry_insight') &&
+          request.path.includes('category=all') &&
+          request.path.includes('status=pending') &&
           request.path.includes('page_size=1'),
       ),
     ).toBe(true);
@@ -207,6 +222,8 @@ for (const viewport of [
         (request) =>
           request.method === 'GET' &&
           request.path.includes('scope=pattern') &&
+          request.path.includes('category=all') &&
+          request.path.includes('status=pending') &&
           request.path.includes('page_size=1'),
       ),
     ).toBe(true);
@@ -246,6 +263,7 @@ test('opens evidence and persists scope-correct feedback', async ({ page }) => {
 
   await page.getByRole('radio', { name: 'Patterns' }).click();
   await expect(page.getByText(patternItem.statement)).toBeVisible();
+  await expect(page.getByText('Hidden Driver', { exact: true })).toBeVisible();
   await page
     .getByRole('button', { name: `Resonates: ${patternItem.statement}` })
     .click();

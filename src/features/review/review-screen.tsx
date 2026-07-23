@@ -3,14 +3,9 @@
 import { BookOpenText, Waypoints } from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 
-import { FilterField, PaginationControls } from '@/components/data-display';
+import { PaginationControls } from '@/components/data-display';
 import { AppButton, Typography } from '@/components/design-system';
-import {
-  DataViewStatus,
-  EmptyState,
-  InlineError,
-  NoResultsState,
-} from '@/components/feedback';
+import { DataViewStatus, EmptyState, InlineError } from '@/components/feedback';
 import { PageHeader, PageShell } from '@/components/layout';
 import { AppLink, SegmentedControl } from '@/components/navigation';
 import { dataViewMessages } from '@/config/messages';
@@ -19,12 +14,7 @@ import { useAuth } from '@/features/auth';
 import { useOnlineStatus } from '@/hooks';
 
 import { reviewPageSizeDefault } from './api-schema';
-import type {
-  ReviewCategoryFilter,
-  ReviewListQuery,
-  ReviewScope,
-  ReviewStatus,
-} from './model';
+import type { ReviewListQuery, ReviewScope } from './model';
 import { useReviewFeedbackMutation, useReviewItemsQuery } from './queries';
 import {
   ReviewRequestError,
@@ -50,28 +40,6 @@ const scopeItems = [
   value: ReviewScope;
 }>;
 
-const categoryOptions = {
-  entry_insight: [
-    { label: 'All Entry Insights', value: 'all' },
-    { label: 'Energy', value: 'energy' },
-    { label: 'Self-knowledge', value: 'self_knowledge' },
-    { label: 'Needs & beliefs', value: 'needs_beliefs' },
-  ],
-  pattern: [
-    { label: 'All Patterns', value: 'all' },
-    { label: 'Hidden drivers', value: 'hidden_driver' },
-    { label: 'Recurring loops', value: 'recurring_loop' },
-    { label: 'Inner tensions', value: 'inner_tension' },
-  ],
-} as const;
-
-const statusOptions = [
-  { label: 'Needs review', value: 'pending' },
-  { label: 'Confirmed', value: 'confirmed' },
-  { label: 'Partially confirmed', value: 'partially_confirmed' },
-  { label: 'Rejected', value: 'rejected' },
-] as const;
-
 export interface ReviewScreenProps {
   repository?: ReviewRepository;
 }
@@ -82,14 +50,12 @@ export function ReviewScreen({
   const { user } = useAuth();
   const isOnline = useOnlineStatus();
   const [scope, setScope] = useState<ReviewScope>('entry_insight');
-  const [category, setCategory] = useState<ReviewCategoryFilter>('all');
-  const [status, setStatus] = useState<ReviewStatus>('pending');
   const [page, setPage] = useState(1);
   const [announcement, setAnnouncement] = useState('');
   const queryInput: ReviewListQuery = {
     scope,
-    category,
-    status,
+    category: 'all',
+    status: 'pending',
     page,
     page_size: reviewPageSizeDefault,
   };
@@ -112,7 +78,6 @@ export function ReviewScreen({
     : 0;
   const interactionDisabled =
     !isOnline || query.isFetching || query.isError || feedback.isPending;
-  const hasFilters = category !== 'all' || status !== 'pending';
   const scopeLabel = scope === 'entry_insight' ? 'Entry Insights' : 'Patterns';
   const feedbackSavedWithoutRecalculation =
     feedback.error instanceof ReviewRequestError &&
@@ -133,12 +98,6 @@ export function ReviewScreen({
     }
   }, [page, pageCount, query.data, query.isFetching]);
 
-  function clearFilters() {
-    setCategory('all');
-    setStatus('pending');
-    setPage(1);
-  }
-
   return (
     <PageShell className="space-y-8">
       <PageHeader
@@ -154,36 +113,10 @@ export function ReviewScreen({
         }))}
         onValueChange={(value) => {
           setScope(value as ReviewScope);
-          setCategory('all');
           setPage(1);
         }}
         value={scope}
       />
-
-      <div className="flex flex-wrap items-end gap-4">
-        <FilterField
-          disabled={interactionDisabled}
-          id="review-category"
-          label="Category"
-          onValueChange={(value) => {
-            setCategory(value as ReviewCategoryFilter);
-            setPage(1);
-          }}
-          options={[...categoryOptions[scope]]}
-          value={category}
-        />
-        <FilterField
-          disabled={interactionDisabled}
-          id="review-status"
-          label="Status"
-          onValueChange={(value) => {
-            setStatus(value as ReviewStatus);
-            setPage(1);
-          }}
-          options={[...statusOptions]}
-          value={status}
-        />
-      </div>
 
       {!isOnline ? (
         <InlineError>
@@ -229,7 +162,7 @@ export function ReviewScreen({
         status={viewStatus}
       />
 
-      {query.data?.pagination.total === 0 && !hasFilters ? (
+      {query.data?.pagination.total === 0 ? (
         <EmptyState
           action={
             <AppButton asChild variant="secondary">
@@ -245,19 +178,9 @@ export function ReviewScreen({
         />
       ) : null}
 
-      {query.data?.pagination.total === 0 && hasFilters ? (
-        <NoResultsState
-          action={
-            <AppButton onClick={clearFilters} variant="secondary">
-              Clear filters
-            </AppButton>
-          }
-        />
-      ) : null}
-
       {query.data && query.data.items.length > 0 ? (
         <div className="space-y-6">
-          <ul aria-live="polite">
+          <ul aria-live="polite" className="space-y-4">
             {query.data.items.map((item) => (
               <ReviewQueueItem
                 disabled={interactionDisabled}

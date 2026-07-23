@@ -1,19 +1,19 @@
-import { Badge } from '@/components/ui/badge';
 import {
   extractedItemKindPresentation,
   type ExtractedItemKind,
 } from '@/config/status';
-import { cn } from '@/lib/utils';
+
+import { TaxonomyBadge, type TaxonomyBadgeTone } from './taxonomy-badge';
 
 export interface ExtractedItemKindBadgeProps {
   kind: ExtractedItemKind;
   className?: string;
 }
 
-const kindClasses: Record<ExtractedItemKind, string> = {
-  idea: 'border-primary/30 bg-primary/10',
-  memory: 'border-accent/40 bg-accent/10',
-  reflection: 'border-counterpoint/30 bg-counterpoint/10',
+const kindTones: Record<ExtractedItemKind, TaxonomyBadgeTone> = {
+  idea: 'primary',
+  memory: 'accent',
+  reflection: 'counterpoint',
 };
 
 export function ExtractedItemKindBadge({
@@ -21,15 +21,10 @@ export function ExtractedItemKindBadge({
   kind,
 }: ExtractedItemKindBadgeProps) {
   return (
-    <Badge
-      className={cn(
-        'type-tag radius-pill text-foreground border px-2 py-1',
-        kindClasses[kind],
-        className,
-      )}
-      variant={null}
-    >
-      {extractedItemKindPresentation[kind].label}
-    </Badge>
+    <TaxonomyBadge
+      className={className}
+      label={extractedItemKindPresentation[kind].label}
+      tone={kindTones[kind]}
+    />
   );
 }

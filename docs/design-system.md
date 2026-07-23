@@ -181,7 +181,7 @@ When a compact filter row uses the selected value as its visible copy, `FilterFi
 
 `PaginationControls` always renders outlined Prev and Next actions around `Page X of Y` metadata. First/last actions and user-facing page-size selectors are not part of Orion's pagination language. Consumers keep a fixed page size in their data/query boundary.
 
-The Review queue uses a feature-owned editorial row instead of a card: one full Lora statement, accent-outline Approve, neutral-to-destructive-hover Reject, and a semantic horizontal separator after every row. The row has no surface background, border, radius, shadow, title, date, or status badge. This treatment is specific to Review; richer extracted-item cards remain valid in Entry Detail and saved collections.
+The Review queue uses the shared bordered review card with one full Lora statement, the existing evidence and context actions, and scope-specific feedback actions. Each card has an icon-free, color-coded taxonomy tag at the top-right: Entry Insights use Energy, Self Knowledge, or Needs & Beliefs; Patterns use Hidden Driver, Recurring Loop, or Inner Tension. Tags use the semantic primary, accent, and counterpoint treatments with `type-tag` typography. Review remains an actionable pending-only queue and does not show category or status filters.
 
 ## Required view states
 

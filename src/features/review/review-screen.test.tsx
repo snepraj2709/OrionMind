@@ -176,28 +176,31 @@ describe('ReviewScreen', () => {
     expect(
       screen.queryByRole('combobox', { name: 'Theme' }),
     ).not.toBeInTheDocument();
-    const categoryFilter = screen.getByRole('combobox', { name: 'Category' });
-    const statusFilter = screen.getByRole('combobox', { name: 'Status' });
-    const categoryWrapper = categoryFilter.parentElement?.parentElement;
-    const statusWrapper = statusFilter.parentElement?.parentElement;
-
-    expect(categoryWrapper).toHaveClass('w-fit');
-    expect(statusWrapper).toHaveClass('w-fit');
-    expect(categoryWrapper?.parentElement).toBe(statusWrapper?.parentElement);
-    expect(categoryWrapper?.parentElement).toHaveClass(
-      'flex',
-      'flex-wrap',
-      'items-end',
-    );
+    expect(
+      screen.queryByRole('combobox', { name: 'Category' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: 'Status' }),
+    ).not.toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
   });
 
-  it('switches scopes, resets category and page, and uses valid subfilters', async () => {
+  it('switches scopes and requests every pending category from page one', async () => {
     const repository = createRepository([entryItem, patternItem]);
     const user = userEvent.setup();
     renderReview(repository);
 
     expect(await screen.findByText(entryItem.statement)).toBeVisible();
+    expect(repository.listItems).toHaveBeenLastCalledWith(
+      {
+        scope: 'entry_insight',
+        category: 'all',
+        status: 'pending',
+        page: 1,
+        page_size: 20,
+      },
+      expect.any(AbortSignal),
+    );
     for (const label of ['Accurate', 'Partly accurate', 'Not accurate']) {
       expect(
         screen.getByRole('button', {
@@ -205,14 +208,6 @@ describe('ReviewScreen', () => {
         }),
       ).toBeVisible();
     }
-    await user.click(screen.getByRole('combobox', { name: 'Category' }));
-    await user.click(screen.getByRole('option', { name: 'Energy' }));
-    await waitFor(() =>
-      expect(repository.listItems).toHaveBeenLastCalledWith(
-        expect.objectContaining({ category: 'energy', page: 1 }),
-        expect.any(AbortSignal),
-      ),
-    );
 
     await user.click(screen.getByRole('radio', { name: 'Patterns' }));
     expect(await screen.findByText(patternItem.statement)).toBeVisible();
@@ -223,31 +218,39 @@ describe('ReviewScreen', () => {
         }),
       ).toBeVisible();
     }
-    expect(
-      screen.getByRole('combobox', { name: 'Category' }),
-    ).toHaveTextContent('All Patterns');
     expect(repository.listItems).toHaveBeenLastCalledWith(
-      expect.objectContaining({
+      {
         scope: 'pattern',
         category: 'all',
+        status: 'pending',
         page: 1,
-      }),
+        page_size: 20,
+      },
       expect.any(AbortSignal),
     );
   });
 
-  it('renders success rows and opens exact source evidence by keyboard', async () => {
+  it('renders tagged cards and opens exact source evidence by keyboard', async () => {
     const user = userEvent.setup();
     renderReview(createRepository([entryItem]));
 
     const statement = await screen.findByText(entryItem.statement);
     expect(statement).toHaveClass('type-journal-excerpt');
-    expect(statement.closest('li')?.querySelector('hr')).toHaveClass(
-      'border-border',
-    );
+    expect(statement.closest('li')?.querySelector('hr')).toBe(null);
     expect(
-      statement.closest('li')?.querySelector('[data-slot="surface"]'),
-    ).toBe(null);
+      statement.closest('li')?.querySelector('[data-slot="card"]'),
+    ).toHaveClass('radius-card', 'border', 'border-border', 'bg-card');
+    const categoryTag = screen.getByText('Energy');
+    expect(categoryTag).toHaveClass(
+      'type-tag',
+      'border-accent/40',
+      'bg-accent/10',
+    );
+    expect(categoryTag.parentElement).toHaveClass(
+      'float-right',
+      'mb-2',
+      'ml-4',
+    );
 
     const sourceButton = screen.getByRole('button', {
       name: `View source evidence for: ${entryItem.statement}`,
@@ -370,20 +373,16 @@ describe('ReviewScreen', () => {
     );
   });
 
-  it('distinguishes empty and filtered no-results states', async () => {
-    const user = userEvent.setup();
+  it('renders the pending queue empty state without filter recovery controls', async () => {
     renderReview(createRepository([]));
 
     expect(
       await screen.findByText('No Entry Insights need review'),
     ).toBeVisible();
-    await user.click(screen.getByRole('combobox', { name: 'Status' }));
-    await user.click(screen.getByRole('option', { name: 'Confirmed' }));
-    expect(await screen.findByText('No matching results')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(
-      await screen.findByText('No Entry Insights need review'),
-    ).toBeVisible();
+      screen.queryByRole('button', { name: 'Clear filters' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('No matching results')).not.toBeInTheDocument();
   });
 
   it('recovers from initial and mutation errors with retry actions', async () => {
@@ -511,7 +510,9 @@ describe('ReviewScreen', () => {
         name: `Accurate: ${entryItem.statement}`,
       }),
     ).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Category' })).toBeDisabled();
+    expect(
+      screen.getByRole('radio', { name: 'Entry Insights' }),
+    ).toBeDisabled();
 
     await act(async () =>
       resolveRefresh?.({
@@ -545,7 +546,9 @@ describe('ReviewScreen', () => {
         name: `Accurate: ${entryItem.statement}`,
       }),
     ).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Category' })).toBeDisabled();
+    expect(
+      screen.getByRole('radio', { name: 'Entry Insights' }),
+    ).toBeDisabled();
   });
 
   it('returns to the last valid page when refreshed data shrinks', async () => {

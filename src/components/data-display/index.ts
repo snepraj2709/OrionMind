@@ -35,4 +35,9 @@ export {
   type StatusBadgeProps,
   type StatusBadgeVariant,
 } from './status-badge';
+export {
+  TaxonomyBadge,
+  type TaxonomyBadgeProps,
+  type TaxonomyBadgeTone,
+} from './taxonomy-badge';
 export { ThemeBadge, type ThemeBadgeProps } from './theme-badge';

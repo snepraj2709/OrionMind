@@ -3,15 +3,16 @@
 import { Eye, MessageSquareText } from 'lucide-react';
 import { useState } from 'react';
 
-import { AppButton, Typography } from '@/components/design-system';
+import { AppButton } from '@/components/design-system';
 import { FormField, TextArea } from '@/components/forms';
-import { EvidenceDrawer } from '@/components/shared';
+import { EvidenceDrawer, ReviewItemCard } from '@/components/shared';
 import {
   reviewCorrectionMaxLength,
   reviewNoteMaxLength,
   type ReviewVerdict,
 } from './api-schema';
 import type { ReviewItem } from './model';
+import { ReviewCategoryBadge } from './review-category-badge';
 import type { SubmitReviewFeedbackInput } from './repository';
 
 interface FeedbackAction {
@@ -84,94 +85,99 @@ export function ReviewQueueItem({
 
   return (
     <li>
-      <article className="space-y-4 py-6">
-        <Typography className="text-measure-wide" variant="journalExcerpt">
-          {item.statement}
-        </Typography>
+      <article>
+        <ReviewItemCard
+          actions={
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-3">
+                <AppButton
+                  aria-label={`View source evidence for: ${item.statement}`}
+                  disabled={disabled}
+                  leftIcon={<Eye aria-hidden="true" />}
+                  onClick={() => setDrawerOpen(true)}
+                  variant="link"
+                >
+                  {sourceLabel}
+                </AppButton>
+                <AppButton
+                  aria-controls={contextId}
+                  aria-expanded={contextOpen}
+                  disabled={disabled}
+                  leftIcon={<MessageSquareText aria-hidden="true" />}
+                  onClick={() => setContextOpen((current) => !current)}
+                  variant="ghost"
+                >
+                  {contextOpen ? 'Hide context' : 'Add correction or note'}
+                </AppButton>
+              </div>
 
-        <div className="flex flex-wrap gap-3">
-          <AppButton
-            aria-label={`View source evidence for: ${item.statement}`}
-            disabled={disabled}
-            leftIcon={<Eye aria-hidden="true" />}
-            onClick={() => setDrawerOpen(true)}
-            variant="link"
-          >
-            {sourceLabel}
-          </AppButton>
-          <AppButton
-            aria-controls={contextId}
-            aria-expanded={contextOpen}
-            disabled={disabled}
-            leftIcon={<MessageSquareText aria-hidden="true" />}
-            onClick={() => setContextOpen((current) => !current)}
-            variant="ghost"
-          >
-            {contextOpen ? 'Hide context' : 'Add correction or note'}
-          </AppButton>
-        </div>
+              {contextOpen ? (
+                <div className="grid gap-4 sm:grid-cols-2" id={contextId}>
+                  <FormField
+                    description="Optional. Replace Orion's wording with language that feels more accurate."
+                    id={`review-correction-${item.id}`}
+                    label="Corrected statement"
+                  >
+                    <TextArea
+                      disabled={disabled}
+                      maxLength={reviewCorrectionMaxLength}
+                      onChange={(event) =>
+                        setCorrectedStatement(event.target.value)
+                      }
+                      value={correctedStatement}
+                    />
+                  </FormField>
+                  <FormField
+                    description="Optional context for this feedback."
+                    id={`review-note-${item.id}`}
+                    label="Note"
+                  >
+                    <TextArea
+                      disabled={disabled}
+                      maxLength={reviewNoteMaxLength}
+                      onChange={(event) => setNote(event.target.value)}
+                      value={note}
+                    />
+                  </FormField>
+                </div>
+              ) : null}
 
-        {contextOpen ? (
-          <div className="grid gap-4 sm:grid-cols-2" id={contextId}>
-            <FormField
-              description="Optional. Replace Orion's wording with language that feels more accurate."
-              id={`review-correction-${item.id}`}
-              label="Corrected statement"
-            >
-              <TextArea
-                disabled={disabled}
-                maxLength={reviewCorrectionMaxLength}
-                onChange={(event) => setCorrectedStatement(event.target.value)}
-                value={correctedStatement}
-              />
-            </FormField>
-            <FormField
-              description="Optional context for this feedback."
-              id={`review-note-${item.id}`}
-              label="Note"
-            >
-              <TextArea
-                disabled={disabled}
-                maxLength={reviewNoteMaxLength}
-                onChange={(event) => setNote(event.target.value)}
-                value={note}
-              />
-            </FormField>
-          </div>
-        ) : null}
-
-        <div
-          aria-label={`Feedback for: ${item.statement}`}
-          className="flex flex-wrap gap-3"
-          role="group"
-        >
-          {actions.map((action) => (
-            <AppButton
-              aria-label={`${action.label}: ${item.statement}`}
-              disabled={disabled || loadingVerdict !== undefined}
-              key={action.verdict}
-              loading={loadingVerdict === action.verdict}
-              loadingLabel={`Saving ${action.label} feedback for: ${item.statement}`}
-              onClick={() =>
-                onFeedback({
-                  itemId: item.id,
-                  scope: item.scope,
-                  feedback: {
-                    verdict: action.verdict,
-                    correctedStatement,
-                    note,
-                  },
-                })
-              }
-              shape="pill"
-              variant={action.variant}
-            >
-              {action.label}
-            </AppButton>
-          ))}
-        </div>
+              <div
+                aria-label={`Feedback for: ${item.statement}`}
+                className="flex flex-wrap gap-3"
+                role="group"
+              >
+                {actions.map((action) => (
+                  <AppButton
+                    aria-label={`${action.label}: ${item.statement}`}
+                    disabled={disabled || loadingVerdict !== undefined}
+                    key={action.verdict}
+                    loading={loadingVerdict === action.verdict}
+                    loadingLabel={`Saving ${action.label} feedback for: ${item.statement}`}
+                    onClick={() =>
+                      onFeedback({
+                        itemId: item.id,
+                        scope: item.scope,
+                        feedback: {
+                          verdict: action.verdict,
+                          correctedStatement,
+                          note,
+                        },
+                      })
+                    }
+                    shape="pill"
+                    variant={action.variant}
+                  >
+                    {action.label}
+                  </AppButton>
+                ))}
+              </div>
+            </div>
+          }
+          content={item.statement}
+          status={<ReviewCategoryBadge category={item.category} />}
+        />
       </article>
-      <hr className="border-border" />
 
       <EvidenceDrawer
         contentIsQuote={
