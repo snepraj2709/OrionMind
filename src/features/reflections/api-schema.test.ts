@@ -4,7 +4,10 @@ import {
   reflectionApiResponseSchema,
   reflectionFeedbackRequestSchema,
   reflectionFeedbackResultSchema,
+  processingInsightSchema,
   reflectionRequestSchema,
+  reflectionSectionStatusSchema,
+  unavailableInsightSchema,
 } from './api-schema';
 import { reflectionApiFixture } from './fixtures';
 
@@ -211,6 +214,35 @@ describe('reflection wire schemas', () => {
     invalidCount.data.hiddenDriver.evidenceEntryCount = 0;
     expect(reflectionApiResponseSchema.safeParse(invalidCount).success).toBe(
       false,
+    );
+  });
+
+  it('locks additive section states without changing existing aggregate parsing', () => {
+    expect(reflectionSectionStatusSchema.options).toEqual([
+      'available',
+      'processing',
+      'insufficient_evidence',
+      'unavailable',
+    ]);
+    expect(
+      processingInsightSchema.parse({
+        status: 'processing',
+        message: 'Your reflection is being recalculated.',
+      }),
+    ).toEqual({
+      status: 'processing',
+      message: 'Your reflection is being recalculated.',
+    });
+    expect(
+      unavailableInsightSchema.parse({
+        status: 'unavailable',
+        reasonCode: 'TECHNICAL_FAILURE',
+        message: 'This section is temporarily unavailable.',
+        retryable: true,
+      }),
+    ).toMatchObject({ status: 'unavailable', retryable: true });
+    expect(reflectionApiResponseSchema.parse(reflectionApiFixture)).toEqual(
+      reflectionApiFixture,
     );
   });
 });

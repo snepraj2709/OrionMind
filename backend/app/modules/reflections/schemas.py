@@ -23,11 +23,19 @@ FeedbackResponse = Literal["resonates", "partly", "rejected"]
 Confidence = Literal["preliminary", "emerging", "recurring"]
 ReasonCode = Literal[
     "NOT_ENOUGH_REFLECTIVE_CONTENT",
+    "MINIMUM_BASIS_NOT_MET",
     "DRIVER_NOT_REPEATED",
     "LOOP_NOT_REPEATED",
     "BOTH_SIDES_NOT_SUPPORTED",
     "INSUFFICIENT_EVIDENCE",
 ]
+ReflectionSectionStatus = Literal[
+    "available",
+    "processing",
+    "insufficient_evidence",
+    "unavailable",
+]
+UnavailableReasonCode = Literal["TECHNICAL_FAILURE"]
 UnitScore = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 PositiveCount = Annotated[int, Field(ge=1)]
 
@@ -85,6 +93,18 @@ class InsufficientInsight(StrictPublicModel):
     status: Literal["insufficient_evidence"] = "insufficient_evidence"
     reason_code: ReasonCode
     message: str = Field(min_length=1, max_length=500)
+
+
+class ProcessingInsight(StrictPublicModel):
+    status: Literal["processing"] = "processing"
+    message: str = Field(min_length=1, max_length=500)
+
+
+class UnavailableInsight(StrictPublicModel):
+    status: Literal["unavailable"] = "unavailable"
+    reason_code: UnavailableReasonCode
+    message: str = Field(min_length=1, max_length=500)
+    retryable: bool
 
 
 class AvailableInsight(StrictPublicModel):

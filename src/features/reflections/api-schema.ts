@@ -29,10 +29,17 @@ export const reflectionConfidenceSchema = z.enum([
 ]);
 export const reflectionReasonCodeSchema = z.enum([
   'NOT_ENOUGH_REFLECTIVE_CONTENT',
+  'MINIMUM_BASIS_NOT_MET',
   'DRIVER_NOT_REPEATED',
   'LOOP_NOT_REPEATED',
   'BOTH_SIDES_NOT_SUPPORTED',
   'INSUFFICIENT_EVIDENCE',
+]);
+export const reflectionSectionStatusSchema = z.enum([
+  'available',
+  'processing',
+  'insufficient_evidence',
+  'unavailable',
 ]);
 
 const themeKeySchema = z.enum([
@@ -94,6 +101,22 @@ export const insufficientInsightSchema = z
     status: z.literal('insufficient_evidence'),
     reasonCode: reflectionReasonCodeSchema,
     message: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export const processingInsightSchema = z
+  .object({
+    status: z.literal('processing'),
+    message: z.string().trim().min(1).max(500),
+  })
+  .strict();
+
+export const unavailableInsightSchema = z
+  .object({
+    status: z.literal('unavailable'),
+    reasonCode: z.literal('TECHNICAL_FAILURE'),
+    message: z.string().trim().min(1).max(500),
+    retryable: z.boolean(),
   })
   .strict();
 
@@ -231,6 +254,11 @@ export const reflectionFeedbackResultSchema = z
 
 export type ReflectionRange = z.infer<typeof reflectionRangeSchema>;
 export type ReflectionRequest = z.infer<typeof reflectionRequestSchema>;
+export type ReflectionSectionStatus = z.infer<
+  typeof reflectionSectionStatusSchema
+>;
+export type ProcessingInsight = z.infer<typeof processingInsightSchema>;
+export type UnavailableInsight = z.infer<typeof unavailableInsightSchema>;
 export type ReflectionFeedbackResponse = z.infer<
   typeof reflectionFeedbackResponseSchema
 >;

@@ -23,7 +23,10 @@ SignalType = Literal[
     "emotion",
     "energy_gain",
     "energy_loss",
+    "self_knowledge",
     "desire",
+    "explicit_preference",
+    "need",
     "avoidance",
     "belief",
     "self_statement",
@@ -32,6 +35,7 @@ SignalType = Literal[
     "conflict",
     "protective_strategy",
     "realization",
+    "causal_relationship",
 ]
 NeedTag = Literal[
     "autonomy",
