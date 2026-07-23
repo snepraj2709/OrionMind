@@ -276,6 +276,7 @@ def compose_application_services(
         recalculation_repository=reflections_repository,
         enabled=settings.REFLECTION_API_ENABLED,
         allowed_user_ids=settings.reflection_rollout_user_ids(),
+        telemetry=reflection_telemetry,
     )
     reflections_service = ReflectionsService(
         repository=reflections_repository,

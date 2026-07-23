@@ -34,6 +34,7 @@ from app.modules.reflection_engine.schemas import (
     InnerTensionProposal,
     InnerTensionStructure,
     LoopStepStructure,
+    PatternType,
     PreviousCandidate,
     RecurringLoopProposal,
     RecurringLoopStructure,
@@ -49,6 +50,7 @@ from app.modules.reflection_engine.synthesis import (
     _select_synthesis_support_ids,
     _snapshot_candidate_status,
     critic_required,
+    synthesis_section_status,
 )
 from app.modules.reflection_engine.types import ReflectionProvider
 from app.shared.database.unit_of_work import UnitOfWorkFactory
@@ -321,7 +323,7 @@ class ReflectionEngineService(CandidateConstructionMixin):
         candidate_evidence = [link.model_dump(mode="json") for link in batch.evidence]
         with uow.for_worker() as work:
             if claim.execution_mode == "shadow":
-                return self._repository.complete_shadow(
+                snapshot_id = self._repository.complete_shadow(
                     work.session,
                     claim=claim,
                     worker_id=worker_id,
@@ -329,17 +331,34 @@ class ReflectionEngineService(CandidateConstructionMixin):
                     selected_count=len(selected),
                     provider_called=bool(publishable),
                 )
-            return self._repository.apply_snapshot(
-                work.session,
-                claim=claim,
-                worker_id=worker_id,
-                snapshot=snapshot,
-                candidates=candidate_rows,
-                candidate_evidence=candidate_evidence,
-                insights=insights,
-                snapshot_evidence=snapshot_evidence,
-                pattern_review_items=pattern_review_items,
+            else:
+                snapshot_id = self._repository.apply_snapshot(
+                    work.session,
+                    claim=claim,
+                    worker_id=worker_id,
+                    snapshot=snapshot,
+                    candidates=candidate_rows,
+                    candidate_evidence=candidate_evidence,
+                    insights=insights,
+                    snapshot_evidence=snapshot_evidence,
+                    pattern_review_items=pattern_review_items,
+                )
+        selected_types = {candidate.pattern_type for candidate in selected}
+        for pattern_type in (
+            "hidden_driver",
+            "recurring_loop",
+            "inner_tension",
+        ):
+            section_status = synthesis_section_status(
+                pattern_type=pattern_type,
+                selected_pattern_types=selected_types,
             )
+            self._telemetry.record_synthesis_section(
+                pattern_type=pattern_type,
+                execution_mode=claim.execution_mode,
+                outcome="available" if section_status == "available" else "abstained",
+            )
+        return snapshot_id
 
     def _record_discard(
         self,
@@ -611,18 +630,25 @@ class ReflectionEngineService(CandidateConstructionMixin):
             "prompt_version": REFLECTION_SYNTHESIS_PROMPT_VERSION,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
-        by_type: dict[str, list[ConstructedCandidate]] = defaultdict(list)
+        by_type: dict[PatternType, list[ConstructedCandidate]] = defaultdict(
+            list
+        )
         for candidate in candidates:
             by_type[candidate.pattern_type].append(candidate)
         insights: list[dict[str, object]] = []
         evidence: list[dict[str, object]] = []
-        for pattern_type, reason_code in (
+        section_reasons: tuple[tuple[PatternType, str], ...] = (
             ("hidden_driver", "DRIVER_NOT_REPEATED"),
             ("recurring_loop", "LOOP_NOT_REPEATED"),
             ("inner_tension", "BOTH_SIDES_NOT_SUPPORTED"),
-        ):
+        )
+        for pattern_type, reason_code in section_reasons:
             selected = by_type.get(pattern_type, [])
-            if not selected:
+            section_status = synthesis_section_status(
+                pattern_type=pattern_type,
+                selected_pattern_types=by_type,
+            )
+            if section_status == "insufficient_evidence":
                 insight_id = uuid5(snapshot_id, f"{pattern_type}:0")
                 insights.append(
                     {

@@ -497,20 +497,20 @@ Each section can abstain independently.
 
 ## 7. Staged implementation registry
 
-| Stage | Name                                              | Priority | Dependencies | Expected commit message                                   | Status        | Complexity | Blocking?                                   |
-| ----: | ------------------------------------------------- | -------- | ------------ | --------------------------------------------------------- | ------------- | ---------- | ------------------------------------------- |
-|     1 | Lock contracts and shared types                   | P0       | None         | `feat(review): lock review and reflection contracts`      | `completed`   | Medium     | Blocking                                    |
-|     2 | Add database migrations and repositories          | P0       | 1            | `feat(review): add review item persistence`               | `completed`   | High       | Blocking                                    |
-|     3 | Add quality gate and entry insight extraction     | P0       | 2            | `feat(review): extract reviewable entry insights`         | `completed`   | High       | Blocking                                    |
-|     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `completed`   | High       | Blocking                                    |
-|     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `completed`   | High       | Blocking                                    |
-|     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `completed`   | High       | Blocking                                    |
-|     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `completed`   | High       | Blocking                                    |
-|     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `completed`   | High       | Blocking                                    |
-|     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `completed`   | Medium     | Blocking                                    |
-|    10 | Full P0 integration verification                  | P0       | 1–9          | `test(review): verify p0 review reflection flow`          | `completed`   | High       | Blocking                                    |
-|    11 | Safety and privacy hardening                      | Post-P0  | 10           | `fix(reflections): harden review privacy boundaries`      | `completed`   | Medium     | Non-blocking for P0; blocked until Stage 10 |
-|    12 | Analytics and evaluation foundation               | Post-P0  | 10, 11       | `chore(reflections): add evaluation telemetry foundation` | `not_started` | Medium     | Non-blocking for P0; blocked until Stage 10 |
+| Stage | Name                                              | Priority | Dependencies | Expected commit message                                   | Status      | Complexity | Blocking?                                   |
+| ----: | ------------------------------------------------- | -------- | ------------ | --------------------------------------------------------- | ----------- | ---------- | ------------------------------------------- |
+|     1 | Lock contracts and shared types                   | P0       | None         | `feat(review): lock review and reflection contracts`      | `completed` | Medium     | Blocking                                    |
+|     2 | Add database migrations and repositories          | P0       | 1            | `feat(review): add review item persistence`               | `completed` | High       | Blocking                                    |
+|     3 | Add quality gate and entry insight extraction     | P0       | 2            | `feat(review): extract reviewable entry insights`         | `completed` | High       | Blocking                                    |
+|     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `completed` | High       | Blocking                                    |
+|     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `completed` | High       | Blocking                                    |
+|     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `completed` | High       | Blocking                                    |
+|     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `completed` | High       | Blocking                                    |
+|     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `completed` | High       | Blocking                                    |
+|     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `completed` | Medium     | Blocking                                    |
+|    10 | Full P0 integration verification                  | P0       | 1–9          | `test(review): verify p0 review reflection flow`          | `completed` | High       | Blocking                                    |
+|    11 | Safety and privacy hardening                      | Post-P0  | 10           | `fix(reflections): harden review privacy boundaries`      | `completed` | Medium     | Non-blocking for P0; blocked until Stage 10 |
+|    12 | Analytics and evaluation foundation               | Post-P0  | 10, 11       | `chore(reflections): add evaluation telemetry foundation` | `completed` | Medium     | Non-blocking for P0; blocked until Stage 10 |
 
 Stages 1–10 are P0. Stages 11–12 must not begin until Stage 10 proves the P0 flow end to end.
 
@@ -1740,7 +1740,93 @@ Expected: zero failures/warnings allowed by repository policy; no paid live call
 
 ### Stage 12 — Analytics and evaluation foundation
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Updated `backend/app/bootstrap.py`,
+  `backend/app/modules/jobs/service.py`,
+  `backend/app/modules/processing/{materialization,repository}.py`,
+  `backend/app/modules/reflection_engine/{evaluation,evidence,repository,schemas,service,synthesis}.py`,
+  `backend/app/modules/review/service.py`,
+  `backend/app/shared/observability/reflection.py`,
+  `backend/scripts/run_reflection_evaluation.py`,
+  `backend/tests/test_p009c_reflection_observability.py`,
+  `backend/tests/test_review_api.py`,
+  `backend/tests/test_review_reflection_flow.py`,
+  `backend/tests/test_stage7_reflection_synthesis.py`, `backend/README.md`,
+  `backend/docs/REFLECTION_OBSERVABILITY.md`, and this handoff. Added the
+  metadata-only
+  `backend/tests/fixtures/review_reflection_evaluation_v1.json` fixture and
+  `backend/tests/test_review_reflection_evaluation.py`.
+- **Migrations added:** None. No database, public API, frontend, dependency, or
+  infrastructure change was required.
+- **Operational signals:** Added closed-cardinality counters for Review feedback
+  by scope, `zero|half|full` weight bucket, and changed/replayed outcome;
+  synthesis sections by pattern, shadow/publish execution mode, and
+  available/abstained outcome; and job retries by type and
+  attempted/scheduled/terminal outcome. Existing oldest-pending queue age and
+  job-duration instruments remain the bounded queue-wait and synthesis-duration
+  signals. All labels are closed metadata and exclude content, UUIDs, and
+  stable user identity.
+- **Evaluation foundation:** Added a strict synthetic report schema and 24
+  offline metadata-only cases covering accepted/excluded/uncertain Review
+  materialization, exact evidence plus every individual local identity, entry,
+  eligibility, basis, and offset rejection boundary, available/abstaining
+  outcomes for every section type, and confidence sensitivity at weights `1`,
+  `.5`, and `0`.
+  Observed outcomes come from production-owned Review materialization,
+  evidence-validation, section-status, and weighted-confidence rules rather
+  than values copied into the fixture. The existing evaluation runner accepts
+  this matrix only with `--review-reflection` and emits aggregate dimension
+  counts. Documentation explicitly treats it as a deterministic regression
+  contract, not a production quality threshold.
+- **Commands and results:**
+  - Expanded focused observability/evaluation/Review/synthesis/entry-analysis
+    command: `96 passed, 6 skipped`; skips are the expected database-gated
+    entry-analysis cases.
+  - Complete Section 9 public API/worker/disposable-database flow with
+    in-memory metric inspection: `1 passed`.
+  - Full non-live backend suite: `447 passed, 50 skipped`; skips are the
+    existing environment-gated suites.
+  - Backend compileall and full Ruff passed. The expanded explicit mypy gate
+    passed with no issues in `45` source files.
+  - The synthetic evaluation CLI returned `passed: true` for all `24` fixture
+    cases.
+  - Dedicated Stage 10 browser/API/worker/database regression against the
+    exact local disposable `orion_stage2_test` database: `1 passed` in `1.3m`
+    after the production-bound evaluation and exact-counter refinements.
+  - Targeted Prettier and staged/unstaged whitespace checks passed. Pytest
+    reported the existing `python_multipart` pending-deprecation warning; no
+    new warning was introduced.
+- **Manual verification:** The complete Section 9 synthetic fixture was
+  processed through the public API, real durable worker, and disposable
+  database while the shared in-memory observer captured the new metrics. Its
+  attributes contained only the expected feedback buckets, replay outcomes,
+  publish-mode section outcomes, and no content or identifier labels. Counter
+  values were checked exactly, including three section outcomes per completed
+  synthesis job. The synthetic CLI output was also inspected and contains only
+  aggregate case and pass counts. Focused in-memory OTLP tests enumerate every
+  allowed label combination, verify exact attribute sets, counter/timing
+  values, reject unknown weights/outcomes, and prove the private sentinel
+  cannot enter metric attributes. The evidence matrix compares exact closed
+  production reason-code sets, so overlapping invalidity cannot hide a removed
+  validator check. Strict-schema probes reject numeric strings, integer
+  booleans, tuples in place of arrays, string weights, and non-integer version
+  values.
+- **Deviations from the proposed plan:** No new event logger or queue-latency
+  store was added. The existing oldest-pending-age gauge already supplies a
+  privacy-safe bounded queue-wait signal, and the existing job-duration
+  histogram already isolates synthesis duration by job type. Stage 12 adds
+  only the missing Review weight, explicit abstention, and retry dimensions.
+- **Remaining risks:** The synthetic matrix executes deterministic production
+  rules but does not measure provider quality or production population
+  behavior. Representative model-quality thresholds require a separately
+  authorized, consented evaluation design. OTLP export was validated with the
+  in-memory SDK; no external collector, live provider, shared database, or
+  production environment was contacted. The disposable local database
+  container used for final verification was removed. The user reviewed the
+  completed Stage 12 work and explicitly approved its commit.
 
 **Objective:** Add minimal privacy-safe operational/evaluation signals needed to judge MVP health, without broad analytics infrastructure.
 

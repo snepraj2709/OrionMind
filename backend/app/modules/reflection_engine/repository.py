@@ -11,7 +11,12 @@ from sqlalchemy.orm import Session
 
 from app.modules.jobs.types import JobClaim
 from app.modules.processing.schemas import Eligibility, LoopRole, NeedTag, SignalType, ThemeKey
-from app.modules.reflection_engine.schemas import CandidateStatus, PatternType, UnitFloat
+from app.modules.reflection_engine.schemas import (
+    CandidateStatus,
+    PatternType,
+    UnitFloat,
+    review_weighted_confidence,
+)
 
 
 class _StrictStoredModel(BaseModel):
@@ -48,7 +53,10 @@ class PersistedCandidateSignal(_StrictStoredModel):
 
     @model_validator(mode="after")
     def validate_effective_confidence(self) -> PersistedCandidateSignal:
-        expected = self.model_confidence * self.evidence_weight
+        expected = review_weighted_confidence(
+            model_confidence=self.model_confidence,
+            evidence_weight=self.evidence_weight,
+        )
         if abs(self.confidence - expected) > 0.00001:
             raise ValueError("candidate signal confidence is not review-weighted")
         return self

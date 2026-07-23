@@ -9,6 +9,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from app.modules.jobs.types import JobClaim
+from app.modules.processing.materialization import expected_review_item_count
 from app.modules.processing.quality import QualityHistory
 from app.modules.processing.schemas import EntryExtraction
 
@@ -154,13 +155,19 @@ class ProcessingRepository:
             ).one()
             analysis_accepted = bool(materialization[0])
             review_item_count = int(materialization[1])
-            expected_review_items = sum(
-                1 for item in signals if "review_item" in item
+            expected_review_items = expected_review_item_count(
+                analysis_accepted=analysis_accepted,
+                proposed_review_item_count=sum(
+                    1 for item in signals if "review_item" in item
+                ),
             )
-            if analysis_accepted and review_item_count != expected_review_items:
-                raise RuntimeError("review item persistence is incomplete")
-            if not analysis_accepted and review_item_count != 0:
-                raise RuntimeError("ineligible analysis has review items")
+            if review_item_count != expected_review_items:
+                message = (
+                    "review item persistence is incomplete"
+                    if analysis_accepted
+                    else "ineligible analysis has review items"
+                )
+                raise RuntimeError(message)
             if analysis_accepted and signals:
                 models = {str(item["embedding_model"]) for item in signals}
                 if len(models) != 1:

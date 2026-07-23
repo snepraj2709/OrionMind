@@ -23,6 +23,7 @@ from app.modules.review.types import PatternVerdict
 from app.modules.review.views import review_items_response
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 from app.shared.exceptions.domain import DomainError
+from app.shared.observability.reflection import ReflectionTelemetry
 
 
 NO_STORE_HEADERS = {"Cache-Control": "private, no-store"}
@@ -37,11 +38,13 @@ class ReviewService:
         recalculation_repository: ReflectionsRepository,
         enabled: bool,
         allowed_user_ids: Collection[UUID],
+        telemetry: ReflectionTelemetry | None = None,
     ) -> None:
         self._repository = repository
         self._recalculation_repository = recalculation_repository
         self._enabled = enabled
         self._allowed_user_ids = frozenset(allowed_user_ids)
+        self._telemetry = telemetry or ReflectionTelemetry()
 
     def list_items(
         self,
@@ -97,7 +100,7 @@ class ReviewService:
                 if existing is None:
                     raise ReviewItemNotFoundError
                 try:
-                    payload.decision_for_scope(existing.scope)
+                    decision = payload.decision_for_scope(existing.scope)
                 except ValueError as exc:
                     raise DomainError(
                         422,
@@ -142,6 +145,11 @@ class ReviewService:
                 headers=NO_STORE_HEADERS,
             ) from exc
 
+        self._telemetry.record_review_feedback(
+            scope=existing.scope,
+            evidence_weight=decision.evidence_weight,
+            outcome="changed" if saved.changed else "replayed",
+        )
         if saved.changed:
             self._request_recalculation(user_id=user_id, uow=uow)
         return item

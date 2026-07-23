@@ -14,6 +14,8 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from pydantic import SecretStr
 from psycopg import sql
 from sqlalchemy import text
@@ -26,6 +28,7 @@ from app.modules.processing.schemas import ModelEntryAnalysis
 from app.modules.reflection_engine.repository import StaleSynthesisClaimError
 from app.shared.config import Settings
 from app.shared.database.session import build_database_sessions
+from app.shared.observability.reflection import ReflectionTelemetry
 from app.shared.security.encryption import AesGcmContentCipher
 from scripts.migrate import apply_migrations, load_migrations
 from scripts.run_sample_reflection_offline import OfflineReflectionProvider
@@ -463,9 +466,31 @@ def _all_evidence(body: dict[str, object]) -> list[dict[str, object]]:
     return evidence
 
 
+def _metric_points(
+    reader: InMemoryMetricReader,
+) -> dict[str, list[tuple[dict[str, object], int | float]]]:
+    result: dict[
+        str,
+        list[tuple[dict[str, object], int | float]],
+    ] = {}
+    data = reader.get_metrics_data()
+    for resource in data.resource_metrics:
+        for scope in resource.scope_metrics:
+            for metric in scope.metrics:
+                result[metric.name] = [
+                    (
+                        dict(point.attributes),
+                        point.value if hasattr(point, "value") else point.sum,
+                    )
+                    for point in metric.data.data_points
+                ]
+    return result
+
+
 def test_public_review_to_cached_reflection_flow(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
+    request: pytest.FixtureRequest,
 ) -> None:
     value = _database_url()
     _reset_and_migrate(value)
@@ -485,6 +510,18 @@ def test_public_review_to_cached_reflection_flow(
         content_cipher=service_cipher,
         pii_redactor=PiiRedactor(analyzer=NoopAnalyzer(), cipher=service_cipher),
     )
+    metric_reader = InMemoryMetricReader()
+    meter_provider = MeterProvider(metric_readers=[metric_reader])
+    request.addfinalizer(meter_provider.shutdown)
+    telemetry = ReflectionTelemetry(meter_provider=meter_provider)
+    for service_name in (
+        "processing_service",
+        "reflection_engine_service",
+        "job_service",
+        "review_service",
+        "reflections_service",
+    ):
+        getattr(app.state, service_name)._telemetry = telemetry
     synthesis_errors: list[Exception] = []
     run_synthesis_job = app.state.reflection_engine_service.run_synthesis_job
 
@@ -905,3 +942,66 @@ def test_public_review_to_cached_reflection_flow(
         "other-user",
     )
     assert not any(value in caplog.text for value in private_values)
+    metric_points = _metric_points(metric_reader)
+    metric_attributes = {
+        name: [attributes for attributes, _value in points]
+        for name, points in metric_points.items()
+    }
+    assert {
+        "reflection_review_feedback_total",
+        "reflection_synthesis_sections_total",
+    } <= set(metric_attributes)
+    assert all(
+        value == 1
+        for _attributes, value in metric_points[
+            "reflection_review_feedback_total"
+        ]
+    )
+    assert {
+        tuple(sorted(item.items()))
+        for item in metric_attributes["reflection_review_feedback_total"]
+    } == {
+        (
+            ("outcome", outcome),
+            ("scope", scope),
+            ("weight_bucket", weight_bucket),
+        )
+        for scope, weight_bucket in (
+            ("entry_insight", "zero"),
+            ("entry_insight", "half"),
+            ("pattern", "half"),
+        )
+        for outcome in ("changed", "replayed")
+    }
+    section_attributes = metric_attributes[
+        "reflection_synthesis_sections_total"
+    ]
+    assert section_attributes
+    assert all(
+        set(item) == {"pattern_type", "execution_mode", "outcome"}
+        and item["execution_mode"] == "publish"
+        for item in section_attributes
+    )
+    completed_synthesis_jobs = sum(
+        value
+        for attributes, value in metric_points["reflection_jobs_total"]
+        if attributes == {
+            "type": "reflection_synthesis",
+            "status": "completed",
+            "error_code": "NONE",
+        }
+    )
+    assert sum(
+        value
+        for _attributes, value in metric_points[
+            "reflection_synthesis_sections_total"
+        ]
+    ) == completed_synthesis_jobs * 3
+    serialized_metrics = json.dumps(metric_attributes, sort_keys=True)
+    assert not any(value in serialized_metrics for value in private_values)
+    assert not any(
+        key.endswith("_id")
+        for attributes in metric_attributes.values()
+        for item in attributes
+        for key in item
+    )

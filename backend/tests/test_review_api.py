@@ -221,6 +221,14 @@ class RecalculationRepository:
         )
 
 
+class Telemetry:
+    def __init__(self) -> None:
+        self.feedback: list[dict[str, object]] = []
+
+    def record_review_feedback(self, **values: object) -> None:
+        self.feedback.append(values)
+
+
 def settings(
     *,
     rate_limiting: bool = False,
@@ -250,6 +258,7 @@ def build_app(
     rate_limiting: bool = False,
     enabled: bool = True,
     allowed_user_ids: set[UUID] | None = None,
+    telemetry: Telemetry | None = None,
 ):
     repository = Repository(items)
     recalculation = RecalculationRepository()
@@ -271,6 +280,7 @@ def build_app(
         allowed_user_ids=(
             {USER_ID} if allowed_user_ids is None else allowed_user_ids
         ),
+        telemetry=telemetry,  # type: ignore[arg-type]
     )
     return app, repository, recalculation
 
@@ -417,6 +427,10 @@ def test_bootstrap_uses_the_public_reflection_api_gate_for_review() -> None:
     assert_error(response, 503, "SERVICE_UNAVAILABLE")
     assert app.state.review_service._enabled is False
     assert app.state.reflections_service._enabled is False
+    assert (
+        app.state.review_service._telemetry
+        is app.state.reflection_telemetry
+    )
 
 
 @pytest.mark.parametrize(
@@ -535,7 +549,8 @@ def test_wrong_scope_verdict_is_rejected_without_a_write(
 
 
 def test_identical_normalized_replay_does_not_bump_or_request_another_job() -> None:
-    app, repository, recalculation = build_app()
+    telemetry = Telemetry()
+    app, repository, recalculation = build_app(telemetry=telemetry)
     path = f"/api/v1/review/items/{ENTRY_ITEM_ID}/feedback"
     with TestClient(app) as client:
         first = client.post(
@@ -562,6 +577,23 @@ def test_identical_normalized_replay_does_not_bump_or_request_another_job() -> N
     assert recalculation.calls == [USER_ID, USER_ID]
     assert replay.json() == first.json()
     assert changed.json()["feedback"]["evidenceWeight"] == 0.0
+    assert telemetry.feedback == [
+        {
+            "scope": "entry_insight",
+            "evidence_weight": 0.5,
+            "outcome": "changed",
+        },
+        {
+            "scope": "entry_insight",
+            "evidence_weight": 0.5,
+            "outcome": "replayed",
+        },
+        {
+            "scope": "entry_insight",
+            "evidence_weight": 0.0,
+            "outcome": "changed",
+        },
+    ]
 
 
 def test_missing_other_owner_and_stale_items_are_non_enumerating() -> None:

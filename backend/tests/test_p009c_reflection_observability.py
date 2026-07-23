@@ -55,6 +55,9 @@ REQUIRED_METRICS = {
     "reflection_validator_discards_total",
     "reflection_api_responses_total",
     "reflection_feedback_total",
+    "reflection_review_feedback_total",
+    "reflection_synthesis_sections_total",
+    "reflection_job_retries_total",
 }
 
 
@@ -66,6 +69,16 @@ def _metric_names(reader: InMemoryMetricReader) -> set[str]:
         for scope in resource.scope_metrics
         for metric in scope.metrics
     }
+
+
+def _metric_points(reader: InMemoryMetricReader, name: str) -> tuple[object, ...]:
+    data = reader.get_metrics_data()
+    for resource in data.resource_metrics:
+        for scope in resource.scope_metrics:
+            for metric in scope.metrics:
+                if metric.name == name:
+                    return tuple(metric.data.data_points)
+    raise AssertionError(f"metric {name} was not exported")
 
 
 def test_all_required_metrics_export_with_controlled_labels_and_no_public_route() -> None:
@@ -95,6 +108,20 @@ def test_all_required_metrics_export_with_controlled_labels_and_no_public_route(
         reflection_state="available", processing_state="idle"
     )
     telemetry.record_feedback(response="resonates")
+    telemetry.record_review_feedback(
+        scope="entry_insight",
+        evidence_weight=0.5,
+        outcome="changed",
+    )
+    telemetry.record_synthesis_section(
+        pattern_type="hidden_driver",
+        execution_mode="publish",
+        outcome="available",
+    )
+    telemetry.record_job_retry(
+        job_type="reflection_synthesis",
+        outcome="scheduled",
+    )
     telemetry.record_scheduler(checked=3, eligible=2, enqueued=1)
 
     names = _metric_names(reader)
@@ -108,6 +135,134 @@ def test_all_required_metrics_export_with_controlled_labels_and_no_public_route(
         telemetry.record_api_response(
             reflection_state="journal text", processing_state="idle"
         )
+    provider.shutdown()
+
+
+def test_stage12_metrics_have_exact_bounded_labels_and_accurate_measurements() -> None:
+    reader = InMemoryMetricReader()
+    provider = MeterProvider(metric_readers=[reader])
+    telemetry = ReflectionTelemetry(meter_provider=provider)
+
+    for scope in ("entry_insight", "pattern"):
+        for weight in (0.0, 0.5, 1.0):
+            for outcome in ("changed", "replayed"):
+                telemetry.record_review_feedback(
+                    scope=scope,
+                    evidence_weight=weight,
+                    outcome=outcome,
+                )
+    for pattern_type in ("hidden_driver", "recurring_loop", "inner_tension"):
+        for execution_mode in ("shadow", "publish"):
+            for outcome in ("available", "abstained"):
+                telemetry.record_synthesis_section(
+                    pattern_type=pattern_type,
+                    execution_mode=execution_mode,
+                    outcome=outcome,
+                )
+    for job_type in ("entry_processing", "reflection_synthesis"):
+        for outcome in ("attempted", "scheduled", "terminal"):
+            telemetry.record_job_retry(job_type=job_type, outcome=outcome)
+    telemetry.record_job(
+        job_type="reflection_synthesis",
+        status="completed",
+        error_code="NONE",
+        duration_seconds=1.25,
+    )
+    telemetry.observe_queue(
+        (
+            QueueObservation("entry_processing", 2, 11),
+            QueueObservation("reflection_synthesis", 3, 17),
+        )
+    )
+
+    feedback_points = _metric_points(reader, "reflection_review_feedback_total")
+    assert len(feedback_points) == 12
+    assert all(
+        point.value == 1  # type: ignore[attr-defined]
+        for point in feedback_points
+    )
+    assert {
+        tuple(sorted(dict(point.attributes).items()))  # type: ignore[attr-defined]
+        for point in feedback_points
+    } == {
+        tuple(
+            sorted(
+                {
+                    "scope": scope,
+                    "weight_bucket": bucket,
+                    "outcome": outcome,
+                }.items()
+            )
+        )
+        for scope in ("entry_insight", "pattern")
+        for bucket in ("zero", "half", "full")
+        for outcome in ("changed", "replayed")
+    }
+    section_points = _metric_points(
+        reader,
+        "reflection_synthesis_sections_total",
+    )
+    retry_points = _metric_points(reader, "reflection_job_retries_total")
+    assert len(section_points) == 12
+    assert len(retry_points) == 6
+    assert all(
+        point.value == 1  # type: ignore[attr-defined]
+        for point in (*section_points, *retry_points)
+    )
+    assert {
+        frozenset(dict(point.attributes))  # type: ignore[attr-defined]
+        for point in section_points
+    } == {frozenset({"pattern_type", "execution_mode", "outcome"})}
+    assert {
+        frozenset(dict(point.attributes))  # type: ignore[attr-defined]
+        for point in retry_points
+    } == {frozenset({"type", "outcome"})}
+
+    duration = _metric_points(reader, "reflection_job_duration_seconds")
+    synthesis_duration = next(
+        point
+        for point in duration
+        if dict(point.attributes)["type"] == "reflection_synthesis"  # type: ignore[attr-defined]
+    )
+    assert synthesis_duration.count == 1  # type: ignore[attr-defined]
+    assert synthesis_duration.sum == 1.25  # type: ignore[attr-defined]
+    queue_ages = {
+        dict(point.attributes)["type"]: point.value  # type: ignore[attr-defined]
+        for point in _metric_points(
+            reader,
+            "reflection_queue_oldest_pending_age_seconds",
+        )
+    }
+    assert queue_ages == {
+        "entry_processing": 11,
+        "reflection_synthesis": 17,
+    }
+
+    for call in (
+        lambda: telemetry.record_review_feedback(
+            scope="entry_insight",
+            evidence_weight=0.25,
+            outcome="changed",
+        ),
+        lambda: telemetry.record_synthesis_section(
+            pattern_type="hidden_driver",
+            execution_mode="publish",
+            outcome=SENTINEL,
+        ),
+        lambda: telemetry.record_job_retry(
+            job_type="reflection_synthesis",
+            outcome=SENTINEL,
+        ),
+    ):
+        with pytest.raises(ValueError):
+            call()
+    assert SENTINEL not in json.dumps(
+        [
+            dict(point.attributes)  # type: ignore[attr-defined]
+            for point in (*feedback_points, *section_points, *retry_points)
+        ],
+        sort_keys=True,
+    )
     provider.shutdown()
 
 

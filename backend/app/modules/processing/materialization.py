@@ -34,6 +34,16 @@ PROVIDER_MAX_SCALARS = 50_000
 PROVIDER_MAX_UTF8_BYTES = 200_000
 
 
+def expected_review_item_count(
+    *,
+    analysis_accepted: bool,
+    proposed_review_item_count: int,
+) -> int:
+    if proposed_review_item_count < 0:
+        raise ValueError("proposed Review item count is invalid")
+    return proposed_review_item_count if analysis_accepted else 0
+
+
 def _provider_content(content: str) -> str:
     limited = content[:PROVIDER_MAX_SCALARS]
     encoded = limited.encode("utf-8")

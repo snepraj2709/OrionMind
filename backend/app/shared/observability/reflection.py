@@ -74,6 +74,16 @@ PATTERN_TYPES = frozenset({"hidden_driver", "recurring_loop", "inner_tension"})
 CANDIDATE_OUTCOMES = frozenset(
     {"constructed", "publishable", "selected", "discarded"}
 )
+REVIEW_SCOPES = frozenset({"entry_insight", "pattern"})
+REVIEW_FEEDBACK_OUTCOMES = frozenset({"changed", "replayed"})
+REVIEW_WEIGHT_BUCKETS = {
+    0.0: "zero",
+    0.5: "half",
+    1.0: "full",
+}
+SYNTHESIS_SECTION_OUTCOMES = frozenset({"available", "abstained"})
+SYNTHESIS_EXECUTION_MODES = frozenset({"shadow", "publish"})
+JOB_RETRY_OUTCOMES = frozenset({"attempted", "scheduled", "terminal"})
 REFLECTION_STATES = frozenset(
     {
         "available",
@@ -149,6 +159,9 @@ class ReflectionTelemetry:
             self._validator_discards = None
             self._api_responses = None
             self._feedback = None
+            self._review_feedback = None
+            self._synthesis_sections = None
+            self._job_retries = None
             self._scheduler = None
             return
         meter = meter_provider.get_meter("orion.reflection")
@@ -181,6 +194,13 @@ class ReflectionTelemetry:
         )
         self._api_responses = meter.create_counter("reflection_api_responses_total")
         self._feedback = meter.create_counter("reflection_feedback_total")
+        self._review_feedback = meter.create_counter(
+            "reflection_review_feedback_total"
+        )
+        self._synthesis_sections = meter.create_counter(
+            "reflection_synthesis_sections_total"
+        )
+        self._job_retries = meter.create_counter("reflection_job_retries_total")
         self._scheduler = meter.create_counter("reflection_scheduler_users_total")
 
     def record_job(
@@ -252,6 +272,59 @@ class ReflectionTelemetry:
         _require(response, FEEDBACK_RESPONSES, "feedback response")
         if self._feedback is not None:
             self._feedback.add(1, {"response": response})
+
+    def record_review_feedback(
+        self,
+        *,
+        scope: str,
+        evidence_weight: float,
+        outcome: str,
+    ) -> None:
+        _require(scope, REVIEW_SCOPES, "review scope")
+        _require(outcome, REVIEW_FEEDBACK_OUTCOMES, "review feedback outcome")
+        if (
+            isinstance(evidence_weight, bool)
+            or evidence_weight not in REVIEW_WEIGHT_BUCKETS
+        ):
+            raise ValueError("review evidence weight is invalid")
+        if self._review_feedback is not None:
+            self._review_feedback.add(
+                1,
+                {
+                    "scope": scope,
+                    "weight_bucket": REVIEW_WEIGHT_BUCKETS[evidence_weight],
+                    "outcome": outcome,
+                },
+            )
+
+    def record_synthesis_section(
+        self,
+        *,
+        pattern_type: str,
+        execution_mode: str,
+        outcome: str,
+    ) -> None:
+        _require(pattern_type, PATTERN_TYPES, "pattern type")
+        _require(execution_mode, SYNTHESIS_EXECUTION_MODES, "execution mode")
+        _require(outcome, SYNTHESIS_SECTION_OUTCOMES, "synthesis section outcome")
+        if self._synthesis_sections is not None:
+            self._synthesis_sections.add(
+                1,
+                {
+                    "pattern_type": pattern_type,
+                    "execution_mode": execution_mode,
+                    "outcome": outcome,
+                },
+            )
+
+    def record_job_retry(self, *, job_type: str, outcome: str) -> None:
+        _require(job_type, JOB_TYPES, "job type")
+        _require(outcome, JOB_RETRY_OUTCOMES, "job retry outcome")
+        if self._job_retries is not None:
+            self._job_retries.add(
+                1,
+                {"type": job_type, "outcome": outcome},
+            )
 
     def record_scheduler(self, *, checked: int, eligible: int, enqueued: int) -> None:
         if any(value < 0 for value in (checked, eligible, enqueued)):

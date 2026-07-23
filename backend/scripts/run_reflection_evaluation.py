@@ -14,7 +14,9 @@ if str(BACKEND_ROOT) not in sys.path:
 from app.modules.reflection_engine.evaluation import (
     EvaluationDatasetRejected,
     FrozenEvaluationDataset,
+    ReviewReflectionEvaluationDataset,
     evaluate_frozen_dataset,
+    evaluate_review_reflection_dataset,
 )
 
 
@@ -24,23 +26,45 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         allow_abbrev=False,
     )
     parser.add_argument("dataset", type=Path)
+    parser.add_argument(
+        "--review-reflection",
+        action="store_true",
+        help="Evaluate the synthetic Review-to-Reflection metadata matrix.",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     try:
-        dataset = FrozenEvaluationDataset.model_validate_json(
-            args.dataset.read_text(encoding="utf-8")
-        )
+        raw = args.dataset.read_text(encoding="utf-8")
+        if args.review_reflection:
+            review_dataset = ReviewReflectionEvaluationDataset.model_validate_json(
+                raw
+            )
+        else:
+            dataset = FrozenEvaluationDataset.model_validate_json(raw)
     except (OSError, ValidationError):
-        raise SystemExit("The frozen evaluation dataset is invalid.") from None
+        dataset_name = (
+            "Review-to-Reflection"
+            if args.review_reflection
+            else "frozen"
+        )
+        raise SystemExit(
+            f"The {dataset_name} evaluation dataset is invalid."
+        ) from None
+    if args.review_reflection:
+        review_result = evaluate_review_reflection_dataset(review_dataset)
+        print(review_result.model_dump_json())
+        if not review_result.passed:
+            raise SystemExit(1)
+        return
     try:
-        result = evaluate_frozen_dataset(dataset)
+        frozen_result = evaluate_frozen_dataset(dataset)
     except EvaluationDatasetRejected as exc:
         raise SystemExit(str(exc)) from None
-    print(result.model_dump_json())
-    if not result.passed:
+    print(frozen_result.model_dump_json())
+    if not frozen_result.passed:
         raise SystemExit(1)
 
 

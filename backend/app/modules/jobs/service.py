@@ -96,6 +96,21 @@ class JobService:
             error_code=error_code,
             duration_seconds=duration_seconds,
         )
+        if claim.attempts > 1:
+            self._telemetry.record_job_retry(
+                job_type=claim.job_type,
+                outcome="attempted",
+            )
+        if result.outcome == "pending":
+            self._telemetry.record_job_retry(
+                job_type=claim.job_type,
+                outcome="scheduled",
+            )
+        elif result.outcome == "failed":
+            self._telemetry.record_job_retry(
+                job_type=claim.job_type,
+                outcome="terminal",
+            )
         safe_log(
             logger,
             "processing_job_finished",

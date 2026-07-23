@@ -22,6 +22,14 @@ class StrictReflectionModel(BaseModel):
 UnitFloat = Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)]
 
 
+def review_weighted_confidence(
+    *,
+    model_confidence: float,
+    evidence_weight: float,
+) -> float:
+    return model_confidence * evidence_weight
+
+
 class AnalysisBasis(StrictReflectionModel):
     source_version: int = Field(ge=0)
     basis_start: date | None
