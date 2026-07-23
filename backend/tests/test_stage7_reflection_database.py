@@ -661,6 +661,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0021_review_feedback.sql",
         "0022_review_weighted_reflections.sql",
         "0023_reflection_recalculation.sql",
+        "0024_reflection_deletion_source_version.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -1647,6 +1648,12 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
                 )
 
         admin(connection)
+        source_before_delete = connection.execute(
+            "SELECT latest_accepted_source_version "
+            "FROM public.reflection_user_state WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone()[0]
+        connection.commit()
         with connection.transaction():
             owner(connection, USER_ONE)
             assert connection.execute(
@@ -1671,6 +1678,11 @@ def test_snapshot_apply_feedback_idempotency_and_entry_deletion_recovery() -> No
             "WHERE user_id = %s",
             (USER_ONE,),
         ).fetchone() == (None,)
+        assert connection.execute(
+            "SELECT latest_accepted_source_version > %s "
+            "FROM public.reflection_user_state WHERE user_id = %s",
+            (source_before_delete, USER_ONE),
+        ).fetchone() == (True,)
 
 
 def test_snapshot_versions_reject_stale_claims_and_preserve_concurrent_counters() -> None:

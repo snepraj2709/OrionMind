@@ -505,7 +505,7 @@ Each section can abstain independently.
 |     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `completed`   | High       | Blocking                                    |
 |     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `completed`   | High       | Blocking                                    |
 |     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `completed`   | High       | Blocking                                    |
-|     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `not_started` | High       | Blocking                                    |
+|     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `completed`   | High       | Blocking                                    |
 |     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `not_started` | High       | Blocking                                    |
 |     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `not_started` | Medium     | Blocking                                    |
 |    10 | Full P0 integration verification                  | P0       | 1–9          | `test(review): verify p0 review reflection flow`          | `not_started` | High       | Blocking                                    |
@@ -1099,7 +1099,87 @@ cd backend
 
 ### Stage 7 — Verify backend flow end to end
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Added
+  `backend/tests/test_review_reflection_flow.py` and the append-only
+  `backend/migrations/0024_reflection_deletion_source_version.sql`. Updated
+  `backend/app/modules/jobs/{contracts,repository,service}.py`,
+  `backend/app/modules/reflection_engine/repository.py`,
+  `backend/tests/test_stage7_reflection_synthesis.py`,
+  `backend/tests/test_stage7_semantic_retrieval.py`,
+  `backend/tests/test_stage7_reflection_database.py`,
+  `backend/supabase_schema.sql`, and this handoff.
+- **Migration added:** `0024_reflection_deletion_source_version.sql`,
+  synchronized byte-for-byte into `backend/supabase_schema.sql`. The Stage 7
+  fixture proved that entry deletion could move
+  `latest_accepted_source_version` backward after Review feedback introduced a
+  newer synthetic source version. The replacement owner-only deletion function
+  now allocates a new sequence version, preserves owner checks and cascades,
+  stales the prior snapshot, and recomputes post-snapshot counters without
+  rewinding source identity.
+- **Backend behavior:** Production behavior is unchanged except for three minimal
+  defects proven by the end-to-end flow. Semantic-neighbor function arguments
+  are explicitly cast to the PostgreSQL function signature, preventing an
+  `UndefinedFunction` failure caused by small integer bind inference. Entry
+  deletion now advances reflection source state monotonically so recalculation
+  cannot treat deleted evidence as current. A synthesis job superseded by a
+  newer source version is now terminalized through the existing
+  `complete_processing_job` RPC instead of remaining claimed in `running`
+  state indefinitely.
+- **Post-review corrections:** The final audit strengthened the public-boundary
+  test to verify locally bound owner/entry/date identity, exact source
+  offsets, encrypted correction storage, exact analysis/embedding/synthesis/
+  critic call totals, and a fully terminal queue after every drain. That
+  stronger assertion exposed the stale synthesis job lifecycle defect above;
+  the focused job-service regression now requires the obsolete claim to be
+  completed without recording a user-visible processing failure.
+- **End-to-end coverage:** The new disposable-database test submits the complete
+  Section 9 fixture through public endpoints, drains real durable jobs using
+  controlled analysis, embedding, synthesis, and critic providers, verifies
+  deterministic garbage exclusion and exact evidence binding, exercises
+  rejected/partial Entry feedback and Pattern feedback with identical replay,
+  proves concurrent recalculation job reuse, terminal job cleanup, and cached
+  GET purity, checks
+  per-section synthesis/abstention, verifies two-user non-enumeration, deletes
+  source evidence, recalculates, and asserts no stale quote or raw journal text
+  survives in results or logs.
+- **Commands and results:**
+  - Required Stage 7 flow command: `1 passed`.
+  - Required offline and hardening regressions: `7 passed`.
+  - Focused deletion-source and upgrade/fresh-install parity regressions:
+    `1 passed` each.
+  - Full non-live backend regression: `467 passed` with one existing
+    `python_multipart` pending-deprecation warning.
+  - Focused synthesis, semantic retrieval, and durable-job regressions:
+    `41 passed`.
+  - Full Ruff check passed; compile checks passed; the explicit incremental
+    mypy gate passed with no issues in `27` source files.
+  - Schema-snapshot parity and `git diff --check` passed.
+- **Manual verification:** Rebuilt the fixture in the isolated local pgvector
+  database, started a localhost API with the same fake providers, and used curl
+  for past-entry submission, entry detail, Review lists, Entry and Pattern
+  feedback replay, cross-user mutation, Reflections GET, and recalculation.
+  The submission returned `202`; the controlled worker drained one job; valid
+  reads returned `200`; replays returned `200`; cross-user mutation returned
+  `404`; already-current recalculation returned the expected `409`; and
+  repeated cached Reflection GET bodies were byte-identical.
+- **Deviations from the proposed plan:** Stage 7 was expected to add test
+  scaffolding only, but the public-boundary test proved three existing defects.
+  The smallest owner-boundary fixes were the typed semantic SQL call and the
+  append-only deletion-source migration; no prior migration was rewritten and
+  no new dependency or infrastructure was added.
+- **Remaining risks:** Migration `0024` and the complete flow have been
+  validated only against the isolated local disposable database; no shared,
+  staging, or production database was migrated and no live or paid provider
+  was called. A superseded pending synthesis job is safely rejected as stale at
+  apply time and is now terminalized, but it can still invoke the provider
+  before that rejection; avoiding that unnecessary provider work is a later
+  optimization, not a correctness gap in the cached result. Per the user's
+  explicit instruction, all Stage 7 changes remain uncommitted for
+  verification.
 
 **Objective:** Prove the full backend Entry-to-cached-Reflection flow with controlled providers and disposable storage before frontend integration.
 

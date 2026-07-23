@@ -40,6 +40,14 @@ class JobRepositoryCapability(Protocol):
         worker_id: str,
     ) -> bool: ...
 
+    def complete(
+        self,
+        session: Session,
+        *,
+        claim: JobClaim,
+        worker_id: str,
+    ) -> bool: ...
+
     def fail(
         self,
         session: Session,

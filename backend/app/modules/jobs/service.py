@@ -296,11 +296,15 @@ class JobService:
                 uow=uow,
             )
             return DispatchResult("completed")
-        except (
-            LostJobClaimError,
-            StaleAnalysisClaimError,
-            StaleSynthesisClaimError,
-        ):
+        except StaleSynthesisClaimError:
+            with uow.for_worker() as work:
+                self._repository.complete(
+                    work.session,
+                    claim=claim,
+                    worker_id=worker_id,
+                )
+            return DispatchResult("stale", "WORKER_INTERRUPTED")
+        except (LostJobClaimError, StaleAnalysisClaimError):
             return DispatchResult("stale", "WORKER_INTERRUPTED")
         except Exception as exc:
             if isinstance(exc, AnalysisValidationError):

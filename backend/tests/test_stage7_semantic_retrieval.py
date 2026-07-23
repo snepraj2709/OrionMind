@@ -97,6 +97,11 @@ def test_semantic_repository_uses_one_bounded_owner_scoped_query() -> None:
     )
     assert len(session.calls) == 1
     assert "find_signal_semantic_neighbors" in session.calls[0][0]
+    assert "CAST(:anchor_signal_ids AS uuid[])" in session.calls[0][0]
+    assert "CAST(:source_version AS bigint)" in session.calls[0][0]
+    assert "CAST(:model_id AS text)" in session.calls[0][0]
+    assert "CAST(:top_k AS integer)" in session.calls[0][0]
+    assert "CAST(:similarity_threshold AS numeric)" in session.calls[0][0]
     assert session.calls[0][1] == {
         "user_id": USER_ID,
         "anchor_signal_ids": [anchor],

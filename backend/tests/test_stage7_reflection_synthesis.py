@@ -269,6 +269,7 @@ class JobRepository:
     def __init__(self, claim: JobClaim) -> None:
         self.current_claim = claim
         self.claimed = False
+        self.completions = 0
         self.failures: list[tuple[str, bool]] = []
         self.scheduler_calls: list[datetime] = []
 
@@ -281,6 +282,11 @@ class JobRepository:
 
     def renew(self, _session, *, claim: JobClaim, worker_id: str) -> bool:
         return claim == self.current_claim and worker_id == "reflection-worker"
+
+    def complete(self, _session, *, claim: JobClaim, worker_id: str) -> bool:
+        assert claim == self.current_claim and worker_id == "reflection-worker"
+        self.completions += 1
+        return True
 
     def fail(
         self,
@@ -436,6 +442,9 @@ def test_synthesis_retry_terminal_and_stale_claim_classification(
         worker_id="reflection-worker", uow=UnitOfWork()
     ) is True
     assert repository.failures == ([] if expected_failure is None else [expected_failure])
+    assert repository.completions == (
+        1 if isinstance(error, StaleSynthesisClaimError) else 0
+    )
     assert "secret" not in caplog.text
 
 

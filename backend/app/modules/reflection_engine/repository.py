@@ -113,8 +113,9 @@ class ReflectionEngineRepository:
             text(
                 "SELECT anchor_signal_id, neighbor_signal_id, cosine_distance, similarity "
                 "FROM public.find_signal_semantic_neighbors("
-                ":user_id, :anchor_signal_ids, :source_version, :model_id, "
-                ":top_k, :similarity_threshold)"
+                ":user_id, CAST(:anchor_signal_ids AS uuid[]), "
+                "CAST(:source_version AS bigint), CAST(:model_id AS text), "
+                "CAST(:top_k AS integer), CAST(:similarity_threshold AS numeric))"
             ),
             {
                 "user_id": user_id,
