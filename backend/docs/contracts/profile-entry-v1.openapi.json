@@ -778,7 +778,7 @@
         "tags": ["Reflections"],
         "operationId": "getReflections",
         "summary": "Read the authenticated user's aggregate persisted Reflection",
-        "description": "Idempotently requests an immediately claimable synthesis job when the latest accepted basis is eligible, then reads persisted state. Model work remains asynchronous in the shared worker. The all range is capped at 90 days.",
+        "description": "Pure cached read of persisted Reflection state. This operation never enqueues work, mutates state, or invokes a model. The all range is capped at 90 days.",
         "parameters": [
           {
             "name": "range",
@@ -820,6 +820,50 @@
           },
           "500": {
             "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/reflections/recalculate": {
+      "post": {
+        "tags": ["Reflections"],
+        "operationId": "recalculateReflections",
+        "summary": "Request durable asynchronous Reflection recalculation",
+        "description": "Reuses a pending or running job for the authenticated owner and current source version. This operation never performs synthesis synchronously.",
+        "responses": {
+          "202": {
+            "description": "Recalculation was accepted or the matching job already exists.",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "type": "string",
+                  "const": "private, no-store"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReflectionRecalculationResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           },
           "503": {
             "$ref": "#/components/responses/ServiceUnavailable"
@@ -1467,6 +1511,7 @@
         "type": "string",
         "enum": [
           "NOT_ENOUGH_REFLECTIVE_CONTENT",
+          "MINIMUM_BASIS_NOT_MET",
           "DRIVER_NOT_REPEATED",
           "LOOP_NOT_REPEATED",
           "BOTH_SIDES_NOT_SUPPORTED",
@@ -1694,6 +1739,45 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 500
+          }
+        }
+      },
+      "ProcessingReflectionInsight": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "message"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "processing"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        }
+      },
+      "UnavailableReflectionInsight": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "reasonCode", "message", "retryable"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "unavailable"
+          },
+          "reasonCode": {
+            "type": "string",
+            "const": "TECHNICAL_FAILURE"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "retryable": {
+            "type": "boolean"
           }
         }
       },
@@ -1991,7 +2075,13 @@
                 "$ref": "#/components/schemas/AvailableHiddenDriver"
               },
               {
+                "$ref": "#/components/schemas/ProcessingReflectionInsight"
+              },
+              {
                 "$ref": "#/components/schemas/InsufficientReflectionInsight"
+              },
+              {
+                "$ref": "#/components/schemas/UnavailableReflectionInsight"
               }
             ],
             "discriminator": {
@@ -2004,7 +2094,13 @@
                 "$ref": "#/components/schemas/AvailableRecurringLoop"
               },
               {
+                "$ref": "#/components/schemas/ProcessingReflectionInsight"
+              },
+              {
                 "$ref": "#/components/schemas/InsufficientReflectionInsight"
+              },
+              {
+                "$ref": "#/components/schemas/UnavailableReflectionInsight"
               }
             ],
             "discriminator": {
@@ -2017,7 +2113,13 @@
                 "$ref": "#/components/schemas/AvailableInnerTensions"
               },
               {
+                "$ref": "#/components/schemas/ProcessingReflectionInsight"
+              },
+              {
                 "$ref": "#/components/schemas/InsufficientReflectionInsight"
+              },
+              {
+                "$ref": "#/components/schemas/UnavailableReflectionInsight"
               }
             ],
             "discriminator": {
@@ -2080,6 +2182,21 @@
         "properties": {
           "response": {
             "$ref": "#/components/schemas/ReflectionFeedbackResponse"
+          }
+        }
+      },
+      "ReflectionRecalculationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "jobId"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "accepted"
+          },
+          "jobId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

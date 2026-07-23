@@ -7,6 +7,7 @@ from fastapi import Depends, Query, Request, Response
 from app.modules.reflections.schemas import (
     FeedbackRequest,
     FeedbackResult,
+    RecalculationResponse,
     ReflectionRange,
     ReflectionResponse,
 )
@@ -42,6 +43,28 @@ def read_reflections(
         )
     return service.read(
         query=ReflectionQuery(user_id=auth.user_id, range=range),
+        uow=auth.unit_of_work_factory,
+    )
+
+
+async def recalculate_reflections(
+    request: Request,
+    response: Response,
+    auth: AuthContext = Depends(get_auth_context),
+    service: ReflectionsService = Depends(get_reflections_service),
+) -> RecalculationResponse:
+    response.headers.update(NO_STORE_HEADERS)
+    if await request.body():
+        from app.shared.exceptions.domain import DomainError
+
+        raise DomainError(
+            422,
+            "VALIDATION_ERROR",
+            "The request is invalid.",
+            headers=NO_STORE_HEADERS,
+        )
+    return service.request_recalculation(
+        user_id=auth.user_id,
         uow=auth.unit_of_work_factory,
     )
 

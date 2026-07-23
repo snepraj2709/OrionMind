@@ -22,6 +22,7 @@ from app.modules.review.schemas import (
     ReviewItem,
 )
 from app.modules.review.service import ReviewService
+from app.modules.reflections.types import RecalculationRequest
 from app.modules.review.types import SavedReviewFeedback, feedback_decision
 from app.shared.config import Settings
 from app.shared.database.session import DatabaseSessions
@@ -111,6 +112,8 @@ class Repository:
         self.source_version = 10
         self.data_error = False
         self.stale = False
+        self.legacy_item_id: UUID | None = PATTERN_ITEM_ID
+        self.legacy_lookup_calls: list[dict[str, object]] = []
 
     def count_items(self, _session, **kwargs) -> int:
         if self.data_error:
@@ -143,6 +146,12 @@ class Repository:
         if self.owners.get(item_id) != user_id:
             return None
         return self.items.get(item_id)
+
+    def pattern_item_id_for_snapshot_insight(self, _session, **kwargs):
+        if self.data_error:
+            raise ReviewRepositoryDataError
+        self.legacy_lookup_calls.append(kwargs)
+        return self.legacy_item_id
 
     def put_feedback(self, _session, **kwargs) -> SavedReviewFeedback:
         if self.stale:
@@ -192,12 +201,24 @@ class RecalculationRepository:
     def __init__(self) -> None:
         self.calls: list[UUID] = []
         self.fail = False
+        self.outcome = "accepted"
 
-    def request_synthesis_if_eligible(self, _session, *, user_id: UUID):
+    def request_recalculation(self, _session, *, user_id: UUID):
         self.calls.append(user_id)
         if self.fail:
             raise RuntimeError("private scheduling detail")
-        return None
+        return RecalculationRequest(
+            outcome=self.outcome,  # type: ignore[arg-type]
+            job_id=(
+                UUID("98888888-8888-4888-8888-888888888888")
+                if self.outcome == "accepted"
+                else None
+            ),
+            source_version=11,
+            valid_entry_count=3,
+            distinct_entry_dates=2,
+            reflective_word_count=300,
+        )
 
 
 def settings(
@@ -437,6 +458,60 @@ def test_feedback_maps_every_scope_verdict(
         "evidenceWeight": expected_weight,
         "updatedAt": "2026-07-23T10:30:00Z",
     }
+    assert recalculation.calls == [USER_ID]
+
+
+def test_feedback_remains_successful_when_recalculation_is_not_eligible() -> None:
+    app, _repository, recalculation = build_app()
+    recalculation.outcome = "not_eligible"
+
+    with TestClient(app) as client:
+        response = client.post(
+            f"/api/v1/review/items/{ENTRY_ITEM_ID}/feedback",
+            headers=HEADERS,
+            json={"verdict": "not_accurate"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "rejected"
+    assert recalculation.calls == [USER_ID]
+
+
+@pytest.mark.parametrize(
+    ("legacy_response", "review_verdict"),
+    [
+        ("resonates", "resonates"),
+        ("partly", "partly_true"),
+        ("rejected", "not_true"),
+    ],
+)
+def test_legacy_pattern_feedback_delegates_to_review_command(
+    legacy_response: str,
+    review_verdict: str,
+) -> None:
+    app, repository, recalculation = build_app()
+    snapshot_id = UUID("96666666-6666-4666-8666-666666666666")
+    insight_id = UUID("97777777-7777-4777-8777-777777777777")
+
+    item = app.state.review_service.save_legacy_pattern_feedback(
+        user_id=USER_ID,
+        snapshot_id=snapshot_id,
+        insight_id=insight_id,
+        response=legacy_response,
+        uow=app.state.database_sessions.unit_of_work_factory,
+    )
+
+    assert item.id == PATTERN_ITEM_ID
+    assert item.feedback is not None
+    assert item.feedback.verdict == review_verdict
+    assert repository.legacy_lookup_calls == [
+        {
+            "user_id": USER_ID,
+            "snapshot_id": snapshot_id,
+            "insight_id": insight_id,
+        }
+    ]
+    assert repository.feedback_calls[0]["verdict"] == review_verdict
     assert recalculation.calls == [USER_ID]
 
 

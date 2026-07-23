@@ -270,6 +270,26 @@ def compose_application_services(
         heartbeat_interval_seconds=settings.PROCESSING_JOB_HEARTBEAT_SECONDS,
         telemetry=reflection_telemetry,
     )
+    reflections_repository = ReflectionsRepository()
+    review_service = ReviewService(
+        repository=ReviewRepository(cipher=resolved_content_cipher),
+        recalculation_repository=reflections_repository,
+        enabled=settings.REFLECTION_API_ENABLED,
+        allowed_user_ids=settings.reflection_rollout_user_ids(),
+    )
+    reflections_service = ReflectionsService(
+        repository=reflections_repository,
+        review_service=review_service,
+        cipher=resolved_content_cipher,
+        basis_days=settings.REFLECTION_BASIS_DAYS,
+        enabled=settings.REFLECTION_API_ENABLED,
+        recalculation_enabled=(
+            settings.REFLECTION_ENGINE_ENABLED
+            and settings.REFLECTION_ROLLOUT_MODE == "publish"
+        ),
+        allowed_user_ids=settings.reflection_rollout_user_ids(),
+        telemetry=reflection_telemetry,
+    )
     return ApplicationServices(
         settings=settings,
         reflection_telemetry=reflection_telemetry,
@@ -285,20 +305,8 @@ def compose_application_services(
         ),
         processing_service=processing_service,
         reflection_engine_service=reflection_engine_service,
-        reflections_service=ReflectionsService(
-            repository=ReflectionsRepository(),
-            cipher=resolved_content_cipher,
-            basis_days=settings.REFLECTION_BASIS_DAYS,
-            enabled=settings.REFLECTION_API_ENABLED,
-            allowed_user_ids=settings.reflection_rollout_user_ids(),
-            telemetry=reflection_telemetry,
-        ),
-        review_service=ReviewService(
-            repository=ReviewRepository(cipher=resolved_content_cipher),
-            recalculation_repository=ReflectionsRepository(),
-            enabled=settings.REFLECTION_API_ENABLED,
-            allowed_user_ids=settings.reflection_rollout_user_ids(),
-        ),
+        reflections_service=reflections_service,
+        review_service=review_service,
         content_cipher=resolved_content_cipher,
         entry_service=EntryService(
             repository=EntryRepository(),

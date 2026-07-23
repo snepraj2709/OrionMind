@@ -219,10 +219,6 @@ class _AggregateRepository:
             },
         }
 
-    def request_synthesis_if_eligible(self, _session, *, user_id):
-        return None
-
-
 class _UnitOfWork:
     @contextmanager
     def for_user(self, _user_id):
@@ -240,8 +236,10 @@ def test_reflections_service_records_wire_states_and_http_status() -> None:
     telemetry = ReflectionTelemetry(meter_provider=provider)
     service = ReflectionsService(
         repository=_AggregateRepository(),  # type: ignore[arg-type]
+        review_service=object(),  # type: ignore[arg-type]
         cipher=object(),  # type: ignore[arg-type]
         enabled=True,
+        recalculation_enabled=True,
         allowed_user_ids={user_id},
         telemetry=telemetry,
     )

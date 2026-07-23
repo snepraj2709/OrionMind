@@ -39,16 +39,19 @@ class PersistedReflectionState:
         job_status = job.get("status")
         if job_status not in {None, "pending", "running", "completed", "failed"}:
             raise ValueError("reflection job status is invalid")
+        pending = job_status in {"pending", "running"}
         return cls(
             latest_accepted=latest_accepted,
-            failed=job_status == "failed" or last_error is not None,
-            pending=job_status in {"pending", "running"},
+            failed=job_status == "failed" or (
+                last_error is not None and not pending
+            ),
+            pending=pending,
         )
 
     def without_snapshot(self) -> tuple[ReflectionState, ProcessingState]:
         reflection_state: ReflectionState = (
             "first_reflection_pending"
-            if self.pending or self.latest_accepted > 0
+            if self.pending
             else "insufficient_reflective_content"
         )
         processing_state: ProcessingState = (

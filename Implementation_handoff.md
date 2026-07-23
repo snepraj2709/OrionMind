@@ -504,7 +504,7 @@ Each section can abstain independently.
 |     3 | Add quality gate and entry insight extraction     | P0       | 2            | `feat(review): extract reviewable entry insights`         | `completed`   | High       | Blocking                                    |
 |     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `completed`   | High       | Blocking                                    |
 |     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `completed`   | High       | Blocking                                    |
-|     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `not_started` | High       | Blocking                                    |
+|     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `completed`   | High       | Blocking                                    |
 |     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `not_started` | High       | Blocking                                    |
 |     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `not_started` | High       | Blocking                                    |
 |     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `not_started` | Medium     | Blocking                                    |
@@ -975,7 +975,72 @@ cd backend
 
 ### Stage 6 — Add Reflection API and recalculation trigger
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Added
+  `backend/migrations/0023_reflection_recalculation.sql` and
+  `backend/tests/test_reflection_recalculation_api.py`. Updated the
+  Reflections routes/controller/service/repository/schemas/types/state/views,
+  the Review compatibility repository/service path, bootstrap, the public
+  operation and rate-limit registries, both frozen OpenAPI artifacts,
+  `backend/supabase_schema.sql`, the related API/release/database regression
+  tests, and this handoff.
+- **Migration added:** `0023_reflection_recalculation.sql`, synchronized
+  byte-for-byte into `backend/supabase_schema.sql`. Its authenticated,
+  owner-only security-definer functions expose a Review-weighted cached basis
+  and take an advisory transaction lock for recalculation requests. The request
+  reports current/eligibility/unavailable outcomes, creates one publish-mode
+  job for the current source version, returns the same pending/running publish
+  job under concurrent replay, retries a terminal failed job, and promotes a
+  completed shadow job to publish. A stale snapshot caused by Review feedback
+  remains eligible even when no newer entry analysis exists.
+- **Backend behavior:** `GET /api/v1/reflections` now performs only cached
+  owner reads. `POST /api/v1/reflections/recalculate` accepts no body, returns
+  the exact `202 {"status":"accepted","jobId":...}` shape, and maps current,
+  insufficient-basis, and configuration/technical conditions to safe
+  `409`/`503` envelopes with no-store headers. No-snapshot pending, basis
+  failure, and technical failure now render processing, insufficient, and
+  unavailable section payloads respectively; a prior good snapshot remains
+  renderable when stale. The legacy PUT maps `resonates/partly/rejected` to
+  `resonates/partly_true/not_true` and invokes the same Review feedback and
+  durable recalculation command.
+- **Post-review corrections:** Manual POST eligibility now uses the full
+  weighted 90-day minimum basis rather than scheduler debounce counters.
+  Cached GET and POST use the same weighted basis, pending/running work clears
+  or overrides retained historical errors, failed and completed-shadow jobs
+  are retryable without creating duplicates, and an otherwise successful
+  Review feedback write remains successful when recalculation is legitimately
+  below the minimum basis.
+- **Commands and results:**
+  - Required focused API command:
+    `57 passed`.
+  - Full non-live backend regression:
+    `423 passed, 43 skipped`; skips are the opt-in database/live suites.
+  - Full disposable local pgvector Reflection database suite:
+    `26 passed`, including concurrent pending/running job reuse, failed-job
+    retry, completed-shadow promotion, owner isolation, weighted-basis parity,
+    current conflict, feedback-stale refresh, upgrade parity, and fresh-install
+    parity.
+  - Required Ruff command passed.
+  - Required mypy command passed with no issues in `20` source files.
+  - Frozen YAML/JSON/runtime contract parity, schema-snapshot parity, and
+    `git diff --check` passed.
+  - Workspace frontend validation passed: typecheck, lint/design-system
+    policy, `311` Vitest tests, and the production build.
+- **Deviations from the proposed plan:** No new worker-health store or queue
+  was added. Configuration gating plus durable database request outcomes cover
+  the specified unavailable behavior, while the existing shared worker
+  remains the sole synthesis executor. Review feedback now uses the owner
+  request function after its committed feedback transaction instead of the
+  older worker-only helper, which is required for feedback-only source-version
+  changes to enqueue reliably.
+- **Remaining risks:** Migration `0023` has been validated only in a
+  disposable local database and has not been applied to the configured
+  development/shared database. No live provider call was made. Per the user's
+  explicit instruction, the completed Stage 6 changes remain uncommitted for
+  verification.
 
 **Objective:** Make Reflections GET a pure cached read, expose idempotent durable recalculation, and preserve legacy feedback compatibility.
 

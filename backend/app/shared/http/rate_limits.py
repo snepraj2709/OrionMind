@@ -68,6 +68,8 @@ def _rate_class(method: str, path: str) -> str | None:
         return "entry_retry"
     if method == "PUT" and _REFLECTION_FEEDBACK.fullmatch(path):
         return "reflection_write"
+    if method == "POST" and path == "/api/v1/reflections/recalculate":
+        return "reflection_write"
     if method == "POST" and _REVIEW_FEEDBACK.fullmatch(path):
         return "review_write"
     if method == "GET" and (

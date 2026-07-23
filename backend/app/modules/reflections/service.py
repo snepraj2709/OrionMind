@@ -25,7 +25,6 @@ from app.modules.reflections.aggregate import (
     _required_mapping,
 )
 from app.modules.reflections.repository import (
-    ReflectionResourceNotFoundError,
     ReflectionsRepository,
 )
 from app.modules.reflections.schemas import (
@@ -43,11 +42,13 @@ from app.modules.reflections.schemas import (
     ReflectionData,
     ReflectionRange,
     ReflectionResponse,
+    RecalculationResponse,
     SnapshotMetadata,
 )
 from app.modules.reflections.state import PersistedReflectionState
 from app.modules.reflections.types import FeedbackCommand, ReflectionQuery
-from app.modules.reflections.views import insufficient
+from app.modules.reflections.views import insufficient, processing, unavailable
+from app.modules.review.service import ReviewService
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 from app.shared.exceptions.domain import DomainError
 from app.shared.observability.logging import safe_log
@@ -56,6 +57,7 @@ from app.shared.security.encryption import ContentCipher
 
 
 NO_STORE_HEADERS = {"Cache-Control": "private, no-store"}
+UNAVAILABLE_HEADERS = {**NO_STORE_HEADERS, "Retry-After": "60"}
 logger = logging.getLogger("orion.reflections.service")
 PATTERN_TYPES = frozenset({"hidden_driver", "recurring_loop", "inner_tension"})
 REASON_CODES = frozenset(
@@ -83,8 +85,10 @@ class ReflectionsService:
         self,
         *,
         repository: ReflectionsRepository,
+        review_service: ReviewService,
         cipher: ContentCipher,
         enabled: bool,
+        recalculation_enabled: bool,
         allowed_user_ids: Collection[UUID],
         basis_days: int = 90,
         telemetry: ReflectionTelemetry | None = None,
@@ -92,8 +96,10 @@ class ReflectionsService:
         if basis_days != 90:
             raise ValueError("the MVP reflection basis must be exactly 90 days")
         self._repository = repository
+        self._review_service = review_service
         self._cipher = cipher
         self._enabled = enabled
+        self._recalculation_enabled = recalculation_enabled
         self._allowed_user_ids = frozenset(allowed_user_ids)
         self._telemetry = telemetry or ReflectionTelemetry()
 
@@ -109,22 +115,6 @@ class ReflectionsService:
                 raw = self._repository.load_aggregate(
                     work.session, user_id=query.user_id
                 )
-            with uow.for_worker() as work:
-                request = self._repository.request_synthesis_if_eligible(
-                    work.session,
-                    user_id=query.user_id,
-                )
-            if request is not None:
-                safe_log(
-                    logger,
-                    "reflection_synthesis_requested",
-                    job_id=request.job_id,
-                    source_version=request.source_version,
-                )
-                with uow.for_user(query.user_id) as work:
-                    raw = self._repository.load_aggregate(
-                        work.session, user_id=query.user_id
-                    )
             result = self._build_response(query=query, raw=raw)
         except DomainError as exc:
             reflection_state = str(
@@ -160,27 +150,20 @@ class ReflectionsService:
         uow: UnitOfWorkFactory,
     ) -> FeedbackResult:
         self._require_enabled(command.user_id)
-        try:
-            with uow.for_user(command.user_id) as work:
-                saved = self._repository.put_feedback(
-                    work.session,
-                    user_id=command.user_id,
-                    snapshot_id=command.snapshot_id,
-                    insight_id=command.insight_id,
-                    response=command.response,
-                )
-        except ReflectionResourceNotFoundError as exc:
-            raise DomainError(
-                404,
-                "NOT_FOUND",
-                "The requested resource was not found.",
-                headers=NO_STORE_HEADERS,
-            ) from exc
+        item = self._review_service.save_legacy_pattern_feedback(
+            user_id=command.user_id,
+            snapshot_id=command.snapshot_id,
+            insight_id=command.insight_id,
+            response=command.response,
+            uow=uow,
+        )
+        if item.feedback is None:
+            raise RuntimeError("saved pattern feedback is unavailable")
         result = FeedbackResult(
-            snapshot_id=saved.snapshot_id,
-            insight_id=saved.insight_id,
-            response=saved.response,
-            updated_at=saved.updated_at,
+            snapshot_id=command.snapshot_id,
+            insight_id=command.insight_id,
+            response=command.response,
+            updated_at=item.feedback.updated_at,
         )
         self._telemetry.record_feedback(response=result.response)
         safe_log(
@@ -191,6 +174,68 @@ class ReflectionsService:
             status_code=200,
         )
         return result
+
+    def request_recalculation(
+        self,
+        *,
+        user_id: UUID,
+        uow: UnitOfWorkFactory,
+    ) -> RecalculationResponse:
+        self._require_enabled(user_id)
+        if not self._recalculation_enabled:
+            raise DomainError(
+                503,
+                "REFLECTION_RECALCULATION_UNAVAILABLE",
+                "Reflection recalculation is temporarily unavailable.",
+                headers=UNAVAILABLE_HEADERS,
+            )
+        try:
+            with uow.for_user(user_id) as work:
+                result = self._repository.request_recalculation(
+                    work.session,
+                    user_id=user_id,
+                )
+        except Exception as exc:
+            raise DomainError(
+                503,
+                "REFLECTION_RECALCULATION_UNAVAILABLE",
+                "Reflection recalculation is temporarily unavailable.",
+                headers=UNAVAILABLE_HEADERS,
+            ) from exc
+        if result.outcome == "already_current":
+            raise DomainError(
+                409,
+                "REFLECTION_ALREADY_CURRENT",
+                "The reflection is already current.",
+                headers=NO_STORE_HEADERS,
+            )
+        if result.outcome == "not_eligible":
+            raise DomainError(
+                409,
+                "REFLECTION_NOT_ELIGIBLE",
+                "There is not enough reflective evidence to recalculate yet.",
+                details={
+                    "valid_entry_count": result.valid_entry_count,
+                    "distinct_entry_dates": result.distinct_entry_dates,
+                    "reflective_word_count": result.reflective_word_count,
+                    "reason_codes": ["MINIMUM_BASIS_NOT_MET"],
+                },
+                headers=NO_STORE_HEADERS,
+            )
+        if result.outcome == "unavailable" or result.job_id is None:
+            raise DomainError(
+                503,
+                "REFLECTION_RECALCULATION_UNAVAILABLE",
+                "Reflection recalculation is temporarily unavailable.",
+                headers=UNAVAILABLE_HEADERS,
+            )
+        safe_log(
+            logger,
+            "reflection_synthesis_requested",
+            job_id=result.job_id,
+            source_version=result.source_version,
+        )
+        return RecalculationResponse(job_id=result.job_id)
 
     def _record_api_response(
         self,
@@ -232,21 +277,24 @@ class ReflectionsService:
         persisted_state = PersistedReflectionState.parse(state=state, job=job)
 
         if snapshot_raw is None:
-            if persisted_state.failed:
-                raise DomainError(
-                    503,
-                    "SERVICE_UNAVAILABLE",
-                    "The service is temporarily unavailable.",
-                    details={
-                        "reflectionState": "technical_failure",
-                        "processingState": "failed",
-                    },
-                    headers=NO_STORE_HEADERS,
-                )
-            reflection_state, processing_state = persisted_state.without_snapshot()
             basis = self._analysis_basis(
                 _required_mapping(raw.get("current_basis"), "current basis"),
                 query.range,
+            )
+            if persisted_state.failed:
+                return ReflectionResponse(
+                    range=query.range,
+                    reflection_state="technical_failure",
+                    processing_state="failed",
+                    snapshot=None,
+                    analysis_basis=basis,
+                    data=_unavailable_data(),
+                )
+            reflection_state, processing_state = persisted_state.without_snapshot()
+            data = (
+                _processing_data()
+                if processing_state == "pending"
+                else _insufficient_data()
             )
             return ReflectionResponse(
                 range=query.range,
@@ -254,7 +302,7 @@ class ReflectionsService:
                 processing_state=processing_state,
                 snapshot=None,
                 analysis_basis=basis,
-                data=_empty_data(),
+                data=data,
             )
 
         snapshot_source, reflection_state, processing_state, stale = (
@@ -594,9 +642,25 @@ class ReflectionsService:
         )
 
 
-def _empty_data() -> ReflectionData:
+def _insufficient_data() -> ReflectionData:
     return ReflectionData(
-        hidden_driver=insufficient("NOT_ENOUGH_REFLECTIVE_CONTENT"),
-        recurring_loop=insufficient("LOOP_NOT_REPEATED"),
-        inner_tensions=insufficient("BOTH_SIDES_NOT_SUPPORTED"),
+        hidden_driver=insufficient("MINIMUM_BASIS_NOT_MET"),
+        recurring_loop=insufficient("MINIMUM_BASIS_NOT_MET"),
+        inner_tensions=insufficient("MINIMUM_BASIS_NOT_MET"),
+    )
+
+
+def _processing_data() -> ReflectionData:
+    return ReflectionData(
+        hidden_driver=processing(),
+        recurring_loop=processing(),
+        inner_tensions=processing(),
+    )
+
+
+def _unavailable_data() -> ReflectionData:
+    return ReflectionData(
+        hidden_driver=unavailable(),
+        recurring_loop=unavailable(),
+        inner_tensions=unavailable(),
     )

@@ -98,6 +98,7 @@ NEW_FUNCTIONS = (
     "get_entry_quality_history",
     "get_signal_embedding_backfill_status",
     "get_reflection_candidate_basis",
+    "get_reflection_recalculation_basis_for_owner",
     "get_reflection_synthesis_basis",
     "get_reflections_for_owner",
     "is_reflection_recalculation_eligible",
@@ -113,6 +114,7 @@ NEW_FUNCTIONS = (
     "renew_processing_job",
     "release_signal_embedding_backfill_batch",
     "request_reflection_synthesis_if_eligible",
+    "request_reflection_recalculation_for_owner",
     "run_entry_processing_backfill_batch",
     "save_user_pii_vault",
     "schedule_reflection_jobs",
@@ -658,6 +660,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0020_review_item_materialization.sql",
         "0021_review_feedback.sql",
         "0022_review_weighted_reflections.sql",
+        "0023_reflection_recalculation.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -2804,6 +2807,343 @@ def test_recalculation_eligibility_boundaries_and_atomic_request() -> None:
                 "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
                 (USER_TWO, check_at),
             ).fetchone() == (False,)
+
+
+def test_owner_recalculation_request_is_concurrent_idempotent_and_current_aware() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    with psycopg.connect(value) as connection:
+        latest_source = insert_accepted_basis(
+            connection,
+            USER_ONE,
+            ("2026-07-20", "2026-07-21", "2026-07-22"),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) "
+            "VALUES (%s, %s, 3, 3, "
+            "ARRAY['2026-07-20'::date, '2026-07-21'::date, "
+            "'2026-07-22'::date])",
+            (USER_ONE, latest_source),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            owner(connection, USER_TWO)
+            ineligible = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_TWO, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+            assert ineligible == ("not_eligible", None, 0, 0, 0, 0)
+
+        with connection.transaction():
+            owner(connection, USER_TWO)
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                connection.execute(
+                    "SELECT * FROM "
+                    "public.request_reflection_recalculation_for_owner(%s, %s)",
+                    (USER_ONE, "2026-07-23 12:00:00+00"),
+                )
+
+    def request_once() -> tuple:
+        with psycopg.connect(value) as connection:
+            with connection.transaction():
+                owner(connection, USER_ONE)
+                return connection.execute(
+                    "SELECT * FROM "
+                    "public.request_reflection_recalculation_for_owner(%s, %s)",
+                    (USER_ONE, "2026-07-23 12:00:00+00"),
+                ).fetchone()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first, second = executor.map(lambda _index: request_once(), range(2))
+
+    assert first == second
+    assert first[0] == "accepted"
+    assert first[1] is not None
+    assert first[2:] == (latest_source, 3, 3, 300)
+
+    with psycopg.connect(value) as connection:
+        assert connection.execute(
+            "SELECT count(*), min(execution_mode), min(priority) "
+            "FROM public.processing_jobs "
+            "WHERE user_id = %s AND job_type = 'reflection_synthesis'",
+            (USER_ONE,),
+        ).fetchone() == (1, "publish", 80)
+        running_claim = uuid4()
+        connection.execute(
+            "UPDATE public.processing_jobs "
+            "SET status = 'running', attempts = 1, worker_id = 'test-worker', "
+            "claim_token = %s, heartbeat_at = pg_catalog.now() "
+            "WHERE id = %s",
+            (running_claim, first[1]),
+        )
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            running = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert running == first
+        admin(connection)
+        connection.execute(
+            "UPDATE public.processing_jobs "
+            "SET status = 'failed', worker_id = NULL, heartbeat_at = NULL, "
+            "last_error_code = 'PROVIDER_UNAVAILABLE', "
+            "completed_at = pg_catalog.now() WHERE id = %s",
+            (first[1],),
+        )
+        connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET last_processing_error_code = 'PROVIDER_UNAVAILABLE' "
+            "WHERE user_id = %s",
+            (USER_ONE,),
+        )
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            retried = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert retried == first
+        admin(connection)
+        assert connection.execute(
+            "SELECT status, execution_mode, priority, attempts, worker_id, "
+            "claim_token, heartbeat_at, last_error_code, completed_at "
+            "FROM public.processing_jobs WHERE id = %s",
+            (first[1],),
+        ).fetchone() == (
+            "pending",
+            "publish",
+            80,
+            0,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        assert connection.execute(
+            "SELECT last_processing_error_code "
+            "FROM public.reflection_user_state WHERE user_id = %s",
+            (USER_ONE,),
+        ).fetchone() == (None,)
+        shadow_claim = uuid4()
+        connection.execute(
+            "UPDATE public.processing_jobs "
+            "SET status = 'completed', execution_mode = 'shadow', priority = 60, "
+            "attempts = 1, claim_token = %s, completed_at = pg_catalog.now() "
+            "WHERE id = %s",
+            (shadow_claim, first[1]),
+        )
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            promoted_shadow = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert promoted_shadow == first
+        admin(connection)
+        assert connection.execute(
+            "SELECT status, execution_mode, priority, attempts, claim_token, "
+            "completed_at FROM public.processing_jobs WHERE id = %s",
+            (first[1],),
+        ).fetchone() == ("pending", "publish", 80, 0, None, None)
+        connection.execute(
+            "DELETE FROM public.processing_jobs "
+            "WHERE user_id = %s AND job_type = 'reflection_synthesis'",
+            (USER_ONE,),
+        )
+        snapshot_id = uuid4()
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count, status) "
+            "VALUES (%s, %s, 1, %s, '2026-04-24', '2026-07-22', "
+            "3, 0, 3, 300, 'available')",
+            (snapshot_id, USER_ONE, latest_source),
+        )
+        connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET last_snapshot_source_version = %s, "
+            "last_successful_snapshot_id = %s "
+            "WHERE user_id = %s",
+            (latest_source, snapshot_id, USER_ONE),
+        )
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            current = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert current == (
+            "already_current",
+            None,
+            latest_source,
+            3,
+            3,
+            300,
+        )
+        admin(connection)
+        connection.execute(
+            "UPDATE public.reflection_snapshots SET status = 'stale' "
+            "WHERE id = %s AND user_id = %s",
+            (snapshot_id, USER_ONE),
+        )
+        feedback_source = connection.execute(
+            "UPDATE public.reflection_user_state "
+            "SET latest_accepted_source_version = pg_catalog.nextval("
+            "'public.entry_analyses_source_version_seq'::pg_catalog.regclass) "
+            "WHERE user_id = %s RETURNING latest_accepted_source_version",
+            (USER_ONE,),
+        ).fetchone()[0]
+        connection.commit()
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            feedback_refresh = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+        assert feedback_refresh[0] == "accepted"
+        assert feedback_refresh[1] is not None
+        assert feedback_refresh[2:] == (feedback_source, 3, 3, 300)
+
+
+def test_owner_recalculation_uses_global_basis_after_a_current_snapshot() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        snapshot_source = insert_accepted_basis(
+            connection,
+            USER_ONE,
+            ("2026-07-20", "2026-07-21", "2026-07-22"),
+        )
+        snapshot_id = uuid4()
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count, status) "
+            "VALUES (%s, %s, 1, %s, '2026-04-24', '2026-07-22', "
+            "3, 0, 3, 300, 'available')",
+            (snapshot_id, USER_ONE, snapshot_source),
+        )
+        entry_id = insert_entry(connection, USER_ONE, entry_date="2026-07-23")
+        analysis_id, _, latest_source = insert_analysis_signal(
+            connection,
+            USER_ONE,
+            entry_id,
+        )
+        connection.execute(
+            "UPDATE public.entry_analyses SET reflective_word_count = 100 "
+            "WHERE id = %s",
+            (analysis_id,),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, "
+            "last_snapshot_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates, "
+            "last_successful_snapshot_id) "
+            "VALUES (%s, %s, %s, 1, 1, ARRAY['2026-07-23'::date], %s)",
+            (USER_ONE, latest_source, snapshot_source, snapshot_id),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            worker(connection)
+            assert connection.execute(
+                "SELECT public.is_reflection_recalculation_eligible(%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone() == (False,)
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            request = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+
+        assert request[0] == "accepted"
+        assert request[1] is not None
+        assert request[2:] == (latest_source, 4, 4, 400)
+
+
+def test_owner_recalculation_basis_excludes_zero_weight_evidence() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE)
+    with psycopg.connect(value) as connection:
+        latest_source = insert_accepted_basis(
+            connection,
+            USER_ONE,
+            ("2026-07-20", "2026-07-21", "2026-07-22"),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, new_valid_entries, "
+            "new_accepted_signals, pending_local_dates) "
+            "VALUES (%s, %s, 3, 3, "
+            "ARRAY['2026-07-20'::date, '2026-07-21'::date, "
+            "'2026-07-22'::date])",
+            (USER_ONE, latest_source),
+        )
+        connection.execute(
+            "UPDATE public.review_items AS review "
+            "SET review_status = 'rejected', "
+            "user_feedback = pg_catalog.jsonb_build_object("
+            "'verdict', 'not_accurate', "
+            "'updated_at', '2026-07-23T12:00:00Z'), "
+            "evidence_weight = 0 "
+            "FROM public.entries AS entry "
+            "WHERE entry.id = review.entry_id "
+            "AND review.user_id = %s "
+            "AND entry.entry_date = '2026-07-22'",
+            (USER_ONE,),
+        )
+        connection.commit()
+
+        with connection.transaction():
+            owner(connection, USER_ONE)
+            basis = connection.execute(
+                "SELECT public.get_reflection_recalculation_basis_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()[0]
+            request = connection.execute(
+                "SELECT * FROM public.request_reflection_recalculation_for_owner("
+                "%s, %s)",
+                (USER_ONE, "2026-07-23 12:00:00+00"),
+            ).fetchone()
+
+        assert basis == {
+            "basis_end": "2026-07-21",
+            "basis_start": "2026-04-23",
+            "valid_entry_count": 2,
+            "excluded_entry_count": 0,
+            "distinct_entry_dates": 2,
+            "reflective_word_count": 200,
+            "excluded_reasons": {},
+        }
+        assert request == (
+            "not_eligible",
+            None,
+            latest_source,
+            2,
+            2,
+            200,
+        )
 
 
 def test_review_items_constraints_rls_privileges_cascades_and_indexes() -> None:

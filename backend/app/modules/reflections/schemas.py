@@ -60,6 +60,11 @@ class FeedbackResult(StrictPublicModel):
     updated_at: datetime
 
 
+class RecalculationResponse(StrictPublicModel):
+    status: Literal["accepted"] = "accepted"
+    job_id: UUID
+
+
 class SnapshotMetadata(StrictPublicModel):
     id: UUID
     version: int = Field(ge=1)
@@ -158,13 +163,25 @@ class AvailableInnerTensions(StrictPublicModel):
 
 
 HiddenDriverSection = Annotated[
-    AvailableHiddenDriver | InsufficientInsight, Field(discriminator="status")
+    AvailableHiddenDriver
+    | ProcessingInsight
+    | InsufficientInsight
+    | UnavailableInsight,
+    Field(discriminator="status"),
 ]
 RecurringLoopSection = Annotated[
-    AvailableRecurringLoop | InsufficientInsight, Field(discriminator="status")
+    AvailableRecurringLoop
+    | ProcessingInsight
+    | InsufficientInsight
+    | UnavailableInsight,
+    Field(discriminator="status"),
 ]
 InnerTensionsSection = Annotated[
-    AvailableInnerTensions | InsufficientInsight, Field(discriminator="status")
+    AvailableInnerTensions
+    | ProcessingInsight
+    | InsufficientInsight
+    | UnavailableInsight,
+    Field(discriminator="status"),
 ]
 
 

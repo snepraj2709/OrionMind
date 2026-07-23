@@ -160,6 +160,40 @@ class ReviewRepository:
         except (ContentUnavailableError, KeyError, TypeError, ValueError) as exc:
             raise ReviewRepositoryDataError("review item data is unavailable") from exc
 
+    def pattern_item_id_for_snapshot_insight(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        snapshot_id: UUID,
+        insight_id: UUID,
+    ) -> UUID | None:
+        value = session.scalar(
+            text(
+                "SELECT review.id "
+                "FROM public.reflection_snapshot_insights AS insight "
+                "JOIN public.reflection_snapshots AS snapshot "
+                "ON snapshot.id = insight.snapshot_id "
+                "AND snapshot.user_id = insight.user_id "
+                "JOIN public.review_items AS review "
+                "ON review.pattern_candidate_id = insight.candidate_id "
+                "AND review.user_id = insight.user_id "
+                "WHERE insight.id = :insight_id "
+                "AND insight.snapshot_id = :snapshot_id "
+                "AND insight.user_id = :user_id "
+                "AND snapshot.id = :snapshot_id "
+                "AND snapshot.user_id = :user_id "
+                "AND review.user_id = :user_id "
+                "AND review.scope = 'pattern'"
+            ),
+            {
+                "user_id": user_id,
+                "snapshot_id": snapshot_id,
+                "insight_id": insight_id,
+            },
+        )
+        return UUID(str(value)) if value is not None else None
+
     def put_feedback(
         self,
         session: Session,

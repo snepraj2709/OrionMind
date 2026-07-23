@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Collection
+from typing import cast
 from uuid import UUID
 
 from app.modules.reflections.repository import ReflectionsRepository
+from app.modules.reflections.schemas import FeedbackResponse
 from app.modules.review.repository import (
     ReviewItemNotFoundError,
     ReviewItemStaleError,
@@ -11,11 +13,13 @@ from app.modules.review.repository import (
     ReviewRepositoryDataError,
 )
 from app.modules.review.schemas import (
+    PatternReviewItem,
     ReviewFeedbackRequest,
     ReviewItem,
     ReviewItemsResponse,
     ReviewListQuery,
 )
+from app.modules.review.types import PatternVerdict
 from app.modules.review.views import review_items_response
 from app.shared.database.unit_of_work import UnitOfWorkFactory
 from app.shared.exceptions.domain import DomainError
@@ -142,6 +146,73 @@ class ReviewService:
             self._request_recalculation(user_id=user_id, uow=uow)
         return item
 
+    def save_legacy_pattern_feedback(
+        self,
+        *,
+        user_id: UUID,
+        snapshot_id: UUID,
+        insight_id: UUID,
+        response: FeedbackResponse,
+        uow: UnitOfWorkFactory,
+    ) -> PatternReviewItem:
+        self._require_enabled(user_id)
+        try:
+            with uow.for_user(user_id) as work:
+                item_id = self._repository.pattern_item_id_for_snapshot_insight(
+                    work.session,
+                    user_id=user_id,
+                    snapshot_id=snapshot_id,
+                    insight_id=insight_id,
+                )
+        except ReviewRepositoryDataError as exc:
+            raise DomainError(
+                500,
+                "REVIEW_DATA_UNAVAILABLE",
+                "Review data is temporarily unavailable.",
+                headers=NO_STORE_HEADERS,
+            ) from exc
+        if item_id is None:
+            raise DomainError(
+                404,
+                "NOT_FOUND",
+                "The requested resource was not found.",
+                headers=NO_STORE_HEADERS,
+            )
+        verdict = {
+            "resonates": "resonates",
+            "partly": "partly_true",
+            "rejected": "not_true",
+        }[response]
+        try:
+            item = self.save_feedback(
+                user_id=user_id,
+                item_id=item_id,
+                payload=ReviewFeedbackRequest(
+                    verdict=cast(PatternVerdict, verdict)
+                ),
+                uow=uow,
+            )
+        except DomainError as exc:
+            if exc.error_code not in {
+                "REVIEW_ITEM_NOT_FOUND",
+                "REVIEW_ITEM_STALE",
+            }:
+                raise
+            raise DomainError(
+                404,
+                "NOT_FOUND",
+                "The requested resource was not found.",
+                headers=NO_STORE_HEADERS,
+            ) from exc
+        if not isinstance(item, PatternReviewItem):
+            raise DomainError(
+                404,
+                "NOT_FOUND",
+                "The requested resource was not found.",
+                headers=NO_STORE_HEADERS,
+            )
+        return item
+
     def _request_recalculation(
         self,
         *,
@@ -149,11 +220,13 @@ class ReviewService:
         uow: UnitOfWorkFactory,
     ) -> None:
         try:
-            with uow.for_worker() as work:
-                self._recalculation_repository.request_synthesis_if_eligible(
+            with uow.for_user(user_id) as work:
+                result = self._recalculation_repository.request_recalculation(
                     work.session,
                     user_id=user_id,
                 )
+            if result.outcome == "unavailable":
+                raise RuntimeError("reflection recalculation was not accepted")
         except Exception as exc:
             raise DomainError(
                 503,

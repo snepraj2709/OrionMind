@@ -100,6 +100,7 @@ def test_packaged_openapi_is_exact_runtime_contract_with_no_dangling_references(
         "/api/v1/review/items",
         "/api/v1/review/items/{review_item_id}/feedback",
         "/api/v1/reflections",
+        "/api/v1/reflections/recalculate",
         "/api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback",
     }
     references = tuple(all_references(artifact))
@@ -181,6 +182,11 @@ def test_every_endpoint_class_has_integer_retry_after_at_its_limit(rule: str) ->
             "review_write",
         ),
         ("GET", "/api/v1/reflections", "read"),
+        (
+            "POST",
+            "/api/v1/reflections/recalculate",
+            "reflection_write",
+        ),
         (
             "PUT",
             "/api/v1/reflections/snapshot-id/insights/insight-id/feedback",
@@ -371,6 +377,7 @@ def test_json_yaml_and_runtime_reflection_contracts_are_equivalent() -> None:
     }
     assert set(reflection_paths) == {
         "/api/v1/reflections",
+        "/api/v1/reflections/recalculate",
         "/api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback",
     }
     assert reflection_paths["/api/v1/reflections"]["get"]["parameters"][0][
