@@ -509,7 +509,7 @@ Each section can abstain independently.
 |     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `completed`   | High       | Blocking                                    |
 |     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `completed`   | Medium     | Blocking                                    |
 |    10 | Full P0 integration verification                  | P0       | 1–9          | `test(review): verify p0 review reflection flow`          | `completed`   | High       | Blocking                                    |
-|    11 | Safety and privacy hardening                      | Post-P0  | 10           | `fix(reflections): harden review privacy boundaries`      | `not_started` | Medium     | Non-blocking for P0; blocked until Stage 10 |
+|    11 | Safety and privacy hardening                      | Post-P0  | 10           | `fix(reflections): harden review privacy boundaries`      | `completed`   | Medium     | Non-blocking for P0; blocked until Stage 10 |
 |    12 | Analytics and evaluation foundation               | Post-P0  | 10, 11       | `chore(reflections): add evaluation telemetry foundation` | `not_started` | Medium     | Non-blocking for P0; blocked until Stage 10 |
 
 Stages 1–10 are P0. Stages 11–12 must not begin until Stage 10 proves the P0 flow end to end.
@@ -1635,7 +1635,65 @@ Expected: zero failures/warnings allowed by repository policy; no paid live call
 
 ### Stage 11 — Safety and privacy hardening
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Added
+  `backend/migrations/0025_reflection_deletion_race_guard.sql` and
+  `backend/tests/test_review_privacy_hardening.py`. Updated
+  `backend/supabase_schema.sql`,
+  `backend/tests/test_stage7_reflection_database.py`, and this handoff.
+- **Migration added:** `0025_reflection_deletion_race_guard.sql`, synchronized
+  byte-for-byte into `backend/supabase_schema.sql`. The replacement weighted
+  candidate wrapper acquires the existing per-owner advisory lock and verifies
+  the current source version before inspecting evidence rows, so entry
+  deletion during active synthesis is classified as stale instead of as a
+  generic processing failure.
+- **Privacy and deletion coverage:** The focused suite adds three adversarial
+  instruction formats with fabricated evidence, retained/missing encryption
+  key rotation, structurally valid corrupted Review envelopes, exact
+  plaintext exclusion across logs/errors/telemetry and ciphertext columns,
+  two-user RLS/API/pagination/cached-snapshot isolation under guessed UUIDs,
+  queued entry deletion, and paused-running entry/account deletion. Deletion
+  races persist no snapshot, Pattern Review item, evidence, or orphan, and
+  account deletion cascades every owner row.
+- **Commands and results:**
+  - Final focused Stage 11/privacy/hardening/API/observability/Stage 7 flow
+    command against the exact local disposable `orion_stage2_test` database:
+    `58 passed`.
+  - Full disposable migration/RLS/cascade/fresh-install/upgrade suite:
+    `26 passed`.
+  - Full non-live backend suite: `428 passed, 50 skipped`; the skips are the
+    existing environment-gated suites.
+  - Backend compileall and full Ruff passed. The explicit Stage 10 mypy gate
+    passed with no issues in `43` source files.
+  - Dedicated Stage 10 browser/API/worker/database regression:
+    `1 passed` in `1.0m`.
+  - Frontend typecheck, lint/design-system policy, `342` Vitest tests, and
+    production build passed.
+  - Schema-snapshot parity and tracked/untracked whitespace checks passed.
+  - Pytest reported the existing `python_multipart` pending-deprecation
+    warning; no new warning was introduced.
+- **Manual verification:** The focused suite pauses the controlled synthesis
+  provider after its encrypted basis is loaded, deletes either one source
+  entry or the account from a separate transaction, then releases the worker.
+  It verifies the stale claim outcome, terminal queue state, ciphertext at
+  rest, sanitized responses/logs, and the complete absence of synthesized
+  output or orphaned owner data.
+- **Deviations from the proposed plan:** Existing privacy primitives were
+  already fail-closed, so no application-service, frontend, or product IA
+  change was needed. The new race regression proved one database ordering
+  defect: weighted evidence validation ran before the mature source-version
+  lock/check. An append-only migration fixes only that ordering boundary; no
+  prior migration was rewritten and no dependency or infrastructure was
+  added.
+- **Remaining risks:** Migration `0025` and all deletion races were validated
+  only against the isolated local disposable database; no shared, staging, or
+  production database was migrated. Provider behavior is controlled and
+  offline, while the Stage 10 regression proves the real browser/API/worker
+  boundaries without a paid model call. Per the user's explicit instruction,
+  all Stage 11 changes remain uncommitted for review.
 
 **Objective:** Add post-P0 adversarial, ciphertext-failure, deletion, and privacy regression depth without changing product IA.
 

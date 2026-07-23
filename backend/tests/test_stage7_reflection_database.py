@@ -662,6 +662,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0022_review_weighted_reflections.sql",
         "0023_reflection_recalculation.sql",
         "0024_reflection_deletion_source_version.sql",
+        "0025_reflection_deletion_race_guard.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
