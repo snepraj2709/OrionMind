@@ -18,6 +18,10 @@ from sqlalchemy.exc import DBAPIError
 from app.main import create_app
 from app.modules.jobs.repository import JobRepository
 from app.modules.processing.embeddings import EMBEDDING_DIMENSIONS
+from app.modules.processing.prompts import (
+    ENTRY_ANALYSIS_DEVELOPER_PROMPT,
+    ENTRY_ANALYSIS_PROMPT_VERSION,
+)
 from app.modules.processing.redaction import DetectedEntity, PiiRedactor
 from app.modules.processing.repository import StaleAnalysisClaimError
 from app.modules.processing.schemas import ModelEntryAnalysis, ModelThemeClassification
@@ -185,6 +189,59 @@ class EmbeddingProvider:
             tuple(1.0 if index == 0 else 0.0 for index in range(EMBEDDING_DIMENSIONS))
             for _ in texts
         )
+
+
+def test_entry_analysis_v4_requires_journal_owner_second_person_voice() -> None:
+    prompt = " ".join(ENTRY_ANALYSIS_DEVELOPER_PROMPT.split())
+
+    assert ENTRY_ANALYSIS_PROMPT_VERSION == "entry-analysis-v4"
+    assert (
+        "Write every generated signal interpretation for the journal owner who will read"
+        in prompt
+    )
+    assert 'natural second-person language: "you", "your", and "yourself"' in prompt
+    for prohibited_reference in (
+        '"the writer"',
+        '"the author"',
+        '"the user"',
+        '"the subject"',
+        '"the individual"',
+        '"the journaler"',
+        '"they/their"',
+    ):
+        assert prohibited_reference in prompt
+    for detached_framing in (
+        '"The entry suggests..."',
+        '"The journal indicates..."',
+        '"The text reports..."',
+    ):
+        assert detached_framing in prompt
+    assert "Never refer to the journal owner as" in prompt
+    assert "Never introduce an interpretation with detached framing" in prompt
+
+
+def test_entry_analysis_v4_contains_voice_contrastive_examples() -> None:
+    prompt = " ".join(ENTRY_ANALYSIS_DEVELOPER_PROMPT.split())
+    examples = (
+        "Bad: The writer reports previously lacking clarity, will, and motivation to pursue the app.",
+        "Good: You describe previously lacking the clarity, resolve, and motivation to pursue the app.",
+        "Bad: The writer expresses readiness to apply their will and energy to moving forward.",
+        "Good: You now express readiness to move forward with your full will and energy.",
+        "Bad: The entry suggests a need for greater autonomy.",
+        "Good: You may be seeking greater autonomy here.",
+    )
+
+    for example in examples:
+        assert example in prompt
+
+
+def test_entry_analysis_v4_preserves_exact_source_quote_contract() -> None:
+    prompt = " ".join(ENTRY_ANALYSIS_DEVELOPER_PROMPT.split())
+
+    assert "grounded only in the supplied source quote" in prompt
+    assert "source_quote must remain an exact verbatim substring with valid offsets" in prompt
+    assert "first-person text belongs only in an exact source_quote" in prompt
+    assert "voice rules do not change direct versus inferred semantics" in prompt
 
 
 def test_model_signal_offsets_are_bound_to_exact_verbatim_quote() -> None:
@@ -466,7 +523,7 @@ def test_redacted_provider_exact_offset_legacy_parity_and_atomic_counters(
         assert review_item[16] == (
             {
                 "model_id": "gpt-5.6-luna",
-                "prompt_version": "entry-analysis-v3",
+                "prompt_version": "entry-analysis-v4",
                 "source": "entry_analysis",
             }
         )

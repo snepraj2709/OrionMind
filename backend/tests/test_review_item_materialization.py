@@ -20,6 +20,7 @@ from app.shared.security.encryption import AesGcmContentCipher
 USER = UUID("c1111111-1111-4111-8111-111111111111")
 ENTRY_DATE = date(2026, 7, 23)
 CONTENT = "I learned that quiet planning helps me feel capable."
+INTERPRETATION = "You feel more capable when you plan quietly."
 
 
 def cipher() -> AesGcmContentCipher:
@@ -49,7 +50,7 @@ def analysis(signal_type: str = "self_knowledge") -> ModelEntryAnalysis:
                 {
                     "signal_type": signal_type,
                     "normalized_label": "quiet planning supports capability",
-                    "interpretation": "Quiet planning helps the writer feel capable.",
+                    "interpretation": INTERPRETATION,
                     "source_quote": CONTENT,
                     "source_start": 0,
                     "source_end": len(CONTENT),
@@ -89,7 +90,7 @@ def test_every_entry_insight_type_maps_to_its_frozen_category(
         cipher=service,
         entry_date=ENTRY_DATE,
         model_id="test-model",
-        prompt_version="entry-analysis-v3",
+        prompt_version="entry-analysis-v4",
         embeddings=((1.0, 0.0),),
         embedding_model_id="test-embedding",
     )[0]
@@ -105,13 +106,14 @@ def test_every_entry_insight_type_maps_to_its_frozen_category(
         user_id=USER,
         record_id=UUID(review_item["id"]),
         purpose="review_item_statement",
-    ) == "Quiet planning helps the writer feel capable."
+    ) == INTERPRETATION
     assert service.decrypt_json(
         review_item["source_quote_envelope"],
         user_id=USER,
         record_id=UUID(review_item["id"]),
         purpose="review_item_source_quote",
     ) == CONTENT
+    assert INTERPRETATION != CONTENT
 
 
 @pytest.mark.parametrize(
@@ -131,7 +133,7 @@ def test_non_reviewable_legacy_signal_types_create_no_review_input(
         cipher=cipher(),
         entry_date=ENTRY_DATE,
         model_id="test-model",
-        prompt_version="entry-analysis-v3",
+        prompt_version="entry-analysis-v4",
         embeddings=((1.0, 0.0),),
     )[0]
 
