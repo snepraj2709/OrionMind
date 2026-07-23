@@ -160,7 +160,7 @@ export function ReviewScreen({
         value={scope}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="flex flex-wrap items-end gap-4">
         <FilterField
           disabled={interactionDisabled}
           id="review-category"

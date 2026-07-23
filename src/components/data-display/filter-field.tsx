@@ -14,5 +14,9 @@ export interface FilterFieldProps {
 }
 
 export function FilterField(props: FilterFieldProps) {
-  return <SelectField {...props} />;
+  return (
+    <div className="w-fit">
+      <SelectField {...props} />
+    </div>
+  );
 }

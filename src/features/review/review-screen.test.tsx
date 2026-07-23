@@ -176,6 +176,19 @@ describe('ReviewScreen', () => {
     expect(
       screen.queryByRole('combobox', { name: 'Theme' }),
     ).not.toBeInTheDocument();
+    const categoryFilter = screen.getByRole('combobox', { name: 'Category' });
+    const statusFilter = screen.getByRole('combobox', { name: 'Status' });
+    const categoryWrapper = categoryFilter.parentElement?.parentElement;
+    const statusWrapper = statusFilter.parentElement?.parentElement;
+
+    expect(categoryWrapper).toHaveClass('w-fit');
+    expect(statusWrapper).toHaveClass('w-fit');
+    expect(categoryWrapper?.parentElement).toBe(statusWrapper?.parentElement);
+    expect(categoryWrapper?.parentElement).toHaveClass(
+      'flex',
+      'flex-wrap',
+      'items-end',
+    );
     expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
   });
 
