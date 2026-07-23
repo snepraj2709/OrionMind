@@ -48,6 +48,7 @@ async function installReflectionApi(
   page: Page,
   initial: ReflectionApiResponse = reflectionApiFixture,
   recalculationReads: ReflectionApiResponse[] = [],
+  waitForRelease?: Promise<void>,
 ) {
   let aggregate = structuredClone(initial);
   const requests: string[] = [];
@@ -121,6 +122,7 @@ async function installReflectionApi(
     if (request.method() !== 'GET') {
       throw new Error(`Unexpected reflections request: ${request.method()}`);
     }
+    if (waitForRelease) await waitForRelease;
     if (recalculationAccepted && recalculationReads.length > 0) {
       aggregate = structuredClone(recalculationReads.shift()!);
     }
@@ -142,6 +144,35 @@ async function openReflections(page: Page, response?: ReflectionApiResponse) {
   await page.goto(routes.reflections.path);
   return requests;
 }
+
+test('shows exactly one central loader while Reflections loads', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 900 });
+  let releaseRequest!: () => void;
+  const waitForRelease = new Promise<void>((resolve) => {
+    releaseRequest = resolve;
+  });
+  await installReflectionApi(page, reflectionApiFixture, [], waitForRelease);
+  await logIn(page);
+  await page.goto(routes.reflections.path);
+
+  await expect(page.getByRole('heading', { name: 'Loading' })).toBeVisible();
+  await expect(page.locator('.animate-spin:visible')).toHaveCount(1);
+  const tabsBox = await page
+    .getByRole('radiogroup', { name: 'Reflection views' })
+    .boundingBox();
+  const loaderBox = await page
+    .getByRole('heading', { name: 'Loading' })
+    .locator('xpath=ancestor::*[@data-slot="card"]')
+    .boundingBox();
+  expect(tabsBox).not.toBeNull();
+  expect(loaderBox).not.toBeNull();
+  expect(loaderBox!.y).toBeGreaterThanOrEqual(tabsBox!.y + tabsBox!.height);
+
+  releaseRequest();
+  await expect(page.getByText('Supported by 2 entries')).toBeVisible();
+});
 
 for (const viewport of [
   { key: 'mobile', width: 320, height: 900 },
@@ -236,7 +267,7 @@ test('persists feedback through the plural insight endpoint', async ({
   expect(requests.filter((item) => item.startsWith('POST '))).toEqual([]);
 });
 
-test('recalculates explicitly, then polls cached GET until processing finishes', async ({
+test('polls after recalculation without showing a page loader', async ({
   page,
 }) => {
   const processing = structuredClone(reflectionApiFixture);
@@ -253,16 +284,44 @@ test('recalculates explicitly, then polls cached GET until processing finishes',
   await expect(page.getByText('Supported by 2 entries')).toBeVisible();
 
   await page.getByRole('button', { name: 'Refresh reflections' }).click();
-  await expect(page.getByText('Updating your reflections')).toBeVisible();
-  await expect
-    .poll(() => requests, { timeout: 8_000 })
-    .toEqual([
-      'GET /api/v1/reflections?range=all',
-      'POST /api/v1/reflections/recalculate',
-      'GET /api/v1/reflections?range=all',
-      'GET /api/v1/reflections?range=all',
-    ]);
-  await expect(page.getByText('Updating your reflections')).toHaveCount(0);
+  await page.waitForTimeout(2_500);
+  expect(requests).toEqual([
+    'GET /api/v1/reflections?range=all',
+    'POST /api/v1/reflections/recalculate',
+    'GET /api/v1/reflections?range=all',
+    'GET /api/v1/reflections?range=all',
+  ]);
+  await expect(page.getByRole('heading', { name: 'Refreshing' })).toHaveCount(
+    0,
+  );
+  await expect(page.locator('.animate-spin:visible')).toHaveCount(0);
+  await expect(page.getByText('Supported by 2 entries')).toBeVisible();
+});
+
+test('polls an ordinary stale page without showing a page loader', async ({
+  page,
+}) => {
+  const processing = structuredClone(reflectionApiFixture);
+  processing.reflectionState = 'stale';
+  processing.processingState = 'pending';
+  if (processing.snapshot) processing.snapshot.isStale = true;
+  const requests = await openReflections(page, processing);
+
+  await expect(page.getByText('Supported by 2 entries')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Refreshing' })).toHaveCount(
+    0,
+  );
+  await expect(page.locator('.animate-spin:visible')).toHaveCount(0);
+  await page.waitForTimeout(2_500);
+
+  expect(requests).toEqual([
+    'GET /api/v1/reflections?range=all',
+    'GET /api/v1/reflections?range=all',
+  ]);
+  await expect(page.getByRole('heading', { name: 'Refreshing' })).toHaveCount(
+    0,
+  );
+  await expect(page.locator('.animate-spin:visible')).toHaveCount(0);
   await expect(page.getByText('Supported by 2 entries')).toBeVisible();
 });
 

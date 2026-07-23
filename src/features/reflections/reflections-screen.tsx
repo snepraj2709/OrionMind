@@ -217,6 +217,11 @@ export function ReflectionsScreen({
     response?.data.recurringLoop.status === 'processing' ||
     response?.data.innerTensions.status === 'processing';
   const recalculationBusy = recalculation.isPending || isProcessing;
+  const suppressBackgroundRefresh =
+    viewStatus === 'refreshing' && (recalculation.isPending || isProcessing);
+  // Polling is transport-only once Reflections has data. Keep the current
+  // domain state mounted instead of promoting every GET to a page loader.
+  const pageViewStatus = suppressBackgroundRefresh ? 'ready' : viewStatus;
 
   function requestRecalculation() {
     if (!isOnline || recalculationBusy) return;
@@ -224,13 +229,14 @@ export function ReflectionsScreen({
   }
 
   let activePanel: ReactNode = null;
+  let activeProcessingInsight: ProcessingInsight | undefined;
 
   if (response && activeView === 'hidden-drivers') {
     const insight = response.data.hiddenDriver;
+    if (insight.status === 'processing') activeProcessingInsight = insight;
     activePanel =
-      insight.status === 'processing' ? (
-        <ProcessingSection insight={insight} />
-      ) : insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? null : insight.status ===
+        'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
       ) : insight.status === 'unavailable' ? (
         <UnavailableSection
@@ -256,10 +262,10 @@ export function ReflectionsScreen({
 
   if (response && activeView === 'recurring-loops') {
     const insight = response.data.recurringLoop;
+    if (insight.status === 'processing') activeProcessingInsight = insight;
     activePanel =
-      insight.status === 'processing' ? (
-        <ProcessingSection insight={insight} />
-      ) : insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? null : insight.status ===
+        'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
       ) : insight.status === 'unavailable' ? (
         <UnavailableSection
@@ -291,14 +297,14 @@ export function ReflectionsScreen({
 
   if (response && activeView === 'inner-tensions') {
     const insight = response.data.innerTensions;
+    if (insight.status === 'processing') activeProcessingInsight = insight;
     const tensionsWithEvidence =
       insight.status === 'available'
         ? insight.tensions.filter((tension) => tension.evidence.length > 0)
         : [];
     activePanel =
-      insight.status === 'processing' ? (
-        <ProcessingSection insight={insight} />
-      ) : insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? null : insight.status ===
+        'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
       ) : insight.status === 'unavailable' ? (
         <UnavailableSection
@@ -343,9 +349,20 @@ export function ReflectionsScreen({
   }
 
   const showTabs =
-    viewStatus === 'loading' ||
-    (response !== undefined &&
-      response.reflectionState !== 'insufficient_reflective_content');
+    response?.reflectionState !== 'insufficient_reflective_content';
+  let processingState: ReactNode = null;
+  if (pageViewStatus === 'ready') {
+    if (response?.reflectionState === 'first_reflection_pending') {
+      processingState = (
+        <ProcessingState
+          description="Orion is looking across your reflective entries. You can keep journaling while this finishes."
+          title="Your first reflection is taking shape"
+        />
+      );
+    } else if (activeProcessingInsight) {
+      processingState = <ProcessingSection insight={activeProcessingInsight} />;
+    }
+  }
 
   return (
     <PageShell className="space-y-8">
@@ -367,9 +384,9 @@ export function ReflectionsScreen({
             />
             <RefreshButton
               aria-label="Refresh reflections"
-              disabled={!isOnline || recalculationBusy}
-              loading={reflectionQuery.isFetching || recalculationBusy}
-              loadingLabel="Recalculating reflections"
+              disabled={
+                !isOnline || recalculationBusy || reflectionQuery.isFetching
+              }
               onClick={requestRecalculation}
               variant="icon"
             />
@@ -377,14 +394,6 @@ export function ReflectionsScreen({
         }
         description={subtitle}
         title={routes.reflections.label}
-      />
-
-      <DataViewStatus
-        initialError={dataViewMessages.reflections.initial}
-        onRetry={() => void retryPolling()}
-        refreshError={dataViewMessages.reflections.refresh}
-        retryDisabled={!isOnline}
-        status={viewStatus}
       />
 
       {!isOnline && response ? (
@@ -418,8 +427,6 @@ export function ReflectionsScreen({
           action={
             <AppButton
               disabled={!isOnline || reflectionQuery.isFetching}
-              loading={reflectionQuery.isFetching}
-              loadingLabel="Checking reflections"
               onClick={() => void retryPolling()}
               size="compact"
               variant="ghost"
@@ -431,21 +438,6 @@ export function ReflectionsScreen({
           This update is taking longer than expected. Check again without
           starting another recalculation.
         </InlineError>
-      ) : null}
-
-      {response?.reflectionState === 'first_reflection_pending' ? (
-        <ProcessingState
-          description="Orion is looking across your reflective entries. You can keep journaling while this finishes."
-          title="Your first reflection is taking shape"
-        />
-      ) : null}
-
-      {response?.reflectionState === 'stale' &&
-      response.processingState === 'pending' ? (
-        <ProcessingState
-          description="Your last reflection remains available while Orion considers newer entries."
-          title="Updating your reflections"
-        />
       ) : null}
 
       {response?.reflectionState === 'stale' &&
@@ -489,7 +481,19 @@ export function ReflectionsScreen({
             setActiveView(nextView);
             setDrawerOpen(false);
           }}
-          panel={activePanel}
+          panel={
+            <div className="space-y-8">
+              <DataViewStatus
+                initialError={dataViewMessages.reflections.initial}
+                onRetry={() => void retryPolling()}
+                refreshError={dataViewMessages.reflections.refresh}
+                retryDisabled={!isOnline}
+                status={pageViewStatus}
+              />
+              {processingState}
+              {activePanel}
+            </div>
+          }
           value={activeView}
         />
       ) : null}

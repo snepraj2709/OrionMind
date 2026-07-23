@@ -185,7 +185,7 @@ The Review queue uses the shared bordered review card with one full Lora stateme
 
 ## Required view states
 
-Every data view handles loading, error, empty, and success. Where applicable, it also handles processing, failure, insufficient data, offline, and retry states. Page-level query loading, refreshing, initial-error, and refresh-error states render through `DataViewStatus` as a full-width card with centered content; background states preserve the last loaded content below the card. Local form, offline, and mutation feedback remains inline beside the affected interaction.
+Every data view handles loading, error, empty, and success. Where applicable, it also handles processing, failure, insufficient data, offline, and retry states. Page-level query loading, refreshing, initial-error, and refresh-error states render through `DataViewStatus` as a full-width card with centered content; background states preserve the last loaded content below the card. `RefreshButton` never renders a second spinner: it becomes disabled while `DataViewStatus` owns the page-level loading signal, and action loaders already on the page are suppressed while that central refresh state is visible. Reflections has one page-data state slot directly below its Hidden drivers, Recurring loops, and Inner tensions switch. Its bounded background polling is visually silent: it never renders a page loader or replaces the last loaded snapshot. Processing UI is reserved for a first reflection or an active insight with no result to display. Local form, offline, and mutation feedback remains inline beside the affected interaction.
 
 ## Enforcement
 

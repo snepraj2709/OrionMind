@@ -221,6 +221,12 @@ describe('ReflectionsScreen', () => {
     expect(screen.getByRole('radio', { name: 'Hidden drivers' })).toBeVisible();
     const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
     expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(1);
+    expect(
+      screen
+        .getByRole('radiogroup', { name: 'Reflection views' })
+        .compareDocumentPosition(loadingHeading),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it('fetches once per user and range while tabs remain local and keyboard accessible', async () => {
@@ -399,23 +405,133 @@ describe('ReflectionsScreen', () => {
     );
   });
 
-  it.each([
-    ['pending', 'Updating your reflections'],
-    ['failed', 'Orion could not refresh these reflections'],
-  ] as const)(
-    'keeps stale cards visible when processing is %s',
-    async (state, copy) => {
-      const response = fixture((value) => {
-        value.reflectionState = 'stale';
-        value.processingState = state;
-        if (value.snapshot) value.snapshot.isStale = true;
-      });
-      renderReflections(repositoryFor(response).repository);
+  it('keeps stale pending cards visible without a loader', async () => {
+    const response = fixture((value) => {
+      value.reflectionState = 'stale';
+      value.processingState = 'pending';
+      if (value.snapshot) value.snapshot.isStale = true;
+    });
+    renderReflections(repositoryFor(response).repository);
 
-      expect(await screen.findByText(copy, { exact: false })).toBeVisible();
-      expect(screen.getByText('Supported by 2 entries')).toBeVisible();
-    },
-  );
+    expect(await screen.findByText('Supported by 2 entries')).toBeVisible();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(0);
+  });
+
+  it('keeps stale cards visible when processing has failed', async () => {
+    const response = fixture((value) => {
+      value.reflectionState = 'stale';
+      value.processingState = 'failed';
+      if (value.snapshot) value.snapshot.isStale = true;
+    });
+    renderReflections(repositoryFor(response).repository);
+
+    expect(
+      await screen.findByText('Orion could not refresh these reflections', {
+        exact: false,
+      }),
+    ).toBeVisible();
+    expect(screen.getByText('Supported by 2 entries')).toBeVisible();
+  });
+
+  it('keeps the loaded snapshot visible without a loader during a background poll', async () => {
+    const stale = fixture((value) => {
+      value.reflectionState = 'stale';
+      value.processingState = 'pending';
+      if (value.snapshot) value.snapshot.isStale = true;
+    });
+    const refresh = deferred<ReflectionApiResponse>();
+    const getReflection = vi
+      .fn<ReflectionsRepository['getReflection']>()
+      .mockResolvedValueOnce(stale)
+      .mockImplementationOnce(() => refresh.promise);
+    const { queryClient } = renderReflections({
+      getReflection,
+      putFeedback: vi.fn(),
+      recalculate: vi.fn(),
+    });
+
+    await screen.findByText('Supported by 2 entries');
+    void queryClient.invalidateQueries({
+      queryKey: ['reflections', 'reader-id', 'all'],
+    });
+
+    expect(
+      screen.queryByRole('heading', { name: 'Refreshing' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Updating your reflections' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText('Supported by 2 entries')).toBeVisible();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(0);
+
+    refresh.resolve(stale);
+  });
+
+  it('keeps feedback pending controls active while a stale snapshot polls', async () => {
+    const stale = fixture((value) => {
+      value.reflectionState = 'stale';
+      value.processingState = 'pending';
+      if (value.snapshot) value.snapshot.isStale = true;
+    });
+    const feedback = deferred<ReflectionFeedbackResult>();
+    const { repository } = repositoryFor(stale);
+    const putFeedback = vi.fn(() => feedback.promise);
+    const user = userEvent.setup();
+    renderReflections({ ...repository, putFeedback });
+
+    const rejected = await screen.findByRole('button', {
+      name: 'Not true for me',
+    });
+    await user.click(rejected);
+
+    expect(rejected).toBeDisabled();
+    expect(rejected.closest('[role="group"]')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    await user.click(rejected);
+    expect(putFeedback).toHaveBeenCalledTimes(1);
+
+    feedback.resolve({
+      snapshotId: reflectionFixtureIds.snapshot,
+      insightId: reflectionFixtureIds.hiddenDriver,
+      response: 'rejected',
+      updatedAt: '2026-07-21T12:42:00Z',
+    });
+    await waitFor(() => expect(rejected).toBeEnabled());
+  });
+
+  it('surfaces a polling error without removing the stale snapshot', async () => {
+    vi.useFakeTimers();
+    const stale = fixture((value) => {
+      value.reflectionState = 'stale';
+      value.processingState = 'pending';
+      if (value.snapshot) value.snapshot.isStale = true;
+    });
+    const getReflection = vi
+      .fn<ReflectionsRepository['getReflection']>()
+      .mockResolvedValueOnce(stale)
+      .mockRejectedValueOnce(new Error('503'));
+    renderReflections({
+      getReflection,
+      putFeedback: vi.fn(),
+      recalculate: vi.fn(),
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(reflectionPolling.intervalMs);
+    });
+
+    expect(
+      screen.getByRole('heading', { name: 'Refresh failed' }),
+    ).toBeVisible();
+    expect(screen.getByText('Supported by 2 entries')).toBeVisible();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(0);
+  });
 
   it('uses the API-safe message for insufficient reflective content', async () => {
     const response = fixture((value) => {
@@ -701,7 +817,7 @@ describe('ReflectionsScreen', () => {
     expect(screen.getAllByText('Possible integration')).toHaveLength(2);
   });
 
-  it('posts recalculation, refetches immediately, and polls only while processing', async () => {
+  it('polls after recalculation without showing a page loader', async () => {
     vi.useFakeTimers();
     const available = fixture();
     const processing = fixture((value) => {
@@ -741,7 +857,11 @@ describe('ReflectionsScreen', () => {
     expect(recalculate).toHaveBeenCalledTimes(1);
     expect(recalculate).toHaveBeenCalledWith(expect.any(AbortSignal));
     expect(getReflection).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('Updating your reflections')).toBeVisible();
+    expect(screen.getByText('Supported by 2 entries')).toBeVisible();
+    expect(
+      screen.queryByRole('heading', { name: 'Refreshing' }),
+    ).not.toBeInTheDocument();
+    expect(document.querySelectorAll('.animate-spin')).toHaveLength(0);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(reflectionPolling.intervalMs);
@@ -755,7 +875,7 @@ describe('ReflectionsScreen', () => {
     expect(getReflection).toHaveBeenCalledTimes(3);
   });
 
-  it('bounds automatic GET polling and never posts on an ordinary processing view', async () => {
+  it('bounds ordinary processing polling without showing a refresh loader', async () => {
     vi.useFakeTimers();
     const processing = fixture((value) => {
       value.reflectionState = 'first_reflection_pending';
@@ -766,7 +886,7 @@ describe('ReflectionsScreen', () => {
         message: 'Still processing.',
       };
     });
-    const { getReflection, recalculate, repository, setCurrent } =
+    const { getReflection, recalculate, repository } =
       repositoryFor(processing);
     renderReflections(repository);
     await act(async () => {
@@ -786,35 +906,24 @@ describe('ReflectionsScreen', () => {
         'This update is taking longer than expected. Check again without starting another recalculation.',
       ),
     ).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Check again' })).toBeEnabled();
+    expect(
+      screen.getByText('Your first reflection is taking shape'),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('heading', { name: 'Refreshing' }),
+    ).not.toBeInTheDocument();
 
     await advancePollingIntervals(reflectionPolling.maxAttempts);
     expect(getReflection).toHaveBeenCalledTimes(boundedCallCount);
-
-    setCurrent(fixture());
-    fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
-    await act(async () => {
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(1);
-    });
-
-    expect(screen.getByText('Supported by 2 entries')).toBeVisible();
-    expect(getReflection).toHaveBeenCalledTimes(boundedCallCount + 1);
-    expect(recalculate).not.toHaveBeenCalled();
   });
 
-  it('counts failed polling reads toward the cap and recovers with a cached GET retry', async () => {
-    vi.useFakeTimers();
-    const processing = fixture((value) => {
-      value.reflectionState = 'stale';
-      value.processingState = 'pending';
-      if (value.snapshot) value.snapshot.isStale = true;
-    });
+  it('makes one failed follow-up GET and retries only when requested', async () => {
     const available = fixture();
     const getReflection = vi
       .fn<ReflectionsRepository['getReflection']>()
-      .mockResolvedValueOnce(processing)
-      .mockRejectedValue(new Error('503'));
+      .mockResolvedValueOnce(available)
+      .mockRejectedValueOnce(new Error('503'))
+      .mockResolvedValueOnce(available);
     const recalculate = vi
       .fn<ReflectionsRepository['recalculate']>()
       .mockResolvedValue({
@@ -826,42 +935,32 @@ describe('ReflectionsScreen', () => {
       putFeedback: vi.fn(),
       recalculate,
     });
-    await act(async () => {
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(1);
-    });
+    await screen.findByText('Supported by 2 entries');
 
-    await advancePollingIntervals(reflectionPolling.maxAttempts + 2);
-    const boundedCallCount = getReflection.mock.calls.length;
-
-    expect(boundedCallCount).toBeLessThanOrEqual(
-      reflectionPolling.maxAttempts + 1,
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Refresh reflections' }),
     );
-    expect(screen.getByText(/Showing the last available view/)).toBeVisible();
-    expect(recalculate).not.toHaveBeenCalled();
+    await waitFor(() => expect(getReflection).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByRole('heading', { name: 'Refresh failed' }),
+    ).toBeVisible();
+    expect(recalculate).toHaveBeenCalledTimes(1);
 
-    await advancePollingIntervals(reflectionPolling.maxAttempts);
-    expect(getReflection).toHaveBeenCalledTimes(boundedCallCount);
-
-    getReflection.mockResolvedValue(available);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    await act(async () => {
-      await Promise.resolve();
-      await vi.advanceTimersByTimeAsync(1);
-    });
-
+    await waitFor(() => expect(getReflection).toHaveBeenCalledTimes(3));
     expect(screen.getByText('Supported by 2 entries')).toBeVisible();
-    expect(getReflection).toHaveBeenCalledTimes(boundedCallCount + 1);
+    expect(getReflection).toHaveBeenCalledTimes(3);
+    expect(recalculate).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels an in-flight polling read when the range changes', async () => {
+  it('cancels an in-flight follow-up read when the range changes', async () => {
     const pending = deferred<ReflectionApiResponse>();
-    let pollingSignal: AbortSignal | undefined;
+    let followUpSignal: AbortSignal | undefined;
     const getReflection = vi
       .fn<ReflectionsRepository['getReflection']>()
       .mockResolvedValueOnce(fixture())
       .mockImplementationOnce((_input, signal) => {
-        pollingSignal = signal;
+        followUpSignal = signal;
         signal?.addEventListener('abort', () => {
           pending.reject(new DOMException('Aborted', 'AbortError'));
         });
@@ -891,7 +990,7 @@ describe('ReflectionsScreen', () => {
     await waitFor(() => expect(getReflection).toHaveBeenCalledTimes(2));
     await user.click(screen.getByRole('radio', { name: 'Last 30 days' }));
 
-    await waitFor(() => expect(pollingSignal?.aborted).toBe(true));
+    await waitFor(() => expect(followUpSignal?.aborted).toBe(true));
     await waitFor(() => expect(getReflection).toHaveBeenCalledTimes(3));
     expect(getReflection).toHaveBeenLastCalledWith(
       { range: '30d' },
