@@ -9,6 +9,10 @@ export {
   type DataTableProps,
   type DataTableSearch,
 } from './data-table';
+export {
+  ExtractedItemKindBadge,
+  type ExtractedItemKindBadgeProps,
+} from './extracted-item-kind-badge';
 export { FilterBar, type FilterBarProps } from './filter-bar';
 export { FilterField, type FilterFieldProps } from './filter-field';
 export {

@@ -39,6 +39,7 @@ Every text element must use a semantic role through the `Typography` component o
 | Button                    | `type-button`                    | Inter  | 15 / 20px          | 600    | Buttons and action labels                 |
 | Body small                | `type-body-small`                | Inter  | 14 / 20px          | 400    | Supporting interface copy                 |
 | Metadata                  | `type-metadata`                  | Inter  | 14 / 20px          | 500    | Dates, status context, and compact labels |
+| Tag                       | `type-tag`                       | Inter  | 12 / 16px          | 500    | Title-case taxonomy and compact tags      |
 | Eyebrow                   | `type-eyebrow`                   | Inter  | 12 / 16px          | 600    | Uppercase with `0.08em` tracking          |
 | Prominent brand wordmark  | `type-brand-wordmark-prominent`  | Lora   | 32 / 40px          | 400    | Italic; shared Orion brandmark only       |
 

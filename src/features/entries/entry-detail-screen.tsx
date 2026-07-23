@@ -3,7 +3,11 @@
 import { ArrowLeft } from 'lucide-react';
 
 import { Surface } from '@/components/cards';
-import { StatusBadge, ThemeBadge } from '@/components/data-display';
+import {
+  ExtractedItemKindBadge,
+  StatusBadge,
+  ThemeBadge,
+} from '@/components/data-display';
 import { AppButton, Typography } from '@/components/design-system';
 import {
   DataViewStatus,
@@ -20,7 +24,6 @@ import { dataViewMessages } from '@/config/messages';
 import {
   approvalStatusPresentation,
   entryStatusPresentation,
-  extractedItemKindPresentation,
 } from '@/config/status';
 import { useOnlineStatus } from '@/hooks';
 import { formatLongDate } from '@/lib/date';
@@ -39,9 +42,16 @@ function ExtractedItemView({ item }: { item: ExtractedItem }) {
     <ReviewItemCard
       content={item.content}
       status={
-        <StatusBadge label={presentation.label} variant={presentation.tone} />
+        <div className="flex flex-wrap justify-end gap-2">
+          {item.status !== 'pending_approval' ? (
+            <StatusBadge
+              label={presentation.label}
+              variant={presentation.tone}
+            />
+          ) : null}
+          <ExtractedItemKindBadge kind={item.kind} />
+        </div>
       }
-      title={extractedItemKindPresentation[item.kind].label}
     />
   );
 }
@@ -58,7 +68,7 @@ function CompletedEntry({ entry }: { entry: EntryDetail }) {
             variant={entryStatusPresentation.completed.tone}
           />
           <Typography className="text-muted-foreground" variant="metadata">
-            {entry.inputType === 'voice' ? 'Voice transcript' : 'Text entry'}
+            {entry.inputType === 'voice' ? 'Audio' : 'Text'}
           </Typography>
         </div>
         <Typography className="text-measure-wide" variant="journalExcerpt">
@@ -66,10 +76,7 @@ function CompletedEntry({ entry }: { entry: EntryDetail }) {
         </Typography>
       </Surface>
 
-      <Section
-        description="The strongest themes Orion found in this entry."
-        title="Themes"
-      >
+      <Section title="Themes">
         {entry.themes.length > 0 ? (
           <div className="flex flex-wrap gap-2">
             {entry.themes.map((theme) => (
@@ -83,10 +90,7 @@ function CompletedEntry({ entry }: { entry: EntryDetail }) {
         )}
       </Section>
 
-      <Section
-        description="Ideas and memories Orion found in this entry. Reviewable insights appear separately on Review."
-        title="Extracted items"
-      >
+      <Section title="Extracted items">
         {extractedItems.length === 0 ? (
           <EmptyState
             className="py-8"
@@ -125,29 +129,28 @@ export function EntryDetailScreen({
     <PageShell className="space-y-8">
       <PageHeader
         actions={
-          <>
+          <RefreshButton
+            loading={entryQuery.isFetching && !entryQuery.isPending}
+            loadingLabel="Refreshing entry"
+            onClick={() => void entryQuery.refetch()}
+          >
+            Refresh
+          </RefreshButton>
+        }
+        breadcrumbs={
+          <div className="flex flex-col items-start gap-2">
             <AppLink className="gap-2" href={routes.entries.path}>
               <ArrowLeft aria-hidden="true" className="size-4" />
               Back to entries
             </AppLink>
-            <RefreshButton
-              loading={entryQuery.isFetching && !entryQuery.isPending}
-              loadingLabel="Refreshing entry"
-              onClick={() => void entryQuery.refetch()}
-            >
-              Refresh
-            </RefreshButton>
-          </>
+            <Breadcrumbs
+              items={[
+                { href: routes.entries.path, label: routes.entries.label },
+                { label: title },
+              ]}
+            />
+          </div>
         }
-        breadcrumbs={
-          <Breadcrumbs
-            items={[
-              { href: routes.entries.path, label: routes.entries.label },
-              { label: title },
-            ]}
-          />
-        }
-        description="Your original words and the patterns Orion found within them."
         title={title}
       />
 
@@ -179,8 +182,8 @@ export function EntryDetailScreen({
             </Typography>
           </Surface>
           <ProcessingState
-            description="Your entry is safe. Themes, ideas, and memories will appear here when reflection is complete."
-            title="Orion is reflecting on this entry"
+            description="We're extracting themes, ideas, and memories from your entry."
+            title="Orion is reflecting"
           />
         </div>
       ) : null}
@@ -193,7 +196,7 @@ export function EntryDetailScreen({
             </Typography>
           </Surface>
           <ProcessingState
-            description="Your entry is safe and waiting for Orion to begin reflection. Refresh when you are ready to check its progress."
+            description="Your entry is safe and waiting to begin reflection."
             title="Entry is queued for reflection"
           />
         </div>
