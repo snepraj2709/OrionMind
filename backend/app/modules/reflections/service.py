@@ -25,6 +25,7 @@ from app.modules.reflections.aggregate import (
     _required_mapping,
 )
 from app.modules.reflections.repository import (
+    ReflectionResourceNotFoundError,
     ReflectionsRepository,
 )
 from app.modules.reflections.schemas import (
@@ -150,20 +151,43 @@ class ReflectionsService:
         uow: UnitOfWorkFactory,
     ) -> FeedbackResult:
         self._require_enabled(command.user_id)
-        item = self._review_service.save_legacy_pattern_feedback(
-            user_id=command.user_id,
-            snapshot_id=command.snapshot_id,
-            insight_id=command.insight_id,
-            response=command.response,
-            uow=uow,
-        )
-        if item.feedback is None:
-            raise RuntimeError("saved pattern feedback is unavailable")
+        try:
+            item = self._review_service.save_legacy_pattern_feedback(
+                user_id=command.user_id,
+                snapshot_id=command.snapshot_id,
+                insight_id=command.insight_id,
+                response=command.response,
+                uow=uow,
+            )
+        except DomainError as exc:
+            if exc.status_code != 404 or exc.error_code != "NOT_FOUND":
+                raise
+            try:
+                with uow.for_user(command.user_id) as work:
+                    saved = self._repository.put_feedback(
+                        work.session,
+                        user_id=command.user_id,
+                        snapshot_id=command.snapshot_id,
+                        insight_id=command.insight_id,
+                        response=command.response,
+                    )
+            except ReflectionResourceNotFoundError as not_found:
+                raise DomainError(
+                    404,
+                    "NOT_FOUND",
+                    "The requested resource was not found.",
+                    headers=NO_STORE_HEADERS,
+                ) from not_found
+            updated_at = saved.updated_at
+        else:
+            if item.feedback is None:
+                raise RuntimeError("saved pattern feedback is unavailable")
+            updated_at = item.feedback.updated_at
         result = FeedbackResult(
             snapshot_id=command.snapshot_id,
             insight_id=command.insight_id,
             response=command.response,
-            updated_at=item.feedback.updated_at,
+            updated_at=updated_at,
         )
         self._telemetry.record_feedback(response=result.response)
         safe_log(

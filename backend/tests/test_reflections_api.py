@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from app.main import create_app
 from app.modules.reflections.repository import (
+    ReflectionResourceNotFoundError,
     ReflectionsRepository as SqlReflectionsRepository,
 )
 from app.modules.reflections.schemas import (
@@ -90,6 +91,8 @@ class Repository:
         self.raw = raw
         self.read_users: list[UUID] = []
         self.feedback_calls: list[dict[str, object]] = []
+        self.legacy_feedback_calls: list[dict[str, object]] = []
+        self.review_mapping_missing = False
         self.not_found = False
 
     def load_aggregate(self, _session, *, user_id: UUID) -> dict[str, object]:
@@ -120,12 +123,29 @@ class Repository:
             )
         )
 
+    def put_feedback(self, _session, **kwargs):
+        if self.not_found:
+            raise ReflectionResourceNotFoundError
+        self.legacy_feedback_calls.append(kwargs)
+        return SimpleNamespace(
+            snapshot_id=kwargs["snapshot_id"],
+            insight_id=kwargs["insight_id"],
+            response=kwargs["response"],
+            updated_at=datetime(2026, 7, 21, 12, 42, tzinfo=timezone.utc),
+        )
+
 
 class ReviewAdapter:
     def __init__(self, repository: Repository) -> None:
         self._repository = repository
 
     def save_legacy_pattern_feedback(self, **kwargs):
+        if self._repository.review_mapping_missing:
+            raise DomainError(
+                404,
+                "NOT_FOUND",
+                "The requested resource was not found.",
+            )
         return self._repository.save_legacy_feedback(**kwargs)
 
 
@@ -734,6 +754,38 @@ def test_feedback_create_repeat_replace_restore_and_opaque_not_found_are_llm_fre
     assert missing.json()["error_code"] == "NOT_FOUND"
     assert len(repository.feedback_calls) == 3
     assert all(item["user_id"] == USER_ID for item in repository.feedback_calls)
+    assert provider.calls == []
+
+
+def test_feedback_for_valid_pre_review_snapshot_uses_legacy_persistence() -> None:
+    raw = raw_with_snapshot()
+    app, repository, provider, _content_cipher = build_app(raw)
+    snapshot_id = UUID("231626b9-8fb2-5b11-8443-78fd06b2bcf5")
+    insight_id = UUID("a12e47b1-8cb9-58a7-a144-52542787a412")
+    repository.review_mapping_missing = True
+
+    with TestClient(app) as client:
+        response = client.put(
+            f"/api/v1/reflections/{snapshot_id}/insights/{insight_id}/feedback",
+            headers=HEADERS,
+            json={"response": "partly"},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "snapshotId": str(snapshot_id),
+        "insightId": str(insight_id),
+        "response": "partly",
+        "updatedAt": "2026-07-21T12:42:00Z",
+    }
+    assert repository.legacy_feedback_calls == [
+        {
+            "user_id": USER_ID,
+            "snapshot_id": snapshot_id,
+            "insight_id": insight_id,
+            "response": "partly",
+        }
+    ]
     assert provider.calls == []
 
 

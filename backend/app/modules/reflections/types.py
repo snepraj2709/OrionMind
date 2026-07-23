@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -19,6 +20,14 @@ class FeedbackCommand:
     snapshot_id: UUID
     insight_id: UUID
     response: FeedbackResponse
+
+
+@dataclass(frozen=True, slots=True)
+class SavedFeedback:
+    snapshot_id: UUID
+    insight_id: UUID
+    response: FeedbackResponse
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

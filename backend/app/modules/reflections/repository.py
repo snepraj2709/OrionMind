@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
-from app.modules.reflections.types import RecalculationRequest
+from app.modules.reflections.schemas import FeedbackResponse
+from app.modules.reflections.types import RecalculationRequest, SavedFeedback
+
+
+class ReflectionResourceNotFoundError(LookupError):
+    pass
 
 
 class ReflectionsRepository:
@@ -78,6 +85,40 @@ class ReflectionsRepository:
                 }
         aggregate["feedback"] = list(merged.values())
         return aggregate
+
+    def put_feedback(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        snapshot_id: UUID,
+        insight_id: UUID,
+        response: FeedbackResponse,
+    ) -> SavedFeedback:
+        try:
+            row = session.execute(
+                text(
+                    "SELECT snapshot_id, insight_id, response, updated_at "
+                    "FROM public.put_reflection_feedback_for_owner("
+                    ":user_id, :snapshot_id, :insight_id, :response)"
+                ),
+                {
+                    "user_id": user_id,
+                    "snapshot_id": snapshot_id,
+                    "insight_id": insight_id,
+                    "response": response,
+                },
+            ).mappings().one()
+        except DBAPIError as exc:
+            if getattr(exc.orig, "sqlstate", None) == "P0002":
+                raise ReflectionResourceNotFoundError from exc
+            raise
+        return SavedFeedback(
+            snapshot_id=UUID(str(row["snapshot_id"])),
+            insight_id=UUID(str(row["insight_id"])),
+            response=cast(FeedbackResponse, str(row["response"])),
+            updated_at=cast(datetime, row["updated_at"]),
+        )
 
     def request_recalculation(
         self,
