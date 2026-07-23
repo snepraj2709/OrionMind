@@ -56,7 +56,8 @@ describe('EntriesScreen', () => {
 
     renderEntries(repository);
 
-    expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
+    const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
+    expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
     expect(screen.getByText('Loading review count')).toBeVisible();
   });
 
@@ -262,7 +263,9 @@ describe('EntriesScreen', () => {
     await screen.findByText(completedEntry.content);
     void queryClient.invalidateQueries({ queryKey: entryKeys.lists });
 
-    expect(await screen.findByText('Refreshing entries…')).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { name: 'Refreshing' }),
+    ).toBeVisible();
     expect(screen.getByText(completedEntry.content)).toBeVisible();
 
     resolveRefresh?.(result([completedEntry]));

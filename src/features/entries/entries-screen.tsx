@@ -101,8 +101,6 @@ export function EntriesScreen({
         initialError={dataViewMessages.entries.initial}
         onRetry={() => void query.refetch()}
         refreshError={dataViewMessages.entries.refresh}
-        refreshingLabel="Refreshing entries…"
-        skeletonCount={4}
         status={viewStatus}
       />
 

@@ -383,10 +383,7 @@ export function ReflectionsScreen({
         initialError={dataViewMessages.reflections.initial}
         onRetry={() => void retryPolling()}
         refreshError={dataViewMessages.reflections.refresh}
-        refreshingAriaLabel="Refreshing reflections"
-        refreshingLabel="Refreshing reflections… Your current view will stay in place."
         retryDisabled={!isOnline}
-        skeletonCount={1}
         status={viewStatus}
       />
 

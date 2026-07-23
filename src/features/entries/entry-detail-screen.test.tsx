@@ -85,7 +85,8 @@ describe('EntryDetailScreen', () => {
       }),
     );
 
-    expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
+    const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
+    expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
   });
 
   it('renders a completed entry with read-only extracted items', async () => {
@@ -291,7 +292,7 @@ describe('EntryDetailScreen', () => {
     await screen.findByText(completedEntry.content);
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
 
-    expect(screen.getByText('Refreshing entry…')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Refreshing' })).toBeVisible();
     expect(screen.getByText(completedEntry.content)).toBeVisible();
     await act(async () => resolveRefresh?.(completedEntry));
   });

@@ -185,7 +185,7 @@ The Review queue uses the shared bordered review card with one full Lora stateme
 
 ## Required view states
 
-Every data view handles loading, error, empty, and success. Where applicable, it also handles processing, failure, insufficient data, offline, and retry states. Shared state components must preserve the page heading and approximate final layout to prevent disruptive replacement.
+Every data view handles loading, error, empty, and success. Where applicable, it also handles processing, failure, insufficient data, offline, and retry states. Page-level query loading, refreshing, initial-error, and refresh-error states render through `DataViewStatus` as a full-width card with centered content; background states preserve the last loaded content below the card. Local form, offline, and mutation feedback remains inline beside the affected interaction.
 
 ## Enforcement
 

@@ -158,7 +158,6 @@ export function EntryDetailScreen({
         initialError={dataViewMessages.entryDetail.initial}
         onRetry={() => void entryQuery.refetch()}
         refreshError={dataViewMessages.entryDetail.refresh}
-        refreshingLabel="Refreshing entry…"
         status={viewStatus}
       />
 

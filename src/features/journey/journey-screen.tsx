@@ -130,10 +130,7 @@ export function JourneyScreen({
           void Promise.all([entriesQuery.refetch(), statusQuery.refetch()])
         }
         refreshError={dataViewMessages.journey.refresh}
-        refreshingAriaLabel="Refreshing journey"
-        refreshingLabel="Refreshing your journey… The current view will stay in place."
         retryDisabled={!isOnline}
-        skeletonCount={5}
         status={viewStatus}
       />
 

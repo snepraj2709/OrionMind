@@ -89,7 +89,6 @@ export function SavedItemsScreen({
         initialError={errorMessages.initial}
         onRetry={() => void query.refetch()}
         refreshError={errorMessages.refresh}
-        refreshingLabel={`Refreshing ${title.toLocaleLowerCase()}…`}
         retryDisabled={!isOnline}
         status={viewStatus}
       />

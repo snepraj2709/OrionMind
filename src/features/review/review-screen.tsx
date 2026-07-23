@@ -158,7 +158,6 @@ export function ReviewScreen({
         initialError={dataViewMessages.review.initial}
         onRetry={() => void query.refetch()}
         refreshError={dataViewMessages.review.refresh}
-        refreshingLabel="Refreshing Review items…"
         status={viewStatus}
       />
 

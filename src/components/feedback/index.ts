@@ -23,6 +23,8 @@ export {
   type NoResultsStateProps,
   PageErrorState,
   type PageErrorStateProps,
+  PageLoadingState,
+  type PageLoadingStateProps,
   ProcessingState,
   type ProcessingStateProps,
 } from './states';

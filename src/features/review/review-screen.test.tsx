@@ -182,7 +182,8 @@ describe('ReviewScreen', () => {
     expect(
       screen.queryByRole('combobox', { name: 'Status' }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
+    const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
+    expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
   });
 
   it('switches scopes and requests every pending category from page one', async () => {
@@ -503,7 +504,9 @@ describe('ReviewScreen', () => {
     void queryClient.invalidateQueries({
       queryKey: reviewKeys.user('80000000-0000-4000-8000-000000000001'),
     });
-    expect(await screen.findByText('Refreshing Review items…')).toBeVisible();
+    expect(
+      await screen.findByRole('heading', { name: 'Refreshing' }),
+    ).toBeVisible();
     expect(screen.getByText(entryItem.statement)).toBeVisible();
     expect(
       screen.getByRole('button', {
@@ -539,6 +542,9 @@ describe('ReviewScreen', () => {
 
     expect(
       await screen.findByText(/queue could not be refreshed/i),
+    ).toBeVisible();
+    expect(
+      screen.getByRole('heading', { name: 'Refresh failed' }),
     ).toBeVisible();
     expect(screen.getByText(entryItem.statement)).toBeVisible();
     expect(

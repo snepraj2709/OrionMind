@@ -219,7 +219,8 @@ describe('ReflectionsScreen', () => {
     );
     expect(screen.getByRole('radio', { name: 'Latest 90 days' })).toBeVisible();
     expect(screen.getByRole('radio', { name: 'Hidden drivers' })).toBeVisible();
-    expect(screen.getByRole('status', { name: 'Loading items' })).toBeVisible();
+    const loadingHeading = screen.getByRole('heading', { name: 'Loading' });
+    expect(loadingHeading.closest('[data-slot="card"]')).toBeInTheDocument();
   });
 
   it('fetches once per user and range while tabs remain local and keyboard accessible', async () => {

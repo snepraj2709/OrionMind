@@ -79,7 +79,11 @@ function feedbackResult(
 
 async function installReviewApi(
   page: Page,
-  options: { empty?: boolean; fail?: boolean } = {},
+  options: {
+    empty?: boolean;
+    fail?: boolean;
+    waitForRelease?: Promise<void>;
+  } = {},
 ) {
   let items = options.empty ? [] : [entryItem, patternItem];
   const requests: Array<{
@@ -94,6 +98,10 @@ async function installReviewApi(
     const method = request.method();
     const body = method === 'POST' ? request.postDataJSON() : undefined;
     requests.push({ method, path: `${url.pathname}${url.search}`, body });
+
+    if (method === 'GET' && options.waitForRelease) {
+      await options.waitForRelease;
+    }
 
     if (options.fail) {
       await route.fulfill({
@@ -161,12 +169,39 @@ async function installReviewApi(
 
 async function openReview(
   page: Page,
-  options: { empty?: boolean; fail?: boolean } = {},
+  options: Parameters<typeof installReviewApi>[1] = {},
 ) {
   const requests = await installReviewApi(page, options);
   await logIn(page);
   await page.goto(routes.review.path);
   return requests;
+}
+
+async function expectCenteredStateCard(
+  page: Page,
+  title: string,
+  viewportWidth: number,
+) {
+  const heading = page.getByRole('heading', { name: title });
+  const card = heading.locator('xpath=ancestor::*[@data-slot="card"]');
+  const state = heading.locator(
+    'xpath=ancestor::*[@role="status" or @role="alert"]',
+  );
+
+  await expect(heading).toBeVisible();
+  await expect(card).toHaveCount(1);
+  await expect(state).toHaveCSS('text-align', 'center');
+
+  const cardBox = await card.boundingBox();
+  const stateBox = await state.boundingBox();
+  expect(cardBox).not.toBe(null);
+  expect(stateBox).not.toBe(null);
+  expect(cardBox!.width).toBeGreaterThanOrEqual(viewportWidth * 0.65);
+  expect(
+    Math.abs(
+      cardBox!.x + cardBox!.width / 2 - (stateBox!.x + stateBox!.width / 2),
+    ),
+  ).toBeLessThanOrEqual(1);
 }
 
 for (const viewport of [
@@ -227,6 +262,37 @@ for (const viewport of [
           request.path.includes('page_size=1'),
       ),
     ).toBe(true);
+  });
+
+  test(`centers Review loading and error cards at ${viewport.key} width`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    let releaseRequests!: () => void;
+    const waitForRelease = new Promise<void>((resolve) => {
+      releaseRequests = resolve;
+    });
+
+    await openReview(page, { waitForRelease });
+    await expectCenteredStateCard(page, 'Loading', viewport.width);
+
+    releaseRequests();
+    await expect(page.getByText(entryItem.statement)).toBeVisible();
+
+    await page.unroute('**/api/v1/review/items**');
+    await installReviewApi(page, { fail: true });
+    await page.reload();
+    await expectCenteredStateCard(
+      page,
+      'Review is unavailable',
+      viewport.width,
+    );
+
+    const dimensions = await page.evaluate(() => ({
+      content: document.documentElement.scrollWidth,
+      viewport: document.documentElement.clientWidth,
+    }));
+    expect(dimensions.content).toBeLessThanOrEqual(dimensions.viewport);
   });
 }
 

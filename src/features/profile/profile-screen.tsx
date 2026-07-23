@@ -84,7 +84,6 @@ export function ProfileScreen({
         initialError={dataViewMessages.profile.initial}
         onRetry={() => void profileQuery.refetch()}
         refreshError={dataViewMessages.profile.refresh}
-        refreshingLabel="Refreshing profile settings…"
         status={viewStatus}
       />
 
