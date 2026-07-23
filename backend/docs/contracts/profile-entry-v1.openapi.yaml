@@ -3,9 +3,9 @@ info:
   title: Orion profile and entry API
   version: 1.5.0-profile-entry-trim
   description: >-
-    Frozen Orion 1.5.0 contract containing the 15 approved profile, account, health, entry, and
-    Reflection operations. Supabase Auth remains external; ownership is derived exclusively from
-    a verified bearer token.
+    Frozen Orion 1.5.0 contract containing the 17 approved profile, account, health, entry, Review,
+    and Reflection operations. Supabase Auth remains external; ownership is derived exclusively
+    from a verified bearer token.
   x-source-artifact: ORION-API-UI-CONTRACT-1.5.0
   x-source-commit: 1a993c3438460dcdf5d0680a272e43c6c09e34e3
 servers:
@@ -17,6 +17,7 @@ tags:
   - name: Operations
   - name: Profile
   - name: Entries
+  - name: Review
   - name: Reflections
 paths:
   /health:
@@ -313,6 +314,75 @@ paths:
         '502': { $ref: '#/components/responses/ProviderFailure' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
+  /api/v1/review/items:
+    get:
+      tags: [Review]
+      operationId: listReviewItems
+      summary: List owner-scoped Review items
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/ReviewScope' }
+        - name: category
+          in: query
+          schema: { $ref: '#/components/schemas/ReviewCategory' }
+        - name: status
+          in: query
+          schema:
+            allOf: [{ $ref: '#/components/schemas/ReviewStatus' }]
+            default: pending
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PageSize' }
+      responses:
+        '200':
+          description: Deterministically ordered Review items.
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewItemsResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+
+  /api/v1/review/items/{review_item_id}/feedback:
+    parameters:
+      - name: review_item_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [Review]
+      operationId: submitReviewFeedback
+      summary: Replace feedback for one owner-scoped Review item
+      description: Identical normalized feedback is idempotent. A changed response invalidates the cached Reflection and requests asynchronous recalculation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewFeedbackRequest' }
+      responses:
+        '200':
+          description: Complete updated Review item.
+          headers:
+            Cache-Control:
+              required: true
+              schema: { type: string, const: 'private, no-store' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReviewItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
   /api/v1/reflections:
     get:
       tags: [Reflections]
@@ -475,6 +545,215 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
 
   schemas:
+    ReviewScope:
+      type: string
+      enum: [entry_insight, pattern]
+    ReviewCategory:
+      type: string
+      enum:
+        [
+          all,
+          energy,
+          self_knowledge,
+          needs_beliefs,
+          hidden_driver,
+          recurring_loop,
+          inner_tension,
+        ]
+      default: all
+    ReviewStatus:
+      type: string
+      enum: [pending, confirmed, partially_confirmed, rejected]
+    EntryInsightType:
+      type: string
+      enum:
+        [
+          energy_gain,
+          energy_loss,
+          self_knowledge,
+          realization,
+          explicit_preference,
+          need,
+          belief,
+          avoidance,
+          protective_strategy,
+          conflict,
+          causal_relationship,
+        ]
+    PatternType:
+      type: string
+      enum: [hidden_driver, recurring_loop, inner_tension]
+    EntryInsightVerdict:
+      type: string
+      enum: [accurate, partly_accurate, not_accurate]
+    PatternVerdict:
+      type: string
+      enum: [resonates, partly_true, not_true]
+    ReviewFeedbackRequest:
+      type: object
+      additionalProperties: false
+      required: [verdict]
+      properties:
+        verdict:
+          oneOf:
+            - { $ref: '#/components/schemas/EntryInsightVerdict' }
+            - { $ref: '#/components/schemas/PatternVerdict' }
+        correctedStatement:
+          type: [string, 'null']
+          maxLength: 1000
+        note:
+          type: [string, 'null']
+          maxLength: 1000
+    ReviewFeedbackBase:
+      type: object
+      additionalProperties: false
+      required: [verdict, correctedStatement, note, evidenceWeight, updatedAt]
+      properties:
+        verdict: { type: string }
+        correctedStatement:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1000
+        note:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 1000
+        evidenceWeight: { type: number, enum: [0, 0.5, 1] }
+        updatedAt: { type: string, format: date-time }
+    EntryInsightFeedback:
+      allOf:
+        - { $ref: '#/components/schemas/ReviewFeedbackBase' }
+        - type: object
+          properties:
+            verdict: { $ref: '#/components/schemas/EntryInsightVerdict' }
+    PatternFeedback:
+      allOf:
+        - { $ref: '#/components/schemas/ReviewFeedbackBase' }
+        - type: object
+          properties:
+            verdict: { $ref: '#/components/schemas/PatternVerdict' }
+    EntryInsightReviewItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          scope,
+          type,
+          category,
+          statement,
+          sourceQuote,
+          sourceEntryIds,
+          sourceDates,
+          inferenceLevel,
+          confidence,
+          status,
+          feedback,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { type: string, const: entry_insight }
+        type: { $ref: '#/components/schemas/EntryInsightType' }
+        category:
+          type: string
+          enum: [energy, self_knowledge, needs_beliefs]
+        statement: { type: string, minLength: 1, maxLength: 1000 }
+        sourceQuote:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 4000
+        sourceEntryIds:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        sourceDates:
+          type: array
+          minItems: 1
+          maxItems: 1
+          uniqueItems: true
+          items: { type: string, format: date }
+        inferenceLevel: { type: string, enum: [direct, inferred] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        status: { $ref: '#/components/schemas/ReviewStatus' }
+        feedback:
+          oneOf:
+            - { $ref: '#/components/schemas/EntryInsightFeedback' }
+            - { type: 'null' }
+    PatternReviewItem:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          scope,
+          type,
+          category,
+          statement,
+          sourceQuote,
+          sourceEntryIds,
+          sourceDates,
+          inferenceLevel,
+          confidence,
+          status,
+          feedback,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        scope: { type: string, const: pattern }
+        type: { $ref: '#/components/schemas/PatternType' }
+        category:
+          type: string
+          enum: [hidden_driver, recurring_loop, inner_tension]
+        statement: { type: string, minLength: 1, maxLength: 1000 }
+        sourceQuote: { type: 'null' }
+        sourceEntryIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: uuid }
+        sourceDates:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, format: date }
+        inferenceLevel: { type: string, const: synthesized }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        status: { $ref: '#/components/schemas/ReviewStatus' }
+        feedback:
+          oneOf:
+            - { $ref: '#/components/schemas/PatternFeedback' }
+            - { type: 'null' }
+    ReviewItem:
+      oneOf:
+        - { $ref: '#/components/schemas/EntryInsightReviewItem' }
+        - { $ref: '#/components/schemas/PatternReviewItem' }
+      discriminator:
+        propertyName: scope
+        mapping:
+          entry_insight: '#/components/schemas/EntryInsightReviewItem'
+          pattern: '#/components/schemas/PatternReviewItem'
+    ReviewPagination:
+      type: object
+      additionalProperties: false
+      required: [page, pageSize, total]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+    ReviewItemsResponse:
+      type: object
+      additionalProperties: false
+      required: [items, pagination]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ReviewItem' }
+        pagination: { $ref: '#/components/schemas/ReviewPagination' }
     ReflectionRange:
       type: string
       enum: [7d, 30d, all]

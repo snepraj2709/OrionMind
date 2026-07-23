@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
@@ -31,16 +33,27 @@ from app.modules.review.types import (
     ReviewItemType,
     ReviewScope,
     ReviewStatus,
+    ReviewVerdict,
+    SavedReviewFeedback,
     category_allowed_for_scope,
 )
 from app.shared.security.encryption import (
     ContentCipher,
     ContentUnavailableError,
     EnvelopePurpose,
+    ReflectionFingerprintPurpose,
 )
 
 
 class ReviewRepositoryDataError(RuntimeError):
+    pass
+
+
+class ReviewItemNotFoundError(LookupError):
+    pass
+
+
+class ReviewItemStaleError(RuntimeError):
     pass
 
 
@@ -146,6 +159,115 @@ class ReviewRepository:
             return self._decode_item(self._record(row))
         except (ContentUnavailableError, KeyError, TypeError, ValueError) as exc:
             raise ReviewRepositoryDataError("review item data is unavailable") from exc
+
+    def put_feedback(
+        self,
+        session: Session,
+        *,
+        user_id: UUID,
+        item_id: UUID,
+        verdict: ReviewVerdict,
+        corrected_statement: str | None,
+        note: str | None,
+    ) -> SavedReviewFeedback:
+        (
+            corrected_envelope,
+            corrected_fingerprint,
+            corrected_compatible_fingerprints,
+        ) = self._feedback_value(
+            corrected_statement,
+            user_id=user_id,
+            item_id=item_id,
+            envelope_purpose="review_item_corrected_statement",
+            fingerprint_purpose="review_feedback_correction",
+        )
+        (
+            note_envelope,
+            note_fingerprint,
+            note_compatible_fingerprints,
+        ) = self._feedback_value(
+            note,
+            user_id=user_id,
+            item_id=item_id,
+            envelope_purpose="review_item_feedback_note",
+            fingerprint_purpose="review_feedback_note",
+        )
+        try:
+            row = session.execute(
+                text(
+                    "SELECT item_id, changed, source_version, updated_at "
+                    "FROM public.put_review_feedback_for_owner("
+                    ":user_id, :item_id, :verdict, "
+                    "CAST(:corrected_envelope AS jsonb), :corrected_fingerprint, "
+                    "CAST(:corrected_compatible_fingerprints AS text[]), "
+                    "CAST(:note_envelope AS jsonb), :note_fingerprint, "
+                    "CAST(:note_compatible_fingerprints AS text[]))"
+                ),
+                {
+                    "user_id": user_id,
+                    "item_id": item_id,
+                    "verdict": verdict,
+                    "corrected_envelope": (
+                        json.dumps(corrected_envelope)
+                        if corrected_envelope is not None
+                        else None
+                    ),
+                    "corrected_fingerprint": corrected_fingerprint,
+                    "corrected_compatible_fingerprints": list(
+                        corrected_compatible_fingerprints
+                    ),
+                    "note_envelope": (
+                        json.dumps(note_envelope) if note_envelope is not None else None
+                    ),
+                    "note_fingerprint": note_fingerprint,
+                    "note_compatible_fingerprints": list(
+                        note_compatible_fingerprints
+                    ),
+                },
+            ).mappings().one()
+        except DBAPIError as exc:
+            sqlstate = getattr(exc.orig, "sqlstate", None)
+            if sqlstate == "P0002":
+                raise ReviewItemNotFoundError from exc
+            if sqlstate == "P0003":
+                raise ReviewItemStaleError from exc
+            raise
+        return SavedReviewFeedback(
+            item_id=UUID(str(row["item_id"])),
+            changed=bool(row["changed"]),
+            source_version=int(row["source_version"]),
+            updated_at=cast(datetime, row["updated_at"]),
+        )
+
+    def _feedback_value(
+        self,
+        value: str | None,
+        *,
+        user_id: UUID,
+        item_id: UUID,
+        envelope_purpose: EnvelopePurpose,
+        fingerprint_purpose: ReflectionFingerprintPurpose,
+    ) -> tuple[dict[str, object] | None, str, tuple[str, ...]]:
+        if value is None:
+            return None, "", ("",)
+        keyed_fingerprints = self._cipher.reflection_fingerprints(
+            value,
+            user_id=user_id,
+            purpose=fingerprint_purpose,
+        )
+        fingerprints = tuple(
+            f"{key_id}:{digest}" for key_id, digest in keyed_fingerprints
+        )
+        return (
+            self._cipher.encrypt_json(
+                value,
+                user_id=user_id,
+                record_id=item_id,
+                purpose=envelope_purpose,
+            ),
+            fingerprints[0],
+            fingerprints,
+        )
 
     @staticmethod
     def _parameters(

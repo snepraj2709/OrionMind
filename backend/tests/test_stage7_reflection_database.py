@@ -14,7 +14,12 @@ from psycopg import sql
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from app.modules.review.repository import ReviewRepository, ReviewRepositoryDataError
+from app.modules.review.repository import (
+    ReviewItemNotFoundError,
+    ReviewItemStaleError,
+    ReviewRepository,
+    ReviewRepositoryDataError,
+)
 from app.shared.security.encryption import AesGcmContentCipher
 from scripts.migrate import apply_migrations, load_migrations
 
@@ -98,6 +103,7 @@ NEW_FUNCTIONS = (
     "is_valid_encrypted_envelope_v1",
     "materialize_entry_review_items",
     "put_reflection_feedback_for_owner",
+    "put_review_feedback_for_owner",
     "plan_entry_processing_backfill",
     "claim_signal_embedding_backfill_batch",
     "recover_stale_processing_jobs",
@@ -527,6 +533,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0018_semantic_signal_retrieval.sql",
         "0019_review_items.sql",
         "0020_review_item_materialization.sql",
+        "0021_review_feedback.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -2708,6 +2715,20 @@ def test_review_items_constraints_rls_privileges_cascades_and_indexes() -> None:
             ("orion_app", False),
             ("orion_worker", True),
         ]
+        feedback_privileges = connection.execute(
+            "SELECT role_name, pg_catalog.has_function_privilege("
+            "role_name, 'public.put_review_feedback_for_owner("
+            "uuid,uuid,text,jsonb,text,text[],jsonb,text,text[])', 'EXECUTE') "
+            "FROM pg_catalog.unnest("
+            "ARRAY['anon', 'authenticated', 'orion_app', 'orion_worker']) "
+            "AS role_name ORDER BY role_name"
+        ).fetchall()
+        assert feedback_privileges == [
+            ("anon", False),
+            ("authenticated", True),
+            ("orion_app", False),
+            ("orion_worker", False),
+        ]
 
         with pytest.raises(psycopg.errors.UniqueViolation):
             with connection.transaction():
@@ -3038,5 +3059,209 @@ def test_review_repository_owner_filters_stable_pagination_and_corrupt_ciphertex
                     page=0,
                     page_size=20,
                 )
+    finally:
+        engine.dispose()
+
+
+def test_review_feedback_command_is_encrypted_owner_safe_replaceable_and_idempotent() -> None:
+    value = database_url()
+    bootstrap(value, USER_ONE, USER_TWO)
+    snapshot_id = uuid4()
+    with psycopg.connect(value) as connection:
+        entry_id = insert_entry(connection, USER_ONE)
+        _, signal_id, source_version = insert_analysis_signal(
+            connection, USER_ONE, entry_id
+        )
+        item_id = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            entry_id=entry_id,
+            entry_signal_id=signal_id,
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_snapshots "
+            "(id, user_id, version, source_version, basis_start, basis_end, "
+            "valid_entry_count, excluded_entry_count, distinct_entry_dates, "
+            "reflective_word_count, status) "
+            "VALUES (%s, %s, 1, %s, '2026-07-20', '2026-07-20', "
+            "1, 0, 1, 150, 'available')",
+            (snapshot_id, USER_ONE, source_version),
+        )
+        connection.execute(
+            "INSERT INTO public.reflection_user_state "
+            "(user_id, latest_accepted_source_version, "
+            "last_snapshot_source_version, last_successful_snapshot_id) "
+            "VALUES (%s, %s, %s, %s)",
+            (USER_ONE, source_version, source_version, snapshot_id),
+        )
+        candidate_id = insert_pattern_candidate(connection, USER_ONE)
+        pattern_item_id = insert_review_item(
+            connection,
+            user_id=USER_ONE,
+            pattern_candidate_id=candidate_id,
+            scope="pattern",
+            item_type="hidden_driver",
+            category="hidden_driver",
+            inference_level="synthesized",
+            source_entry_ids=[entry_id],
+            source_quote=None,
+        )
+        connection.commit()
+
+    engine = create_engine(value.replace("postgresql://", "postgresql+psycopg://", 1))
+    repository = ReviewRepository(cipher=TEST_CIPHER)
+    rotated_repository = ReviewRepository(
+        cipher=AesGcmContentCipher(
+            encryption_keys={"test-key": b"e" * 32},
+            active_encryption_key_id="test-key",
+            fingerprint_keys={
+                "test-fingerprint": b"f" * 32,
+                "rotated-fingerprint": b"r" * 32,
+            },
+            active_fingerprint_key_id="rotated-fingerprint",
+        )
+    )
+
+    def save(
+        target: UUID,
+        verdict: str,
+        *,
+        corrected: str | None = None,
+        note: str | None = None,
+        user_id: UUID = USER_ONE,
+        target_repository: ReviewRepository = repository,
+    ):
+        with Session(engine) as session, session.begin():
+            session.execute(text("SET LOCAL ROLE authenticated"))
+            session.execute(
+                text(
+                    "SELECT pg_catalog.set_config("
+                    "'request.jwt.claims', :claims, true)"
+                ),
+                {
+                    "claims": json.dumps(
+                        {"sub": str(user_id), "role": "authenticated"}
+                    )
+                },
+            )
+            return target_repository.put_feedback(
+                session,
+                user_id=user_id,
+                item_id=target,
+                verdict=verdict,  # type: ignore[arg-type]
+                corrected_statement=corrected,
+                note=note,
+            )
+
+    private_correction = "I value focused work when the deadline is realistic."
+    private_note = "This wording is more precise."
+    try:
+        first = save(
+            item_id,
+            "accurate",
+            corrected=private_correction,
+            note=private_note,
+        )
+        replay = save(
+            item_id,
+            "accurate",
+            corrected=private_correction,
+            note=private_note,
+            target_repository=rotated_repository,
+        )
+        replacement = save(
+            item_id,
+            "partly_accurate",
+            corrected=private_correction,
+            note=private_note,
+            target_repository=rotated_repository,
+        )
+        assert first.changed is True
+        assert replay.changed is False
+        assert replay.source_version == first.source_version
+        assert replacement.changed is True
+        assert replacement.source_version > first.source_version
+
+        with Session(engine) as session, session.begin():
+            session.execute(text("SET LOCAL ROLE authenticated"))
+            session.execute(
+                text(
+                    "SELECT pg_catalog.set_config("
+                    "'request.jwt.claims', :claims, true)"
+                ),
+                {
+                    "claims": json.dumps(
+                        {"sub": str(USER_ONE), "role": "authenticated"}
+                    )
+                },
+            )
+            saved_item = repository.get_by_owner(
+                session,
+                user_id=USER_ONE,
+                item_id=item_id,
+            )
+        assert saved_item is not None
+        assert saved_item.status == "partially_confirmed"
+        assert saved_item.feedback is not None
+        assert saved_item.feedback.evidence_weight == 0.5
+        assert saved_item.feedback.corrected_statement == private_correction
+        assert saved_item.feedback.note == private_note
+
+        with psycopg.connect(value) as connection:
+            stored = connection.execute(
+                "SELECT review_status, evidence_weight, "
+                "corrected_statement_envelope::text, "
+                "feedback_note_envelope::text, metadata::text "
+                "FROM public.review_items WHERE id = %s",
+                (item_id,),
+            ).fetchone()
+            assert stored[:2] == ("partially_confirmed", 0.5)
+            assert private_correction not in stored[2]
+            assert private_note not in stored[3]
+            assert private_correction not in stored[4]
+            assert private_note not in stored[4]
+            assert connection.execute(
+                "SELECT latest_accepted_source_version "
+                "FROM public.reflection_user_state WHERE user_id = %s",
+                (USER_ONE,),
+            ).fetchone() == (replacement.source_version,)
+            assert connection.execute(
+                "SELECT status FROM public.reflection_snapshots WHERE id = %s",
+                (snapshot_id,),
+            ).fetchone() == ("stale",)
+
+        with pytest.raises(ReviewItemNotFoundError):
+            save(item_id, "accurate", user_id=USER_TWO)
+
+        pattern_version = 1
+        for verdict, expected_review, expected_weight, expected_pattern in (
+            ("resonates", "confirmed", 1.0, "published"),
+            ("partly_true", "partially_confirmed", 0.5, "weakened"),
+            ("not_true", "rejected", 0.0, "rejected"),
+        ):
+            saved = save(pattern_item_id, verdict)
+            assert saved.changed is True
+            pattern_version += 1
+            with psycopg.connect(value) as connection:
+                assert connection.execute(
+                    "SELECT review_status, evidence_weight "
+                    "FROM public.review_items WHERE id = %s",
+                    (pattern_item_id,),
+                ).fetchone() == (expected_review, expected_weight)
+                assert connection.execute(
+                    "SELECT status, version FROM public.pattern_candidates "
+                    "WHERE id = %s",
+                    (candidate_id,),
+                ).fetchone() == (expected_pattern, pattern_version)
+
+        with psycopg.connect(value) as connection:
+            connection.execute(
+                "UPDATE public.review_items SET reflection_eligible = false "
+                "WHERE id = %s",
+                (item_id,),
+            )
+            connection.commit()
+        with pytest.raises(ReviewItemStaleError):
+            save(item_id, "not_accurate")
     finally:
         engine.dispose()

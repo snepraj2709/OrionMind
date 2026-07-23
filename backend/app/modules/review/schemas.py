@@ -79,6 +79,8 @@ class ReviewListQuery(StrictReviewQueryModel):
 
 
 class ReviewFeedbackRequest(StrictReviewModel):
+    model_config = ConfigDict(populate_by_name=False, validate_by_name=False)
+
     verdict: ReviewVerdict
     corrected_statement: str | None = Field(
         default=None,

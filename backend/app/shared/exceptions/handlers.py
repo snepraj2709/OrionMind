@@ -45,7 +45,7 @@ def error_response(
         request_id=request_id_for(request),
     )
     response_headers = dict(headers or {})
-    if request.url.path.startswith("/api/v1/reflections"):
+    if request.url.path.startswith(("/api/v1/reflections", "/api/v1/review")):
         response_headers.setdefault("Cache-Control", "private, no-store")
     response_headers.setdefault("X-Request-ID", envelope.request_id)
     return JSONResponse(

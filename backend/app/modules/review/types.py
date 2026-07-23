@@ -148,6 +148,14 @@ class ReviewItemRecord:
     updated_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class SavedReviewFeedback:
+    item_id: UUID
+    changed: bool
+    source_version: int
+    updated_at: datetime
+
+
 ENTRY_INSIGHT_FEEDBACK_DECISIONS: Mapping[
     EntryInsightVerdict, FeedbackDecision
 ] = {

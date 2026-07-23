@@ -68,6 +68,7 @@ def test_application_state_registration_and_service_graph_are_stable() -> None:
         "reflection_engine_service",
         "reflection_telemetry",
         "reflections_service",
+        "review_service",
         "settings",
         "tracer_provider",
         "transcriber",

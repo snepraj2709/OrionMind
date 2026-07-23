@@ -39,6 +39,8 @@ ReflectionFingerprintPurpose: TypeAlias = Literal[
     "signal_label",
     "safety_identifier",
     "candidate_canonical",
+    "review_feedback_correction",
+    "review_feedback_note",
 ]
 
 ENVELOPE_PURPOSES = frozenset(
@@ -99,6 +101,14 @@ class ContentCipher(Protocol):
         user_id: UUID,
         purpose: ReflectionFingerprintPurpose,
     ) -> tuple[str, str]: ...
+
+    def reflection_fingerprints(
+        self,
+        value: str,
+        *,
+        user_id: UUID,
+        purpose: ReflectionFingerprintPurpose,
+    ) -> tuple[tuple[str, str], ...]: ...
 
 
 class AesGcmContentCipher:
@@ -381,6 +391,19 @@ class AesGcmContentCipher:
         user_id: UUID,
         purpose: ReflectionFingerprintPurpose,
     ) -> tuple[str, str]:
+        return self.reflection_fingerprints(
+            value,
+            user_id=user_id,
+            purpose=purpose,
+        )[0]
+
+    def reflection_fingerprints(
+        self,
+        value: str,
+        *,
+        user_id: UUID,
+        purpose: ReflectionFingerprintPurpose,
+    ) -> tuple[tuple[str, str], ...]:
         if (
             not isinstance(value, str)
             or not value
@@ -391,13 +414,32 @@ class AesGcmContentCipher:
                 "signal_label",
                 "safety_identifier",
                 "candidate_canonical",
+                "review_feedback_correction",
+                "review_feedback_note",
             }
         ):
             raise ValueError("invalid reflection fingerprint input")
-        return self._fingerprint(
-            b"orion/reflection-fingerprint/v1\n" + purpose.encode("ascii"),
-            value.encode("utf-8", errors="strict"),
-            user_id,
+        domain = b"orion/reflection-fingerprint/v1\n" + purpose.encode("ascii")
+        encoded = value.encode("utf-8", errors="strict")
+        key_ids = (
+            self._active_fingerprint_key_id,
+            *sorted(
+                key_id
+                for key_id in self._fingerprint_keys
+                if key_id != self._active_fingerprint_key_id
+            ),
+        )
+        payload = b"\n".join((domain, str(user_id).encode("ascii"), encoded))
+        return tuple(
+            (
+                key_id,
+                hmac.new(
+                    self._fingerprint_keys[key_id],
+                    payload,
+                    hashlib.sha256,
+                ).hexdigest(),
+            )
+            for key_id in key_ids
         )
 
 

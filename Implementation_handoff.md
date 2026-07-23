@@ -502,7 +502,7 @@ Each section can abstain independently.
 |     1 | Lock contracts and shared types                   | P0       | None         | `feat(review): lock review and reflection contracts`      | `completed`   | Medium     | Blocking                                    |
 |     2 | Add database migrations and repositories          | P0       | 1            | `feat(review): add review item persistence`               | `completed`   | High       | Blocking                                    |
 |     3 | Add quality gate and entry insight extraction     | P0       | 2            | `feat(review): extract reviewable entry insights`         | `completed`   | High       | Blocking                                    |
-|     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `not_started` | High       | Blocking                                    |
+|     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `completed`   | High       | Blocking                                    |
 |     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `not_started` | High       | Blocking                                    |
 |     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `not_started` | High       | Blocking                                    |
 |     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `not_started` | High       | Blocking                                    |
@@ -748,7 +748,7 @@ cd backend
 
 ### Stage 4 — Add Review API and feedback weighting
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
 
 **Objective:** Expose authenticated Review list/feedback APIs and atomically persist scope-correct weights.
 
@@ -809,6 +809,48 @@ cd backend
 **Expected commit message:** `feat(review): add review feedback API`
 
 **Stop condition:** Implement only Stage 4, run tests/regressions, inspect diff, fix stage defects, update this stage, commit only its files/message, do not push, report, and stop.
+
+**Implementation record (2026-07-23):**
+
+- **Actual files changed:** `backend/app/bootstrap.py`, `backend/app/contract.py`,
+  `backend/app/router.py`, `backend/app/modules/review/{controller,repository,routes,schemas,service,types,views}.py`,
+  `backend/app/shared/exceptions/handlers.py`,
+  `backend/app/shared/http/rate_limits.py`,
+  `backend/app/shared/security/encryption.py`,
+  `backend/docs/contracts/profile-entry-v1.openapi.{yaml,json}`,
+  `backend/supabase_schema.sql`,
+  `backend/tests/{test_maintainability_contracts,test_review_api,test_stage1_platform,test_stage6_release,test_stage7_reflection_database}.py`,
+  and this handoff.
+- **Migration added:** `backend/migrations/0021_review_feedback.sql`.
+- **Commands and results:**
+  - `.venv/bin/python -m pytest tests/test_review_api.py tests/test_stage7_reflection_database.py tests/test_reflections_api.py`
+    with the exact disposable local PostgreSQL URL: `67 passed`.
+  - `.venv/bin/python -m pytest -m "not live_supabase"`: `405 passed, 38 skipped`;
+    the skips are the existing opt-in database/live suites, while the required
+    reflection database suite was run separately against disposable PostgreSQL.
+  - `.venv/bin/python -m ruff check app tests/test_review_api.py`: passed.
+  - `.venv/bin/python -m mypy app/bootstrap.py app/main.py app/modules/review`:
+    passed.
+  - Manual-equivalent two-user verification is covered by the disposable
+    database command and API tests: another owner's UUID and a random UUID
+    produce the same `404`, all six verdicts persist the expected status/weight,
+    replay does not bump the source version, replacement bumps once, ciphertext
+    contains no correction/note plaintext, and the cached snapshot becomes
+    stale.
+- **Deviations from the proposed plan:** no Review-specific logging event was
+  added because the implementation emits no useful metadata-only lifecycle
+  event; the existing public Reflection API rollout/config gate is reused for
+  the Review API. The active keyed fingerprint is stored only in bounded
+  structural metadata, while every retained fingerprint key is compared under
+  the feedback row lock so identical normalized replay remains idempotent
+  across key rotation. Per the user's
+  explicit verification request, the completed Stage 4 diff is intentionally
+  left uncommitted until a later explicit commit instruction.
+- **Remaining risks:** production rollout-cohort selection and confirmation of
+  the deployed migration head remain operational checks. Applying Review
+  weights inside synthesis basis queries remains Stage 5 scope; Stage 4
+  persists the exact `1/.5/0` source weights and invalidation state needed by
+  that work.
 
 ### Stage 5 — Add reflection synthesis and snapshot persistence
 

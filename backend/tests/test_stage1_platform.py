@@ -141,6 +141,8 @@ def test_health_is_exact_and_only_frozen_operations_are_registered() -> None:
         ("POST", "/api/v1/entries/voice"),
         ("GET", "/api/v1/entries/{entry_id}"),
         ("POST", "/api/v1/entries/{entry_id}/retry"),
+        ("GET", "/api/v1/review/items"),
+        ("POST", "/api/v1/review/items/{review_item_id}/feedback"),
         ("GET", "/api/v1/reflections"),
         (
             "PUT",
