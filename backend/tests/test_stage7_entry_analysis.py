@@ -121,7 +121,7 @@ class Provider:
         if accepted and self.with_signal:
             signals.append(
                 {
-                    "signal_type": "self_statement",
+                    "signal_type": "self_knowledge",
                     "normalized_label": "capable through explanation",
                     "interpretation": "Explaining the plan supported a sense of capability.",
                     "source_quote": redacted_text,
@@ -130,8 +130,8 @@ class Provider:
                     "themes": ["career"],
                     "need_tags": ["competence"],
                     "loop_role": "action",
+                    "inference_level": "inferred",
                     "confidence": 0.91,
-                    "occurred_on": entry_date,
                 }
             )
         score = 0.85 if accepted else 0.45
@@ -205,7 +205,7 @@ def test_model_signal_offsets_are_bound_to_exact_verbatim_quote() -> None:
     assert bound.signals[0].source_end == len(content)
 
 
-def test_model_signal_binding_rejects_non_verbatim_quote() -> None:
+def test_model_signal_binding_drops_non_verbatim_quote() -> None:
     content = "The exact quote belongs here."
     result = Provider().analyze(
         redacted_text=content,
@@ -216,8 +216,9 @@ def test_model_signal_binding_rejects_non_verbatim_quote() -> None:
     )
     result.signals[0].source_quote = "A quote that is not present."
 
-    with pytest.raises(ValueError, match="source quote mismatch"):
-        _bind_model_offsets(result, redacted_text=content)
+    bound = _bind_model_offsets(result, redacted_text=content)
+
+    assert bound.signals == []
 
 
 def test_model_signal_binding_recovers_exact_source_from_safe_normalization() -> None:
@@ -423,6 +424,52 @@ def test_redacted_provider_exact_offset_legacy_parity_and_atomic_counters(
         )
         assert payload["source_quote"] == content
         assert content[signal[1] : signal[2]] == content
+        review_item = connection.execute(
+            "SELECT id, user_id, entry_id, entry_signal_id, scope, item_type, "
+            "category, statement_envelope, source_quote_envelope, "
+            "source_entry_ids, source_dates, inference_level, model_confidence, "
+            "review_status, evidence_weight, reflection_eligible, metadata "
+            "FROM public.review_items WHERE entry_id = %s",
+            (entry_id,),
+        ).fetchone()
+        assert review_item[1:7] == (
+            USER,
+            entry_id,
+            signal[0],
+            "entry_insight",
+            "self_knowledge",
+            "self_knowledge",
+        )
+        assert service.decrypt_json(
+            review_item[7],
+            user_id=USER,
+            record_id=review_item[0],
+            purpose="review_item_statement",
+        ) == "Explaining the plan supported a sense of capability."
+        assert service.decrypt_json(
+            review_item[8],
+            user_id=USER,
+            record_id=review_item[0],
+            purpose="review_item_source_quote",
+        ) == content
+        assert review_item[9:12] == (
+            [entry_id],
+            [date.today()],
+            "inferred",
+        )
+        assert float(review_item[12]) == pytest.approx(0.91)
+        assert review_item[13:16] == (
+            "pending",
+            1,
+            True,
+        )
+        assert review_item[16] == (
+            {
+                "model_id": "gpt-5.6-luna",
+                "prompt_version": "entry-analysis-v3",
+                "source": "entry_analysis",
+            }
+        )
         assert connection.execute(
             "SELECT entry.processing_status, job.status, classification.mode, idea.content, "
             "theme.score FROM public.entries AS entry "
@@ -465,12 +512,13 @@ def test_garbage_exact_and_near_duplicates_write_audits_without_contamination() 
                 insert_and_enqueue(connection, content)
         with connection.transaction():
             insert_and_enqueue(connection, "I felt calm after the meeting!")
-        with connection.transaction():
-            insert_and_enqueue(connection, "hello testing mic")
+        for _ in range(10):
+            with connection.transaction():
+                insert_and_enqueue(connection, "hello testing mic")
     provider = Provider()
     embeddings = EmbeddingProvider()
     app = application(value, provider, embeddings=embeddings)
-    for _ in range(12):
+    for _ in range(21):
         assert app.state.processing_worker.run_one(
             worker_id="quality-worker",
             uow=app.state.database_sessions.unit_of_work_factory,
@@ -481,7 +529,7 @@ def test_garbage_exact_and_near_duplicates_write_audits_without_contamination() 
         assert connection.execute(
             "SELECT eligibility, count(*) FROM public.entry_analyses "
             "GROUP BY eligibility ORDER BY eligibility"
-        ).fetchall() == [("accepted", 1), ("excluded", 11)]
+        ).fetchall() == [("accepted", 1), ("excluded", 20)]
         reasons = connection.execute(
             "SELECT exclusion_reason_codes FROM public.entry_analyses "
             "WHERE eligibility = 'excluded'"
@@ -489,13 +537,14 @@ def test_garbage_exact_and_near_duplicates_write_audits_without_contamination() 
         flattened = [code for row in reasons for code in row[0]]
         assert flattened.count("EXACT_DUPLICATE") == 9
         assert "NEAR_DUPLICATE" in flattened
-        assert "TEST_OR_NOISE" in flattened
+        assert flattened.count("TEST_OR_NOISE") == 10
         assert connection.execute(
             "SELECT new_valid_entries, new_accepted_signals "
             "FROM public.reflection_user_state WHERE user_id = %s",
             (USER,),
         ).fetchone() == (1, 1)
         assert connection.execute("SELECT count(*) FROM public.entry_signals").fetchone() == (1,)
+        assert connection.execute("SELECT count(*) FROM public.review_items").fetchone() == (1,)
     app.state.database_sessions.dispose()
 
 
@@ -551,12 +600,145 @@ def test_embedding_persistence_failure_rolls_back_completed_analysis() -> None:
             (entry_id,),
         ).fetchone() == (0,)
         assert connection.execute(
+            "SELECT count(*) FROM public.review_items WHERE entry_id = %s",
+            (entry_id,),
+        ).fetchone() == (0,)
+        assert connection.execute(
             "SELECT entry.processing_status, job.status "
             "FROM public.entries AS entry "
             "JOIN public.processing_jobs AS job ON job.entry_id = entry.id "
             "WHERE entry.id = %s",
             (entry_id,),
         ).fetchone() == ("processing", "running")
+    app.state.database_sessions.dispose()
+
+
+def test_review_item_retry_is_idempotent_and_preserves_feedback() -> None:
+    value = database_url()
+    bootstrap(value)
+    app = application(value, Provider())
+    with psycopg.connect(value) as connection, connection.transaction():
+        entry_id, _job_id = insert_and_enqueue(
+            connection,
+            "I felt capable after explaining a difficult plan clearly.",
+        )
+
+    repository = JobRepository()
+    uow = app.state.database_sessions.unit_of_work_factory
+    worker_id = "review-retry-worker"
+    with uow.for_worker() as work:
+        claim = repository.claim(work.session, worker_id=worker_id)
+    assert claim is not None and claim.entry_id == entry_id
+    with uow.for_worker() as work:
+        payload = repository.entry_payload(
+            work.session,
+            claim=claim,
+            worker_id=worker_id,
+        )
+    assert payload is not None
+    prepared = app.state.processing_service.analyze(
+        user_id=USER,
+        entry_id=entry_id,
+        entry_date=payload.entry_date,
+        theme_config_id=payload.theme_config_id,
+        content=cipher().decrypt(payload.envelope, user_id=USER, record_id=entry_id),
+        uow=uow,
+    )
+    first_source_version = app.state.processing_service.apply_job_analysis(
+        claim=claim,
+        worker_id=worker_id,
+        theme_config_id=payload.theme_config_id,
+        prepared=prepared,
+        apply_legacy=True,
+        uow=uow,
+    )
+
+    feedback = {
+        "verdict": "accurate",
+        "updated_at": "2026-07-23T00:00:00Z",
+    }
+    with psycopg.connect(value) as connection:
+        review_item_id = connection.execute(
+            "UPDATE public.review_items "
+            "SET review_status = 'confirmed', user_feedback = %s::jsonb "
+            "WHERE entry_id = %s RETURNING id",
+            (json.dumps(feedback), entry_id),
+        ).fetchone()[0]
+        connection.commit()
+
+    replay_source_version = app.state.processing_service.apply_job_analysis(
+        claim=claim,
+        worker_id=worker_id,
+        theme_config_id=payload.theme_config_id,
+        prepared=prepared,
+        apply_legacy=True,
+        uow=uow,
+    )
+
+    assert replay_source_version == first_source_version
+    with psycopg.connect(value) as connection:
+        assert connection.execute(
+            "SELECT id, review_status, user_feedback, evidence_weight "
+            "FROM public.review_items WHERE entry_id = %s",
+            (entry_id,),
+        ).fetchall() == [(review_item_id, "confirmed", feedback, 1)]
+    app.state.database_sessions.dispose()
+
+
+def test_invalid_review_item_identity_rolls_back_the_complete_apply() -> None:
+    value = database_url()
+    bootstrap(value)
+    app = application(value, Provider())
+    with psycopg.connect(value) as connection, connection.transaction():
+        entry_id, _job_id = insert_and_enqueue(
+            connection,
+            "I felt capable after explaining another difficult plan clearly.",
+        )
+
+    repository = JobRepository()
+    uow = app.state.database_sessions.unit_of_work_factory
+    worker_id = "review-rollback-worker"
+    with uow.for_worker() as work:
+        claim = repository.claim(work.session, worker_id=worker_id)
+    assert claim is not None and claim.entry_id == entry_id
+    with uow.for_worker() as work:
+        payload = repository.entry_payload(
+            work.session,
+            claim=claim,
+            worker_id=worker_id,
+        )
+    assert payload is not None
+    prepared = app.state.processing_service.analyze(
+        user_id=USER,
+        entry_id=entry_id,
+        entry_date=payload.entry_date,
+        theme_config_id=payload.theme_config_id,
+        content=cipher().decrypt(payload.envelope, user_id=USER, record_id=entry_id),
+        uow=uow,
+    )
+    review_item = prepared.signals[0]["review_item"]
+    assert isinstance(review_item, dict)
+    review_item["id"] = "fabricated-not-a-uuid"
+
+    with pytest.raises(DBAPIError):
+        app.state.processing_service.apply_job_analysis(
+            claim=claim,
+            worker_id=worker_id,
+            theme_config_id=payload.theme_config_id,
+            prepared=prepared,
+            apply_legacy=True,
+            uow=uow,
+        )
+
+    with psycopg.connect(value) as connection:
+        assert connection.execute(
+            "SELECT "
+            "(SELECT count(*) FROM public.entry_analyses WHERE entry_id = %s), "
+            "(SELECT count(*) FROM public.entry_signals WHERE entry_id = %s), "
+            "(SELECT count(*) FROM public.review_items WHERE entry_id = %s), "
+            "(SELECT count(*) FROM public.entry_classifications WHERE entry_id = %s)",
+            (entry_id, entry_id, entry_id, entry_id),
+        ).fetchone() == (0, 0, 0, 0)
     app.state.database_sessions.dispose()
 
 
@@ -583,6 +765,10 @@ def test_uncertain_keeps_legacy_output_and_stale_claim_persists_no_analysis() ->
         ).fetchone() == (1,)
         assert connection.execute(
             "SELECT count(*) FROM public.entry_signals WHERE entry_id = %s", (uncertain_entry,)
+        ).fetchone() == (0,)
+        assert connection.execute(
+            "SELECT count(*) FROM public.review_items WHERE entry_id = %s",
+            (uncertain_entry,),
         ).fetchone() == (0,)
         assert connection.execute(
             "SELECT count(*) FROM public.reflection_user_state WHERE user_id = %s", (USER,)

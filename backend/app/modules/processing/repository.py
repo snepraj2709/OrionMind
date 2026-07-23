@@ -140,7 +140,28 @@ class ProcessingRepository:
                     },
                 )
             )
-            if signals:
+            materialization = session.execute(
+                text(
+                    "SELECT analysis_accepted, review_item_count "
+                    "FROM public.materialize_entry_review_items("
+                    ":job_id, :claim_token, CAST(:signals AS jsonb))"
+                ),
+                {
+                    "job_id": claim.job_id,
+                    "claim_token": claim.claim_token,
+                    "signals": json.dumps(signals),
+                },
+            ).one()
+            analysis_accepted = bool(materialization[0])
+            review_item_count = int(materialization[1])
+            expected_review_items = sum(
+                1 for item in signals if "review_item" in item
+            )
+            if analysis_accepted and review_item_count != expected_review_items:
+                raise RuntimeError("review item persistence is incomplete")
+            if not analysis_accepted and review_item_count != 0:
+                raise RuntimeError("ineligible analysis has review items")
+            if analysis_accepted and signals:
                 models = {str(item["embedding_model"]) for item in signals}
                 if len(models) != 1:
                     raise ValueError("signal embedding models are inconsistent")

@@ -55,7 +55,10 @@ SIGNAL_TYPES = frozenset(
         "emotion",
         "energy_gain",
         "energy_loss",
+        "self_knowledge",
         "desire",
+        "explicit_preference",
+        "need",
         "avoidance",
         "belief",
         "self_statement",
@@ -64,6 +67,7 @@ SIGNAL_TYPES = frozenset(
         "conflict",
         "protective_strategy",
         "realization",
+        "causal_relationship",
     }
 )
 PATTERN_TYPES = frozenset({"hidden_driver", "recurring_loop", "inner_tension"})

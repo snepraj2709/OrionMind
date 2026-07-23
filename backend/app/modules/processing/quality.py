@@ -248,11 +248,20 @@ def finalize_quality(
         eligibility: Eligibility = "excluded"
     elif (
         quality.entry_kind
-        in {"test_or_noise", "informational_text", "copied_or_quoted_text", "task_or_note"}
+        in {
+            "test_or_noise",
+            "informational_text",
+            "copied_or_quoted_text",
+            "task_or_note",
+            "creative_writing",
+        }
         and quality.confidence >= 0.80
     ):
         reasons.append(SEMANTIC_KIND_REASON[quality.entry_kind])
         eligibility = "excluded"
+    elif quality.entry_kind == "unclear":
+        reasons.append("UNCLEAR")
+        eligibility = "uncertain"
     elif (
         reflective_score >= 0.60
         and quality.confidence >= 0.70

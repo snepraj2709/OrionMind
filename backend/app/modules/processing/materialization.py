@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Collection
+from datetime import date
+from typing import cast
 from uuid import UUID, uuid4
 
 from app.modules.processing.quality import DeterministicQualityResult
@@ -13,6 +15,11 @@ from app.modules.processing.schemas import (
     ModelEntryExtraction,
 )
 from app.modules.processing.source_segments import SourceSegment, create_source_segments
+from app.modules.review.types import (
+    ENTRY_INSIGHT_CATEGORY_BY_TYPE,
+    ENTRY_INSIGHT_TYPES,
+    EntryInsightType,
+)
 from app.shared.security.encryption import ContentCipher
 
 
@@ -135,7 +142,7 @@ def _bind_model_offsets(
         if not available:
             available = spans
         if not available:
-            raise ValueError("redacted source quote mismatch")
+            continue
         start, end = min(
             available,
             key=lambda candidate: (
@@ -231,6 +238,9 @@ def _materialize_signals(
     offset_map: OffsetMap,
     duplicate_cluster_key: str | None,
     cipher: ContentCipher,
+    entry_date: date,
+    model_id: str,
+    prompt_version: str,
     embeddings: tuple[tuple[float, ...], ...] = (),
     embedding_model_id: str = "disabled",
 ) -> tuple[dict[str, object], ...]:
@@ -255,29 +265,53 @@ def _materialize_signals(
             "interpretation": signal.interpretation,
             "source_quote": translated.original_quote,
         }
-        rows.append(
-            {
-                "id": str(signal_id),
-                "signal_type": signal.signal_type,
-                "normalized_label_fingerprint": label_fingerprint,
-                "payload_envelope": cipher.encrypt_json(
-                    payload,
+        row: dict[str, object] = {
+            "id": str(signal_id),
+            "signal_type": signal.signal_type,
+            "normalized_label_fingerprint": label_fingerprint,
+            "payload_envelope": cipher.encrypt_json(
+                payload,
+                user_id=user_id,
+                record_id=signal_id,
+                purpose="entry_signal_payload",
+            ),
+            "themes": signal.themes,
+            "need_tags": signal.need_tags,
+            "loop_role": signal.loop_role,
+            "confidence": signal.confidence,
+            "source_start": translated.original_start,
+            "source_end": translated.original_end,
+            "occurred_on": entry_date.isoformat(),
+            "duplicate_cluster_key": duplicate_cluster_key,
+            "embedding": list(embedding),
+            "embedding_model": embedding_model_id,
+        }
+        if signal.signal_type in ENTRY_INSIGHT_TYPES:
+            item_type = cast(EntryInsightType, signal.signal_type)
+            review_item_id = uuid4()
+            row["review_item"] = {
+                "id": str(review_item_id),
+                "category": ENTRY_INSIGHT_CATEGORY_BY_TYPE[item_type],
+                "statement_envelope": cipher.encrypt_json(
+                    signal.interpretation,
                     user_id=user_id,
-                    record_id=signal_id,
-                    purpose="entry_signal_payload",
+                    record_id=review_item_id,
+                    purpose="review_item_statement",
                 ),
-                "themes": signal.themes,
-                "need_tags": signal.need_tags,
-                "loop_role": signal.loop_role,
-                "confidence": signal.confidence,
-                "source_start": translated.original_start,
-                "source_end": translated.original_end,
-                "occurred_on": signal.occurred_on.isoformat(),
-                "duplicate_cluster_key": duplicate_cluster_key,
-                "embedding": list(embedding),
-                "embedding_model": embedding_model_id,
+                "source_quote_envelope": cipher.encrypt_json(
+                    translated.original_quote,
+                    user_id=user_id,
+                    record_id=review_item_id,
+                    purpose="review_item_source_quote",
+                ),
+                "inference_level": signal.inference_level,
+                "metadata": {
+                    "model_id": model_id,
+                    "prompt_version": prompt_version,
+                    "source": "entry_analysis",
+                },
             }
-        )
+        rows.append(row)
     return tuple(rows)
 
 

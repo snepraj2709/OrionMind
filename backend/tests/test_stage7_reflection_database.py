@@ -96,6 +96,7 @@ NEW_FUNCTIONS = (
     "is_reflection_recalculation_eligible",
     "is_unit_interval_json_object",
     "is_valid_encrypted_envelope_v1",
+    "materialize_entry_review_items",
     "put_reflection_feedback_for_owner",
     "plan_entry_processing_backfill",
     "claim_signal_embedding_backfill_batch",
@@ -525,6 +526,7 @@ def test_upgrade_and_fresh_install_schema_parity_preserves_entry_reflections() -
         "0017_reflection_recalculation_eligibility.sql",
         "0018_semantic_signal_retrieval.sql",
         "0019_review_items.sql",
+        "0020_review_item_materialization.sql",
     )
     with psycopg.connect(value) as connection:
         assert connection.execute(
@@ -2691,7 +2693,20 @@ def test_review_items_constraints_rls_privileges_cascades_and_indexes() -> None:
             ("anon", False, False, False, False),
             ("authenticated", True, False, False, False),
             ("orion_app", False, False, False, False),
-            ("orion_worker", False, True, False, False),
+            ("orion_worker", False, False, False, False),
+        ]
+        materializer_privileges = connection.execute(
+            "SELECT role_name, pg_catalog.has_function_privilege("
+            "role_name, 'public.materialize_entry_review_items(uuid,uuid,jsonb)', "
+            "'EXECUTE') FROM pg_catalog.unnest("
+            "ARRAY['anon', 'authenticated', 'orion_app', 'orion_worker']) "
+            "AS role_name ORDER BY role_name"
+        ).fetchall()
+        assert materializer_privileges == [
+            ("anon", False),
+            ("authenticated", False),
+            ("orion_app", False),
+            ("orion_worker", True),
         ]
 
         with pytest.raises(psycopg.errors.UniqueViolation):
@@ -2784,12 +2799,13 @@ def test_review_items_constraints_rls_privileges_cascades_and_indexes() -> None:
 
         with connection.transaction():
             worker(connection)
-            worker_item = insert_review_item(
-                connection,
-                user_id=USER_TWO,
-                entry_id=entry_two,
-                entry_signal_id=signal_two,
-            )
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                insert_review_item(
+                    connection,
+                    user_id=USER_TWO,
+                    entry_id=entry_two,
+                    entry_signal_id=signal_two,
+                )
 
         with connection.transaction():
             worker(connection)
@@ -2797,9 +2813,6 @@ def test_review_items_constraints_rls_privileges_cascades_and_indexes() -> None:
                 connection.execute("SELECT id FROM public.review_items")
 
         admin(connection)
-        assert connection.execute(
-            "SELECT count(*) FROM public.review_items WHERE id = %s", (worker_item,)
-        ).fetchone() == (1,)
         index_names = {
             row[0]
             for row in connection.execute(
@@ -2846,7 +2859,7 @@ def test_review_items_constraints_rls_privileges_cascades_and_indexes() -> None:
         ).fetchone() == (0,)
         connection.execute("DELETE FROM auth.users WHERE id = %s", (USER_TWO,))
         assert connection.execute(
-            "SELECT count(*) FROM public.review_items WHERE id = %s", (worker_item,)
+            "SELECT count(*) FROM public.review_items WHERE user_id = %s", (USER_TWO,)
         ).fetchone() == (0,)
 
 

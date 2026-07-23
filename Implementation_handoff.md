@@ -501,7 +501,7 @@ Each section can abstain independently.
 | ----: | ------------------------------------------------- | -------- | ------------ | --------------------------------------------------------- | ------------- | ---------- | ------------------------------------------- |
 |     1 | Lock contracts and shared types                   | P0       | None         | `feat(review): lock review and reflection contracts`      | `completed`   | Medium     | Blocking                                    |
 |     2 | Add database migrations and repositories          | P0       | 1            | `feat(review): add review item persistence`               | `completed`   | High       | Blocking                                    |
-|     3 | Add quality gate and entry insight extraction     | P0       | 2            | `feat(review): extract reviewable entry insights`         | `not_started` | High       | Blocking                                    |
+|     3 | Add quality gate and entry insight extraction     | P0       | 2            | `feat(review): extract reviewable entry insights`         | `completed`   | High       | Blocking                                    |
 |     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `not_started` | High       | Blocking                                    |
 |     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `not_started` | High       | Blocking                                    |
 |     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `not_started` | High       | Blocking                                    |
@@ -664,7 +664,16 @@ The disposable DB suite may require exactly `STAGE2_DISPOSABLE_DATABASE_URL=post
 
 ### Stage 3 — Add quality gate and entry insight extraction
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Added `backend/migrations/0020_review_item_materialization.sql` and `backend/tests/test_review_item_materialization.py`. Updated `backend/supabase_schema.sql`, processing schemas/prompts/quality/materialization/service/repository, the reflection observability signal allowlist, processing/quality/database regressions, and this handoff.
+- **Migrations added:** `0020_review_item_materialization.sql`, synchronized byte-for-byte into the schema snapshot. It expands the retained signal taxonomy, removes direct worker table insertion, and exposes only a claim-bound idempotent Entry Insight materializer.
+- **Commands run:** The required four-file Stage 3 suite against the isolated local `orion_stage2_test` database; `.venv/bin/python -m pytest -m "not live_supabase"` against that disposable database; `.venv/bin/python -m ruff check app/modules/processing tests`; focused mypy for all changed Stage 3 source files; focused schema/upgrade/privilege regressions; `git diff --check`.
+- **Test results:** The required Stage 3 suite passed `59` tests. The final full non-live backend suite passed `413` tests with one existing `python_multipart` pending-deprecation warning. The focused schema/upgrade/privilege run passed `4` tests. Required Ruff, focused mypy, schema parity, and diff checks passed. A broader processing-package mypy probe still reports the pre-existing unchanged `embedding_backfill.py:192` list-invariance error; every changed Stage 3 source file type-checks cleanly.
+- **Deviations from the original plan:** The new security-definer materializer is called immediately after the existing combined apply RPC in the same SQLAlchemy unit-of-work transaction instead of changing the mature combined RPC signature; any Review or embedding failure rolls back analysis, signals, legacy outputs, counters, and job completion together. The model no longer supplies `occurred_on`; IDs, owner, entry, and entry date are constructed or re-derived locally. Direct `orion_worker` table insertion granted temporarily in Stage 2 is revoked now that the controlled producer exists. Fake-provider disposable-database integration tests perform the requested garbage/genuine row inspection, so no separate live or paid-provider manual run was needed.
+- **Remaining risks:** Review routes, feedback mutations, pattern Review production, and weighted synthesis intentionally remain absent for later stages. Model classification quality remains provider-dependent, but deterministic exclusions, strict prompt/schema handling, exact local evidence binding, and fail-closed persistence are covered. Only the isolated local disposable database was migrated; no shared, staging, or production database was touched.
 
 **Objective:** Make accepted entry processing atomically create validated Entry Insight Review items; excluded content creates none.
 
