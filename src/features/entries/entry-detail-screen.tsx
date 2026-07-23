@@ -47,11 +47,7 @@ function ExtractedItemView({ item }: { item: ExtractedItem }) {
 }
 
 function CompletedEntry({ entry }: { entry: EntryDetail }) {
-  const extractedItems = [
-    ...entry.ideas,
-    ...entry.memories,
-    ...entry.reflections,
-  ];
+  const extractedItems = [...entry.ideas, ...entry.memories];
 
   return (
     <div className="space-y-10">
@@ -88,13 +84,13 @@ function CompletedEntry({ entry }: { entry: EntryDetail }) {
       </Section>
 
       <Section
-        description="Ideas, memories, and reflections Orion found in this entry."
+        description="Ideas and memories Orion found in this entry. Reviewable insights appear separately on Review."
         title="Extracted items"
       >
         {extractedItems.length === 0 ? (
           <EmptyState
             className="py-8"
-            description="This entry did not produce any extracted ideas, memories, or reflections."
+            description="This entry did not produce any extracted ideas or memories."
             title="No extracted items"
           />
         ) : (

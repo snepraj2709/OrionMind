@@ -26,7 +26,7 @@ export const entryStatusPresentation = {
 export type EntryStatus = keyof typeof entryStatusPresentation;
 
 export const approvalStatusPresentation = {
-  pending_approval: { label: 'Needs review', tone: 'warning' },
+  pending_approval: { label: 'Extracted', tone: 'neutral' },
   approved: { label: 'Approved', tone: 'success' },
   rejected: { label: 'Not saved', tone: 'neutral' },
 } as const satisfies Record<string, { label: string; tone: StatusTone }>;

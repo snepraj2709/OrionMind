@@ -152,7 +152,7 @@ test('matches entry detail without mobile page overflow', async ({ page }) => {
   await interceptEntryDetailBackend(page);
   await logIn(page);
   await page.goto(entryDetailPath('e1'));
-  await expect(page.getByText('Needs review').first()).toBeVisible();
+  await expect(page.getByText('Extracted').first()).toBeVisible();
 
   const dimensions = await page.evaluate(() => ({
     content: document.documentElement.scrollWidth,
@@ -175,6 +175,11 @@ test('renders extracted items as read-only', async ({ page }) => {
       'I want to establish a morning ritual centered on slow, screen-free time before engaging with the day.',
     ),
   ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Slow, unstructured mornings help me hear what I need before the day starts asking things of me.',
+    ),
+  ).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Approve' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Reject' })).toHaveCount(0);
 });

@@ -32,7 +32,14 @@ const completedEntry: EntryDetail = {
       status: 'approved',
     },
   ],
-  reflections: [],
+  reflections: [
+    {
+      id: 'r1',
+      content: 'Legacy reflection that should not be shown.',
+      kind: 'reflection',
+      status: 'pending_approval',
+    },
+  ],
 };
 
 function createRepository(
@@ -93,7 +100,16 @@ describe('EntryDetailScreen', () => {
     expect(
       screen.getByText('Protect slow, screen-free time in the morning.'),
     ).toBeVisible();
-    expect(screen.getByText('Needs review')).toBeVisible();
+    expect(screen.getByText('Extracted')).toBeVisible();
+    expect(screen.queryByText('Needs review')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Ideas and memories Orion found in this entry. Reviewable insights appear separately on Review.',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText('Legacy reflection that should not be shown.'),
+    ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Approve' }),
     ).not.toBeInTheDocument();
