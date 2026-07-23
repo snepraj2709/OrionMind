@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Literal, Mapping, cast
+from uuid import UUID
 
 
 ReviewScope = Literal["entry_insight", "pattern"]
@@ -117,6 +119,33 @@ PATTERN_CATEGORY_BY_TYPE: Mapping[PatternType, PatternCategory] = {
 class FeedbackDecision:
     status: ReviewStatus
     evidence_weight: EvidenceWeight
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewItemRecord:
+    id: UUID
+    user_id: UUID
+    entry_id: UUID | None
+    entry_signal_id: UUID | None
+    pattern_candidate_id: UUID | None
+    scope: ReviewScope
+    item_type: ReviewItemType
+    category: ReviewItemCategory
+    statement_envelope: dict[str, object]
+    source_quote_envelope: dict[str, object] | None
+    source_entry_ids: tuple[UUID, ...]
+    source_dates: tuple[date, ...]
+    inference_level: InferenceLevel
+    model_confidence: float
+    review_status: ReviewStatus
+    user_feedback: dict[str, object] | None
+    corrected_statement_envelope: dict[str, object] | None
+    feedback_note_envelope: dict[str, object] | None
+    evidence_weight: EvidenceWeight
+    reflection_eligible: bool
+    metadata: dict[str, object]
+    created_at: datetime
+    updated_at: datetime
 
 
 ENTRY_INSIGHT_FEEDBACK_DECISIONS: Mapping[

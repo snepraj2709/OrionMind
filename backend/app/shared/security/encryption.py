@@ -28,6 +28,10 @@ EnvelopePurpose: TypeAlias = Literal[
     "entry_signal_payload",
     "reflection_candidate_payload",
     "reflection_insight_payload",
+    "review_item_statement",
+    "review_item_source_quote",
+    "review_item_corrected_statement",
+    "review_item_feedback_note",
 ]
 ReflectionFingerprintPurpose: TypeAlias = Literal[
     "entry_duplicate",
@@ -45,6 +49,10 @@ ENVELOPE_PURPOSES = frozenset(
         "entry_signal_payload",
         "reflection_candidate_payload",
         "reflection_insight_payload",
+        "review_item_statement",
+        "review_item_source_quote",
+        "review_item_corrected_statement",
+        "review_item_feedback_note",
     }
 )
 

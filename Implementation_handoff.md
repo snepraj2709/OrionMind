@@ -500,7 +500,7 @@ Each section can abstain independently.
 | Stage | Name                                              | Priority | Dependencies | Expected commit message                                   | Status        | Complexity | Blocking?                                   |
 | ----: | ------------------------------------------------- | -------- | ------------ | --------------------------------------------------------- | ------------- | ---------- | ------------------------------------------- |
 |     1 | Lock contracts and shared types                   | P0       | None         | `feat(review): lock review and reflection contracts`      | `completed`   | Medium     | Blocking                                    |
-|     2 | Add database migrations and repositories          | P0       | 1            | `feat(review): add review item persistence`               | `not_started` | High       | Blocking                                    |
+|     2 | Add database migrations and repositories          | P0       | 1            | `feat(review): add review item persistence`               | `completed`   | High       | Blocking                                    |
 |     3 | Add quality gate and entry insight extraction     | P0       | 2            | `feat(review): extract reviewable entry insights`         | `not_started` | High       | Blocking                                    |
 |     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `not_started` | High       | Blocking                                    |
 |     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `not_started` | High       | Blocking                                    |
@@ -593,7 +593,16 @@ Pass means all new matrices and existing Reflections contract tests pass with no
 
 ### Stage 2 — Add database migrations and repositories
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Added `backend/migrations/0019_review_items.sql` and `backend/app/modules/review/repository.py`. Updated `backend/supabase_schema.sql`, `backend/app/modules/review/types.py`, `backend/app/shared/security/encryption.py`, `backend/tests/test_stage7_reflection_database.py`, and this handoff.
+- **Migrations added:** `0019_review_items.sql`, synchronized byte-for-byte into the schema snapshot.
+- **Commands run:** The required disposable-database suite with `STAGE2_DISPOSABLE_DATABASE_URL` targeting the isolated local `orion_stage2_test` database; `.venv/bin/python -m pytest -m "not live_supabase"` with the same disposable database; `.venv/bin/python -m ruff check app/modules/review tests/test_stage7_reflection_database.py`; focused mypy for the Review types/schemas/repository and shared encryption module; focused encryption/Review contract regressions; `git diff --check`.
+- **Test results:** The final disposable-database run passed `20` tests. The final full non-live backend run passed `383` tests with one existing `python_multipart` pending-deprecation warning. Focused encryption/Review contracts passed `49` tests. Ruff, focused mypy, schema parity, and diff checks passed.
+- **Deviations from the original plan:** `backend/app/shared/security/encryption.py` also changed because Review statement, quote, correction, and note envelopes require distinct authenticated-encryption purposes. Repository coverage stayed in the existing disposable database test instead of adding a separate test file. Since the Stage 2 test plan explicitly requires a worker insert while the producer RPC is deferred to Stage 3, `orion_worker` receives only direct `INSERT` plus validator execution; it receives no table read/update/delete access, while authenticated users receive owner-scoped `SELECT` only.
+- **Remaining risks:** No Review producer, feedback function, route, or frontend behavior exists yet. Pattern source arrays are bounded/non-null and the candidate is owner-scoped, but validating every array member against candidate evidence remains the responsibility of the controlled Stage 3 writer. Only an isolated local database was migrated; an authorized operator must confirm migration head/checksums before any non-local apply.
 
 **Objective:** Add secure, owner-scoped Review-item persistence and repository reads without producing Review items yet.
 
