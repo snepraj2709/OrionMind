@@ -507,7 +507,7 @@ Each section can abstain independently.
 |     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `completed`   | High       | Blocking                                    |
 |     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `completed`   | High       | Blocking                                    |
 |     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `completed`   | High       | Blocking                                    |
-|     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `not_started` | Medium     | Blocking                                    |
+|     9 | Integrate Reflections frontend                    | P0       | 7, 8         | `feat(reflections): integrate cached reflection states`   | `completed`   | Medium     | Blocking                                    |
 |    10 | Full P0 integration verification                  | P0       | 1–9          | `test(review): verify p0 review reflection flow`          | `not_started` | High       | Blocking                                    |
 |    11 | Safety and privacy hardening                      | Post-P0  | 10           | `fix(reflections): harden review privacy boundaries`      | `not_started` | Medium     | Non-blocking for P0; blocked until Stage 10 |
 |    12 | Analytics and evaluation foundation               | Post-P0  | 10, 11       | `chore(reflections): add evaluation telemetry foundation` | `not_started` | Medium     | Non-blocking for P0; blocked until Stage 10 |
@@ -1378,7 +1378,66 @@ npm run test:e2e -- e2e/review.spec.ts
 
 ### Stage 9 — Integrate Reflections frontend
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Updated the Reflections wire schema/tests, model and
+  public exports, HTTP/fixture/mock repositories and repository tests, TanStack
+  query/mutation behavior, screen and component tests, and
+  `e2e/reflections.spec.ts`. Extracted the existing synthetic Supabase browser
+  session setup into `e2e/helpers/auth.ts` and updated `e2e/review.spec.ts` to
+  reuse it instead of duplicating the helper. Updated this handoff.
+- **Migrations added:** None. No backend, database, API contract, dependency,
+  route, card, design-token, or infrastructure changes were made.
+- **Frontend behavior:** All three aggregate section unions now strictly parse
+  `available`, `processing`, `insufficient_evidence`, and `unavailable`
+  independently. The repository sends an empty-body
+  `POST /api/v1/reflections/recalculate`, requires the exact strict `202`
+  accepted response, and preserves public `409`/`503` error codes. Ordinary
+  mount, tab, and range interactions remain GET-only. Explicit Refresh starts
+  recalculation, immediately invalidates the user-and-range-scoped cached GET,
+  and polls only while the aggregate or a section is processing. Polling is
+  capped at six sequential attempts, including failed reads, and query abort
+  signals cancel in-flight reads on unmount, user change, or range change.
+  After the cap, a GET-only recovery control checks the cached result without
+  starting another recalculation. Available cards and stale cached data remain
+  visible through background read or recalculation failure; section processing,
+  insufficiency, and unavailability use existing feedback states and retry
+  controls. Existing feedback remains on the compatibility PUT endpoint and
+  resets bounded polling before its scoped refetch.
+- **Commands and results:**
+  - `npm test -- src/features/reflections`: `61 passed` across `4` files,
+    including successful and failed-read polling caps plus GET-only recovery.
+  - `npm run typecheck`: passed.
+  - `npm run lint`: passed, including design-system policy checks.
+  - `npm test`: `342 passed` across all `48` frontend test files.
+  - `npm run build`: passed.
+  - `npm run test:e2e -- e2e/reflections.spec.ts`: `8 passed`, including exact
+    GET/POST sequencing, empty POST body, processing-to-available polling,
+    responsive layout, keyboard tabs/evidence, feedback, and state fallbacks.
+  - `npm run test:e2e -- e2e/review.spec.ts`: `5 passed` as a regression for
+    the shared synthetic-session helper.
+  - Targeted Prettier and `git diff --check`: passed.
+- **Manual verification:** The production-build Playwright run exercised
+  Reflections at 320px, 768px, and 1440px without overflow; verified that
+  ordinary views issue no recalculation POST; submitted Refresh; observed the
+  immediate cached processing response followed by a bounded GET poll and the
+  available cards; and preserved keyboard evidence and feedback behavior.
+- **Deviations from the proposed plan:** No separate polling hook, adapter, or
+  response-builder change was needed. The existing query module owns the small
+  bounded loop, Zod-derived types propagate the expanded unions, and the
+  legacy feedback endpoint remains behavior-compatible. The first browser run
+  stopped at the repository's unavailable live Supabase test account. The
+  already-established Stage 8 synthetic-session setup was moved into the
+  shared E2E auth helper, and Reflections E2E now also intercepts the protected
+  shell's pending Review-count reads, keeping this browser suite deterministic
+  without weakening AuthProvider or authorized-request coverage.
+- **Remaining risks:** Browser tests exercise the exact public wire contracts
+  with intercepted APIs; the combined live browser/backend/worker/disposable-DB
+  proof remains Stage 10. A processing response is polled for six sequential
+  attempts rather than indefinitely and then requires an explicit cached GET
+  check. No commit was created, per the user's explicit instruction.
 
 **Objective:** Connect the existing Reflections screen to pure cached reads and durable recalculation states without redesigning cards.
 

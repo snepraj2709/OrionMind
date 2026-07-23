@@ -6,6 +6,7 @@ export type {
   RecurringLoopStep,
   ReflectionFeedbackResponse as ReflectionResponse,
   ReflectionRange,
+  ReflectionRecalculationResult,
   ReflectionSectionStatus,
   UnavailableInsight,
 } from './api-schema';

@@ -8,6 +8,7 @@ export {
   reflectionFeedbackRequestSchema,
   reflectionFeedbackResponseSchema,
   reflectionFeedbackResultSchema,
+  reflectionRecalculationResultSchema,
   reflectionRangeSchema,
   reflectionRequestSchema,
   reflectionSnapshotSchema,
@@ -24,6 +25,7 @@ export type {
   ReflectionFeedbackResponse,
   ReflectionFeedbackResult,
   ReflectionRange,
+  ReflectionRecalculationResult,
   ReflectionRequest,
 } from './api-schema';
 export type { ReflectionResponse, ReflectionView } from './model';
@@ -35,4 +37,8 @@ export type {
   PutReflectionFeedbackInput,
   ReflectionsRepository,
 } from './repository';
-export { HttpReflectionsRepository, reflectionsRepository } from './repository';
+export {
+  HttpReflectionsRepository,
+  ReflectionRequestError,
+  reflectionsRepository,
+} from './repository';

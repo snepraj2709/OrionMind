@@ -141,7 +141,9 @@ export const availableHiddenDriverSchema = z
 
 export const hiddenDriverSectionSchema = z.discriminatedUnion('status', [
   availableHiddenDriverSchema,
+  processingInsightSchema,
   insufficientInsightSchema,
+  unavailableInsightSchema,
 ]);
 
 export const recurringLoopStepSchema = z
@@ -165,7 +167,9 @@ export const availableRecurringLoopSchema = z
 
 export const recurringLoopSectionSchema = z.discriminatedUnion('status', [
   availableRecurringLoopSchema,
+  processingInsightSchema,
   insufficientInsightSchema,
+  unavailableInsightSchema,
 ]);
 
 export const innerTensionSchema = z
@@ -194,7 +198,9 @@ export const availableInnerTensionsSchema = z
 
 export const innerTensionsSectionSchema = z.discriminatedUnion('status', [
   availableInnerTensionsSchema,
+  processingInsightSchema,
   insufficientInsightSchema,
+  unavailableInsightSchema,
 ]);
 
 export const reflectionSnapshotSchema = z
@@ -252,6 +258,13 @@ export const reflectionFeedbackResultSchema = z
   })
   .strict();
 
+export const reflectionRecalculationResultSchema = z
+  .object({
+    status: z.literal('accepted'),
+    jobId: z.uuid(),
+  })
+  .strict();
+
 export type ReflectionRange = z.infer<typeof reflectionRangeSchema>;
 export type ReflectionRequest = z.infer<typeof reflectionRequestSchema>;
 export type ReflectionSectionStatus = z.infer<
@@ -276,4 +289,7 @@ export type InnerTensionsSection = z.infer<typeof innerTensionsSectionSchema>;
 export type ReflectionApiResponse = z.infer<typeof reflectionApiResponseSchema>;
 export type ReflectionFeedbackResult = z.infer<
   typeof reflectionFeedbackResultSchema
+>;
+export type ReflectionRecalculationResult = z.infer<
+  typeof reflectionRecalculationResultSchema
 >;

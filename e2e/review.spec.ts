@@ -6,75 +6,17 @@ import type {
   ReviewStatus,
 } from '../src/features/review';
 import { routes } from '../src/config/routes';
+import { logInWithSyntheticSession } from './helpers/auth';
 
 test.describe.configure({ mode: 'serial' });
 
-function encodedJson(value: unknown) {
-  return Buffer.from(JSON.stringify(value)).toString('base64url');
-}
-
-async function logIn(page: Page) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  if (!supabaseUrl) {
-    throw new Error('NEXT_PUBLIC_SUPABASE_URL is required for browser tests.');
-  }
-  const userId = '80000000-0000-4000-8000-000000000001';
-  const now = Math.floor(Date.now() / 1000);
-  const accessToken = [
-    encodedJson({ alg: 'HS256', typ: 'JWT' }),
-    encodedJson({
-      aud: 'authenticated',
-      exp: now + 3600,
-      iat: now,
-      sub: userId,
-      email: 'review-e2e@example.com',
-      role: 'authenticated',
-      aal: 'aal1',
-      session_id: 'review-e2e-session',
-      is_anonymous: false,
-      app_metadata: { provider: 'email', providers: ['email'] },
-      user_metadata: { full_name: 'Review E2E' },
-    }),
-    'review-e2e-signature',
-  ].join('.');
-  const user = {
-    id: userId,
-    aud: 'authenticated',
-    role: 'authenticated',
+function logIn(page: Page) {
+  return logInWithSyntheticSession(page, {
+    userId: '80000000-0000-4000-8000-000000000001',
     email: 'review-e2e@example.com',
-    app_metadata: { provider: 'email', providers: ['email'] },
-    user_metadata: { full_name: 'Review E2E' },
-    identities: [],
-    created_at: new Date(now * 1000).toISOString(),
-    updated_at: new Date(now * 1000).toISOString(),
-    is_anonymous: false,
-  };
-
-  await page.route(`${supabaseUrl}/auth/v1/**`, async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.endsWith('/token')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          access_token: accessToken,
-          refresh_token: 'review-e2e-refresh-token',
-          expires_in: 3600,
-          expires_at: now + 3600,
-          token_type: 'bearer',
-          user,
-        }),
-      });
-      return;
-    }
-    await route.fulfill({ status: 204, body: '' });
+    fullName: 'Review E2E',
+    sessionId: 'review-e2e-session',
   });
-
-  await page.goto(routes.login.path);
-  await page.getByLabel('Email').fill('review-e2e@example.com');
-  await page.getByLabel('Password').fill('review-e2e-password');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(routes.entries.path);
 }
 
 const entryItem: ReviewItem = {

@@ -24,17 +24,24 @@ import type { EvidenceItem as DrawerEvidenceItem } from '@/types/evidence';
 import type {
   EvidenceItem,
   InsufficientInsight,
+  ProcessingInsight,
   ReflectionFeedbackResponse,
   ReflectionRange,
+  UnavailableInsight,
 } from './api-schema';
 import { HiddenDriverCard } from './hidden-driver-card';
 import { InnerTensionCard } from './inner-tension-card';
 import type { ReflectionView } from './model';
-import { useReflectionFeedbackMutation, useReflectionQuery } from './queries';
+import {
+  useReflectionFeedbackMutation,
+  useReflectionQuery,
+  useReflectionRecalculationMutation,
+} from './queries';
 import { RecurringLoop } from './recurring-loop';
 import { ReflectionTabs } from './reflection-tabs';
 import {
   reflectionsRepository,
+  ReflectionRequestError,
   type ReflectionsRepository,
 } from './repository';
 
@@ -76,6 +83,64 @@ function InsufficientSection({ insight }: { insight: InsufficientInsight }) {
   );
 }
 
+function ProcessingSection({ insight }: { insight: ProcessingInsight }) {
+  return (
+    <ProcessingState
+      description={insight.message}
+      title="Recalculating this reflection"
+    />
+  );
+}
+
+function UnavailableSection({
+  insight,
+  onRetry,
+  retryDisabled,
+}: {
+  insight: UnavailableInsight;
+  onRetry: () => void;
+  retryDisabled: boolean;
+}) {
+  return (
+    <InlineError
+      action={
+        insight.retryable ? (
+          <AppButton
+            disabled={retryDisabled}
+            onClick={onRetry}
+            size="compact"
+            variant="ghost"
+          >
+            Retry
+          </AppButton>
+        ) : undefined
+      }
+    >
+      {insight.message}
+    </InlineError>
+  );
+}
+
+function recalculationErrorMessage(error: Error | null) {
+  if (error instanceof ReflectionRequestError) {
+    if (error.errorCode === 'REFLECTION_ALREADY_CURRENT') {
+      return 'These reflections are already up to date.';
+    }
+    if (error.errorCode === 'REFLECTION_NOT_ELIGIBLE') {
+      return 'There is not enough reflective evidence to recalculate these reflections yet.';
+    }
+  }
+  return 'Orion could not start recalculating your reflections. Your last available view is still shown.';
+}
+
+function canRetryRecalculation(error: Error | null) {
+  return !(
+    error instanceof ReflectionRequestError &&
+    (error.errorCode === 'REFLECTION_ALREADY_CURRENT' ||
+      error.errorCode === 'REFLECTION_NOT_ELIGIBLE')
+  );
+}
+
 function NoEvidenceSection({ range }: { range: ReflectionRange }) {
   return (
     <NoResultsState
@@ -105,15 +170,24 @@ export function ReflectionsScreen({
   const isOnline = useOnlineStatus();
   const activeUserId = user?.id;
 
-  const { query: reflectionQuery, viewStatus } = useReflectionQuery(
+  const {
+    pollingExhausted,
+    query: reflectionQuery,
+    resetPolling,
+    retryPolling,
+    viewStatus,
+  } = useReflectionQuery(activeUserId, { range }, repository);
+  const recalculation = useReflectionRecalculationMutation(
     activeUserId,
-    { range },
+    range,
+    resetPolling,
     repository,
   );
   const feedbackMutation = useReflectionFeedbackMutation(
     activeUserId,
     range,
     repository,
+    resetPolling,
   );
 
   function openEvidence(items: EvidenceItem[]) {
@@ -137,14 +211,33 @@ export function ReflectionsScreen({
 
   const response = reflectionQuery.data;
   const basis = response?.analysisBasis;
+  const isProcessing =
+    response?.processingState === 'pending' ||
+    response?.data.hiddenDriver.status === 'processing' ||
+    response?.data.recurringLoop.status === 'processing' ||
+    response?.data.innerTensions.status === 'processing';
+  const recalculationBusy = recalculation.isPending || isProcessing;
+
+  function requestRecalculation() {
+    if (!isOnline || recalculationBusy) return;
+    recalculation.mutate();
+  }
 
   let activePanel: ReactNode = null;
 
   if (response && activeView === 'hidden-drivers') {
     const insight = response.data.hiddenDriver;
     activePanel =
-      insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? (
+        <ProcessingSection insight={insight} />
+      ) : insight.status === 'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : insight.status === 'unavailable' ? (
+        <UnavailableSection
+          insight={insight}
+          onRetry={requestRecalculation}
+          retryDisabled={!isOnline || recalculationBusy}
+        />
       ) : insight.evidence.length === 0 ? (
         <NoEvidenceSection range={range} />
       ) : (
@@ -164,8 +257,16 @@ export function ReflectionsScreen({
   if (response && activeView === 'recurring-loops') {
     const insight = response.data.recurringLoop;
     activePanel =
-      insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? (
+        <ProcessingSection insight={insight} />
+      ) : insight.status === 'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : insight.status === 'unavailable' ? (
+        <UnavailableSection
+          insight={insight}
+          onRetry={requestRecalculation}
+          retryDisabled={!isOnline || recalculationBusy}
+        />
       ) : insight.evidence.length === 0 ? (
         <NoEvidenceSection range={range} />
       ) : (
@@ -195,8 +296,16 @@ export function ReflectionsScreen({
         ? insight.tensions.filter((tension) => tension.evidence.length > 0)
         : [];
     activePanel =
-      insight.status === 'insufficient_evidence' ? (
+      insight.status === 'processing' ? (
+        <ProcessingSection insight={insight} />
+      ) : insight.status === 'insufficient_evidence' ? (
         <InsufficientSection insight={insight} />
+      ) : insight.status === 'unavailable' ? (
+        <UnavailableSection
+          insight={insight}
+          onRetry={requestRecalculation}
+          retryDisabled={!isOnline || recalculationBusy}
+        />
       ) : tensionsWithEvidence.length === 0 ? (
         <NoEvidenceSection range={range} />
       ) : (
@@ -258,10 +367,10 @@ export function ReflectionsScreen({
             />
             <RefreshButton
               aria-label="Refresh reflections"
-              disabled={!isOnline}
-              loading={reflectionQuery.isFetching}
-              loadingLabel="Refreshing reflections"
-              onClick={() => void reflectionQuery.refetch()}
+              disabled={!isOnline || recalculationBusy}
+              loading={reflectionQuery.isFetching || recalculationBusy}
+              loadingLabel="Recalculating reflections"
+              onClick={requestRecalculation}
               variant="icon"
             />
           </>
@@ -272,7 +381,7 @@ export function ReflectionsScreen({
 
       <DataViewStatus
         initialError={dataViewMessages.reflections.initial}
-        onRetry={() => void reflectionQuery.refetch()}
+        onRetry={() => void retryPolling()}
         refreshError={dataViewMessages.reflections.refresh}
         refreshingAriaLabel="Refreshing reflections"
         refreshingLabel="Refreshing reflections… Your current view will stay in place."
@@ -285,6 +394,45 @@ export function ReflectionsScreen({
         <InlineError>
           You are offline. Orion is showing the last available reflections;
           refresh will resume when your connection returns.
+        </InlineError>
+      ) : null}
+
+      {recalculation.isError ? (
+        <InlineError
+          action={
+            canRetryRecalculation(recalculation.error) ? (
+              <AppButton
+                disabled={!isOnline || recalculation.isPending}
+                onClick={requestRecalculation}
+                size="compact"
+                variant="ghost"
+              >
+                Retry
+              </AppButton>
+            ) : undefined
+          }
+        >
+          {recalculationErrorMessage(recalculation.error)}
+        </InlineError>
+      ) : null}
+
+      {pollingExhausted && !reflectionQuery.isError ? (
+        <InlineError
+          action={
+            <AppButton
+              disabled={!isOnline || reflectionQuery.isFetching}
+              loading={reflectionQuery.isFetching}
+              loadingLabel="Checking reflections"
+              onClick={() => void retryPolling()}
+              size="compact"
+              variant="ghost"
+            >
+              Check again
+            </AppButton>
+          }
+        >
+          This update is taking longer than expected. Check again without
+          starting another recalculation.
         </InlineError>
       ) : null}
 
@@ -309,7 +457,7 @@ export function ReflectionsScreen({
           action={
             <AppButton
               disabled={!isOnline}
-              onClick={() => void reflectionQuery.refetch()}
+              onClick={requestRecalculation}
               size="compact"
               variant="ghost"
             >

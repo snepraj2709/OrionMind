@@ -81,6 +81,14 @@ export class MockReflectionsRepository implements ReflectionsRepository {
     return result;
   }
 
+  async recalculate() {
+    await simulateLatency(this.delay);
+    return {
+      status: 'accepted' as const,
+      jobId: '00000000-0000-4000-8000-000000000900',
+    };
+  }
+
   async putFeedback(
     input: PutReflectionFeedbackInput,
   ): Promise<ReflectionFeedbackResult> {

@@ -4,6 +4,7 @@ import {
   reflectionApiResponseSchema,
   reflectionFeedbackRequestSchema,
   reflectionFeedbackResultSchema,
+  reflectionRecalculationResultSchema,
   processingInsightSchema,
   reflectionRequestSchema,
   reflectionSectionStatusSchema,
@@ -217,7 +218,7 @@ describe('reflection wire schemas', () => {
     );
   });
 
-  it('locks additive section states without changing existing aggregate parsing', () => {
+  it('locks the complete section status vocabulary and standalone shapes', () => {
     expect(reflectionSectionStatusSchema.options).toEqual([
       'available',
       'processing',
@@ -244,5 +245,49 @@ describe('reflection wire schemas', () => {
     expect(reflectionApiResponseSchema.parse(reflectionApiFixture)).toEqual(
       reflectionApiFixture,
     );
+  });
+
+  it.each(['hiddenDriver', 'recurringLoop', 'innerTensions'] as const)(
+    'parses processing and unavailable %s aggregate sections',
+    (section) => {
+      const processing = structuredClone(reflectionApiFixture);
+      processing.data[section] = {
+        status: 'processing',
+        message: 'This reflection is being recalculated.',
+      };
+      const unavailable = structuredClone(reflectionApiFixture);
+      unavailable.data[section] = {
+        status: 'unavailable',
+        reasonCode: 'TECHNICAL_FAILURE',
+        message: 'This reflection is temporarily unavailable.',
+        retryable: true,
+      };
+
+      expect(reflectionApiResponseSchema.parse(processing)).toEqual(processing);
+      expect(reflectionApiResponseSchema.parse(unavailable)).toEqual(
+        unavailable,
+      );
+    },
+  );
+
+  it('strictly parses the accepted recalculation result', () => {
+    const result = {
+      status: 'accepted',
+      jobId: '00000000-0000-4000-8000-000000000901',
+    };
+
+    expect(reflectionRecalculationResultSchema.parse(result)).toEqual(result);
+    expect(
+      reflectionRecalculationResultSchema.safeParse({
+        ...result,
+        unexpected: true,
+      }).success,
+    ).toBe(false);
+    expect(
+      reflectionRecalculationResultSchema.safeParse({
+        status: 'queued',
+        jobId: result.jobId,
+      }).success,
+    ).toBe(false);
   });
 });

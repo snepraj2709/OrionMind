@@ -4,7 +4,11 @@ import demoReflection from '../../../data/orion_30_day_reflection_analysis.json'
 
 import { reflectionApiFixture, reflectionFixtureIds } from './fixtures';
 import { fixtureReflectionsRepository } from './fixture-repository';
-import { HttpReflectionsRepository, reflectionsRepository } from './repository';
+import {
+  HttpReflectionsRepository,
+  ReflectionRequestError,
+  reflectionsRepository,
+} from './repository';
 
 describe('reflectionsRepository', () => {
   afterEach(() => {
@@ -133,6 +137,74 @@ describe('HttpReflectionsRepository', () => {
     );
   });
 
+  it('posts no body to the exact recalculation endpoint and strictly parses 202', async () => {
+    const result = {
+      status: 'accepted' as const,
+      jobId: '10000000-0000-4000-8000-000000000099',
+    };
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(result, { status: 202 }));
+    const repository = new HttpReflectionsRepository(request);
+
+    await expect(repository.recalculate()).resolves.toEqual(result);
+    expect(request).toHaveBeenCalledWith('/api/v1/reflections/recalculate', {
+      method: 'POST',
+      signal: undefined,
+    });
+    expect(request.mock.calls[0]?.[1]).not.toHaveProperty('body');
+    expect(request.mock.calls[0]?.[1]).not.toHaveProperty('headers');
+  });
+
+  it.each([
+    [409, 'REFLECTION_ALREADY_CURRENT'],
+    [409, 'REFLECTION_NOT_ELIGIBLE'],
+    [503, 'REFLECTION_RECALCULATION_UNAVAILABLE'],
+  ] as const)(
+    'preserves recalculation status %s and error code %s',
+    async (status, errorCode) => {
+      const request = vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          {
+            error_code: errorCode,
+            message: 'Safe public message.',
+          },
+          { status },
+        ),
+      );
+      const repository = new HttpReflectionsRepository(request);
+
+      await expect(repository.recalculate()).rejects.toEqual(
+        new ReflectionRequestError(
+          `Reflection recalculation request failed: ${status}`,
+          status,
+          errorCode,
+        ),
+      );
+    },
+  );
+
+  it('forwards abort signals to cached reads and recalculation', async () => {
+    const controller = new AbortController();
+    const request = vi.fn<typeof fetch>().mockImplementation((_path, init) => {
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        });
+      });
+    });
+    const repository = new HttpReflectionsRepository(request);
+    const read = repository.getReflection({ range: 'all' }, controller.signal);
+
+    controller.abort();
+    await expect(read).rejects.toMatchObject({ name: 'AbortError' });
+
+    const recalculationController = new AbortController();
+    const recalculate = repository.recalculate(recalculationController.signal);
+    recalculationController.abort();
+    await expect(recalculate).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it.each([401, 422, 503])(
     'rejects a non-success GET response with status %s before parsing',
     async (status) => {
@@ -162,8 +234,33 @@ describe('HttpReflectionsRepository', () => {
 
     await expect(repository.getReflection({ range: 'all' })).rejects.toThrow();
     await expect(repository.putFeedback(feedbackInput)).rejects.toThrow(
-      'Reflection feedback failed: 404',
+      'Reflection feedback request failed: 404',
     );
     await expect(repository.putFeedback(feedbackInput)).rejects.toThrow();
+  });
+
+  it('rejects malformed accepted recalculation responses', async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ status: 'accepted' }, { status: 202 }),
+      );
+    const repository = new HttpReflectionsRepository(request);
+
+    await expect(repository.recalculate()).rejects.toThrow();
+  });
+
+  it('rejects a valid recalculation body returned with a non-202 success status', async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        status: 'accepted',
+        jobId: '10000000-0000-4000-8000-000000000099',
+      }),
+    );
+    const repository = new HttpReflectionsRepository(request);
+
+    await expect(repository.recalculate()).rejects.toThrow(
+      'Reflection recalculation request returned unexpected status: 200',
+    );
   });
 });

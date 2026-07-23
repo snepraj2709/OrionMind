@@ -9,9 +9,89 @@ export function getRequiredTestEnvironmentVariable(name: string) {
   return value;
 }
 
+interface SyntheticTestIdentity {
+  userId: string;
+  email: string;
+  fullName: string;
+  sessionId: string;
+}
+
+function encodedJson(value: unknown) {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+export async function logInWithSyntheticSession(
+  page: Page,
+  identity: SyntheticTestIdentity,
+) {
+  const supabaseUrl = getRequiredTestEnvironmentVariable(
+    'NEXT_PUBLIC_SUPABASE_URL',
+  );
+  const now = Math.floor(Date.now() / 1000);
+  const accessToken = [
+    encodedJson({ alg: 'HS256', typ: 'JWT' }),
+    encodedJson({
+      aud: 'authenticated',
+      exp: now + 3600,
+      iat: now,
+      sub: identity.userId,
+      email: identity.email,
+      role: 'authenticated',
+      aal: 'aal1',
+      session_id: identity.sessionId,
+      is_anonymous: false,
+      app_metadata: { provider: 'email', providers: ['email'] },
+      user_metadata: { full_name: identity.fullName },
+    }),
+    'e2e-signature',
+  ].join('.');
+  const user = {
+    id: identity.userId,
+    aud: 'authenticated',
+    role: 'authenticated',
+    email: identity.email,
+    app_metadata: { provider: 'email', providers: ['email'] },
+    user_metadata: { full_name: identity.fullName },
+    identities: [],
+    created_at: new Date(now * 1000).toISOString(),
+    updated_at: new Date(now * 1000).toISOString(),
+    is_anonymous: false,
+  };
+
+  await page.route(`${supabaseUrl}/auth/v1/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/token')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          access_token: accessToken,
+          refresh_token: 'e2e-refresh-token',
+          expires_in: 3600,
+          expires_at: now + 3600,
+          token_type: 'bearer',
+          user,
+        }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 204, body: '' });
+  });
+
+  await page.goto(routes.login.path);
+  await page.getByLabel('Email').fill(identity.email);
+  await page.getByLabel('Password').fill('e2e-password');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await expect(page).toHaveURL(routes.entries.path);
+}
+
 export const testCredentials = {
-  email: getRequiredTestEnvironmentVariable('SUPABASE_TEST_EMAIL'),
-  password: getRequiredTestEnvironmentVariable('SUPABASE_TEST_PASSWORD'),
+  get email() {
+    return getRequiredTestEnvironmentVariable('SUPABASE_TEST_EMAIL');
+  },
+  get password() {
+    return getRequiredTestEnvironmentVariable('SUPABASE_TEST_PASSWORD');
+  },
 };
 
 let testSessionPromise: Promise<Session> | undefined;

@@ -143,6 +143,9 @@ export const fixtureReflectionsRepository: ReflectionsRepository = {
       range: input.range,
     });
   },
+  async recalculate() {
+    return { status: 'accepted', jobId: fixtureUuid(900) };
+  },
   async putFeedback(input) {
     feedbackByInsightId.set(input.insightId, input.response);
     return { ...input, updatedAt: new Date().toISOString() };
