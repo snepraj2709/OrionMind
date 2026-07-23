@@ -128,6 +128,8 @@ def _signal(
         "need_tags": need_tags,
         "loop_role": loop_role,
         "confidence": 0.92,
+        "model_confidence": 0.92,
+        "evidence_weight": 1.0,
         "source_start": start,
         "source_end": end,
         "occurred_on": entry_date.isoformat(),

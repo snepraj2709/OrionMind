@@ -64,6 +64,8 @@ class CandidateSignal(StrictReflectionModel):
     need_tags: list[NeedTag] = Field(max_length=4)
     loop_role: LoopRole | None
     confidence: UnitFloat
+    model_confidence: UnitFloat | None = None
+    evidence_weight: UnitFloat = 1.0
     source_start: int = Field(ge=0)
     source_end: int = Field(gt=0)
     occurred_on: date
@@ -98,6 +100,8 @@ class PreviousCandidate(StrictReflectionModel):
     last_source_version: int = Field(ge=0)
     rejected_at: datetime | None
     rejected_source_version: int | None = Field(default=None, ge=0)
+    review_weight: UnitFloat = 1.0
+    review_item_id: UUID | None = None
     payload: dict[str, object]
 
 
@@ -217,6 +221,8 @@ class ConstructedCandidate(StrictReflectionModel):
     version: int = Field(ge=1)
     rejected_at: datetime | None
     rejected_source_version: int | None = Field(default=None, ge=0)
+    review_weight: UnitFloat = 1.0
+    review_item_id: UUID | None = None
 
     @model_validator(mode="after")
     def validate_candidate_shape(self) -> Self:

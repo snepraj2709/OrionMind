@@ -549,6 +549,8 @@ def synthesis_basis(*, contradictory: bool = False) -> dict[str, object]:
                 "need_tags": ["competence"],
                 "loop_role": None,
                 "confidence": 0.95,
+                "model_confidence": 0.95,
+                "evidence_weight": 1.0,
                 "source_start": start,
                 "source_end": start + len(quote),
                 "occurred_on": entry_date.isoformat(),

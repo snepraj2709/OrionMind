@@ -251,6 +251,7 @@ def compose_application_services(
         cipher=resolved_content_cipher,
         basis_days=settings.REFLECTION_BASIS_DAYS,
         embedding_model_id=settings.OPENAI_SIGNAL_EMBEDDING_MODEL,
+        synthesis_model_id=settings.OPENAI_REFLECTION_SYNTHESIS_MODEL,
         telemetry=reflection_telemetry,
     )
     job_service = JobService(

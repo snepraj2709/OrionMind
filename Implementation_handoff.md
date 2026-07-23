@@ -503,7 +503,7 @@ Each section can abstain independently.
 |     2 | Add database migrations and repositories          | P0       | 1            | `feat(review): add review item persistence`               | `completed`   | High       | Blocking                                    |
 |     3 | Add quality gate and entry insight extraction     | P0       | 2            | `feat(review): extract reviewable entry insights`         | `completed`   | High       | Blocking                                    |
 |     4 | Add Review API and feedback weighting             | P0       | 3            | `feat(review): add review feedback API`                   | `completed`   | High       | Blocking                                    |
-|     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `not_started` | High       | Blocking                                    |
+|     5 | Add reflection synthesis and snapshot persistence | P0       | 4            | `feat(reflections): apply review weights to synthesis`    | `completed`   | High       | Blocking                                    |
 |     6 | Add Reflection API and recalculation trigger      | P0       | 5            | `feat(reflections): add cached recalculation API`         | `not_started` | High       | Blocking                                    |
 |     7 | Verify backend flow end to end                    | P0       | 1–6          | `test(review): verify backend review reflection flow`     | `not_started` | High       | Blocking                                    |
 |     8 | Integrate Review frontend                         | P0       | 7            | `feat(review): integrate review frontend`                 | `not_started` | High       | Blocking                                    |
@@ -854,7 +854,68 @@ cd backend
 
 ### Stage 5 — Add reflection synthesis and snapshot persistence
 
-**Stage status:** `not_started`
+**Stage status:** `completed`
+
+**Completion record (2026-07-23):**
+
+- **Actual files changed:** Added
+  `backend/migrations/0022_review_weighted_reflections.sql` and
+  `backend/tests/test_review_weighted_synthesis.py`. Updated
+  `backend/app/bootstrap.py`,
+  `backend/app/modules/reflection_engine/{candidates,prompts,repository,schemas,scoring,service}.py`,
+  `backend/scripts/run_sample_reflection_offline.py`,
+  `backend/supabase_schema.sql`,
+  `backend/tests/{test_stage7_reflection_candidates,test_stage7_reflection_database,test_stage7_reflection_synthesis}.py`,
+  and this handoff.
+- **Migration added:** `0022_review_weighted_reflections.sql`, synchronized
+  byte-for-byte into `backend/supabase_schema.sql`. It makes Entry Review
+  weights part of the candidate/synthesis basis, adds normalized snapshot
+  model/prompt/generated metadata with a `created_at` backfill for existing
+  snapshots, updates first-snapshot eligibility to the exact 150-word
+  boundary, adds weighted apply functions, and atomically upserts encrypted
+  Pattern Review rows while preserving prior feedback fields.
+- **Post-review fixes:** Completed-job replay now returns the existing immutable
+  snapshot before candidate validation or Pattern-row updates, including after
+  later feedback advances source state. Migration `0022` revokes direct worker
+  access to the superseded unweighted candidate/snapshot apply functions.
+  Existing Pattern Review row IDs now flow through the candidate basis so
+  refreshed statement ciphertext remains bound to the stored row identity; the
+  SQL upsert also rejects any mismatched identity atomically. A subsequent
+  audit hardened Pattern persistence further: reviewed base content and
+  provenance now remain immutable during later synthesis, supporting sources
+  are deterministically capped at the table's 100-entry limit in both Python
+  and SQL validation, and Pattern metadata is restricted to the exact
+  model/prompt/source/candidate provenance contract.
+- **Commands and results:**
+  - The required Stage 5 command against an isolated local pgvector PostgreSQL
+    database passed `81` tests.
+  - The finalized disposable-database migration/regression suite passed
+    `23` tests, including fresh/upgrade parity, `1/.5/0` basis behavior,
+    snapshot metadata, 101-entry Pattern source bounding, reviewed-content
+    preservation, strict metadata rejection, and snapshot/Pattern-item replay
+    idempotency.
+  - `.venv/bin/python -m pytest -m "not live_supabase"` passed
+    `451` tests with one existing `python_multipart` pending-deprecation
+    warning.
+  - `.venv/bin/python -m ruff check app/modules/reflection_engine app/modules/review tests`
+    passed.
+  - `.venv/bin/python -m mypy app/modules/reflection_engine app/modules/review`
+    passed with no issues in `23` source files.
+  - Schema-snapshot parity and `git diff --check` passed.
+- **Deviations from the proposed plan:** The migration adds narrow weighted
+  wrapper functions around the mature candidate/snapshot apply functions
+  instead of duplicating their large transactional implementations. Pattern
+  Review rows are built by the reflection service and validated/upserted in
+  the same database transaction as the snapshot, so the Review repository
+  required no write expansion. Existing offline synthesis fixtures were
+  upgraded to supply explicit model confidence and Review weight. No live or
+  paid provider call was made.
+- **Remaining risks:** Migration `0022` has been applied only to a disposable
+  local database, not the configured development/shared database. Stage 6
+  still owns the public recalculation API and cached-read trigger semantics.
+  Provider-quality evaluation remains outside this deterministic fake-provider
+  proof. Per the user's explicit instruction, all completed Stage 5 changes
+  remain uncommitted pending separate approval.
 
 **Objective:** Make the existing reflection engine consume weighted reviewed evidence, apply requested thresholds, abstain per section, persist cached snapshots, and create Pattern Review items.
 

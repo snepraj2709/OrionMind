@@ -322,16 +322,16 @@ def test_score_saturation_duplication_contradiction_and_strongest_removal() -> N
 
 def test_publication_gates_are_exact_at_every_boundary() -> None:
     assert not overall_basis_eligible(
-        valid_entry_count=2, distinct_entry_dates=2, reflective_word_count=200
+        valid_entry_count=2, distinct_entry_dates=2, reflective_word_count=150
     )
     assert not overall_basis_eligible(
-        valid_entry_count=3, distinct_entry_dates=1, reflective_word_count=200
+        valid_entry_count=3, distinct_entry_dates=1, reflective_word_count=150
     )
     assert not overall_basis_eligible(
-        valid_entry_count=3, distinct_entry_dates=2, reflective_word_count=199
+        valid_entry_count=3, distinct_entry_dates=2, reflective_word_count=149
     )
     assert overall_basis_eligible(
-        valid_entry_count=3, distinct_entry_dates=2, reflective_word_count=200
+        valid_entry_count=3, distinct_entry_dates=2, reflective_word_count=150
     )
     assert hidden_driver_publishable(
         supporting_entries=3, distinct_dates=2, distinct_signal_types=2, score=0.68
@@ -340,16 +340,16 @@ def test_publication_gates_are_exact_at_every_boundary() -> None:
         supporting_entries=3, distinct_dates=2, distinct_signal_types=2, score=0.67999
     )
     assert recurring_loop_publishable(
-        observed_chains=3,
+        observed_chains=2,
         supporting_entries=3,
-        supported_transitions=4,
+        supported_transitions=3,
         distinct_dates=2,
         score=0.72,
     )
     assert not recurring_loop_publishable(
-        observed_chains=3,
+        observed_chains=2,
         supporting_entries=3,
-        supported_transitions=3,
+        supported_transitions=2,
         distinct_dates=2,
         score=1,
     )
